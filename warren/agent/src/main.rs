@@ -3622,6 +3622,9 @@ fn deterministic_port(seed: &str, base: u16) -> u16 {
 }
 
 fn container_name(safe_name: &str) -> String {
+    // DNS name, not the registry repository. python_runtime stays
+    // rvbbit-python-runtime even though 1.2.0 pulls calliope-python-runtime.
+    // Registered endpoint URLs keep resolving across that image rename.
     let service = safe_name.replace('_', "-");
     format!("rvbbit-{}", service.trim_matches('-'))
 }

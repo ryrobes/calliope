@@ -177,6 +177,7 @@ services:
       - legacy-mcp-gateway
     build:
       context: ../capabilities/packs/runtimes/mcp-gateway
+    # Dev DNS name. The published image is calliope-mcp-gateway.
     container_name: rvbbit-mcp-gateway
     depends_on:
       pg-rvbbit:

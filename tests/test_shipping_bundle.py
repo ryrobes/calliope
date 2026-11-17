@@ -61,6 +61,9 @@ def test_release_checksums_and_catalog_are_complete(artifact, shipping):
     assert manifest['distribution_state'] == 'development-candidate'
     assert len(manifest['runtime_images']) == 3
     assert all(':latest' not in image for image in manifest['runtime_images'])
+    assert {image.rsplit('/', 1)[-1].split(':', 1)[0] for image in manifest['runtime_images']} == {
+        'calliope-python-runtime', 'calliope-mcp-gateway', 'rvbbit-capability-dlt-mirror',
+    }
     sql = (artifact / 'config/capabilities.sql').read_text()
     assert sql.count('upsert_capability_catalog_entry(') == 3
     assert '"install_mode": "image"' in sql

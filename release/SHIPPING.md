@@ -31,7 +31,10 @@ they are not proof of a clean-machine boot or a released package.
    `0477_test_failure_details`; this records today's starting point, not proof
    that all historic deployments used these exact bytes.
 3. Commit the source. Publish images with `build-calliope.sh --push` or the
-   Calliope image workflow. Existing version tags cannot be overwritten; registry
+   Calliope image workflow. The Python and MCP runtime repositories are
+   `calliope-python-runtime` and `calliope-mcp-gateway`
+   (`runtime_image_names` in `calliope-release.json`). `data/dlt-mirror` stays
+   `rvbbit-capability-dlt-mirror`. Existing version tags cannot be overwritten; registry
    authentication/network failures do not count as permission to overwrite.
    For existing GHCR packages, grant the `ryrobes/calliope` repository Write
    under package settings → Manage Actions access. This is separate from public

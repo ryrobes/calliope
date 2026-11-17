@@ -33,5 +33,10 @@
     "runtimes/python-runtime",
     "runtimes/mcp-gateway",
     "data/dlt-mirror"
-  ]
+  ],
+  "runtime_image_names": {
+    "runtimes/python-runtime": "calliope-python-runtime",
+    "runtimes/mcp-gateway": "calliope-mcp-gateway",
+    "data/dlt-mirror": "rvbbit-capability-dlt-mirror"
+  }
 }

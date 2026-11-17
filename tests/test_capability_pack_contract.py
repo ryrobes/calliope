@@ -556,13 +556,27 @@ def test_release_catalog_can_emit_image_mode_runtimes():
     by_id = {entry["catalog_entry"]["id"]: entry for entry in doc["capabilities"]}
 
     python_runtime = by_id["runtimes/python-runtime"]
+    assert python_runtime["catalog_entry"]["name"] == "python_runtime"
     assert python_runtime["catalog_entry"]["runtime_mode"] == "image"
     assert python_runtime["catalog_entry"]["runtime_image"] == (
-        "ghcr.io/ryrobes/rvbbit-python-runtime:9.9.9"
+        "ghcr.io/ryrobes/calliope-python-runtime:9.9.9"
     )
     assert python_runtime["capability_manifest"]["runtime"]["mode"] == "image"
     assert python_runtime["capability_manifest"]["runtime"]["image"] == (
-        "ghcr.io/ryrobes/rvbbit-python-runtime:9.9.9"
+        "ghcr.io/ryrobes/calliope-python-runtime:9.9.9"
+    )
+
+    mcp_gateway = by_id["runtimes/mcp-gateway"]
+    assert mcp_gateway["catalog_entry"]["name"] == "mcp_gateway"
+    assert mcp_gateway["catalog_entry"]["runtime_image"] == (
+        "ghcr.io/ryrobes/calliope-mcp-gateway:9.9.9"
+    )
+    # dlt-mirror uses the generic rvbbit-capability-<name> repository, not a
+    # calliope-capability-* rename.
+    dlt_mirror = by_id["data/dlt-mirror"]
+    assert dlt_mirror["catalog_entry"]["name"] == "dlt_mirror"
+    assert dlt_mirror["catalog_entry"]["runtime_image"] == (
+        "ghcr.io/ryrobes/rvbbit-capability-dlt-mirror:9.9.9"
     )
 
     reranker = by_id["rerank/bge-reranker-base"]

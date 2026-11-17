@@ -5,6 +5,9 @@
 //! and runs handler code against JSON inputs. This module keeps a thread-safe
 //! cache of handler specs so prewarm pool workers can call the sidecar without
 //! doing SPI from worker threads.
+//!
+//! `http://rvbbit-python-runtime:8080` is the container DNS name from the
+//! capability `python_runtime`. The published image is `calliope-python-runtime`.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock, RwLock};

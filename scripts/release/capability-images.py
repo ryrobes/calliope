@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Build and optionally push selected Warren capability images."""
+"""Build and optionally push selected Warren capability images.
+
+Repository names come from the capability catalog. Calliope's Python and MCP
+runtimes are calliope-python-runtime and calliope-mcp-gateway
+(release/calliope-release.json runtime_image_names). data/dlt-mirror stays
+rvbbit-capability-dlt-mirror, the same rvbbit-capability-<name> rule as the
+other packs.
+"""
 from __future__ import annotations
 
 import argparse

@@ -26,8 +26,8 @@ Runtime/system capabilities get short names:
 
 | Catalog id | Image |
 |---|---|
-| `runtimes/python-runtime` | `ghcr.io/ryrobes/rvbbit-python-runtime:<version>` |
-| `runtimes/mcp-gateway` | `ghcr.io/ryrobes/rvbbit-mcp-gateway:<version>` |
+| `runtimes/python-runtime` | `ghcr.io/ryrobes/calliope-python-runtime:<version>` |
+| `runtimes/mcp-gateway` | `ghcr.io/ryrobes/calliope-mcp-gateway:<version>` |
 | `smoke/warren-echo` | `ghcr.io/ryrobes/rvbbit-warren-smoke-echo:<version>` |
 
 Model and example packs use `rvbbit-capability-<pack-name>`. The table below
@@ -150,8 +150,10 @@ make release-public-check RELEASE_VERSION=1.0.0 IMAGE_NAMESPACE=ryrobes
 ```
 
 The default public check covers the three product images plus
-`rvbbit-python-runtime`, `rvbbit-mcp-gateway`, and
-`rvbbit-warren-smoke-echo`. To verify the full catalog after a
+`calliope-python-runtime`, `calliope-mcp-gateway`, and
+`rvbbit-warren-smoke-echo`. `data/dlt-mirror` stays
+`rvbbit-capability-dlt-mirror`, the same `rvbbit-capability-<name>` rule as
+every other pack. To verify the full catalog after a
 `--with-capabilities` release, run the checker with `--with-capabilities`.
 
 Or as a release gate after a push:
