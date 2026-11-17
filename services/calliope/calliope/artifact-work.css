@@ -1,0 +1,50 @@
+.stage-builds[hidden],.artifact-build button[hidden]{display:none!important}
+.stage-builds{position:sticky;top:12px;z-index:4;display:flex;align-items:start;gap:12px;max-width:100%;width:max-content;padding:12px 20px;overflow-x:auto;box-sizing:border-box;color:var(--workspace-text);font:13px/1.4 var(--workspace-font)}
+.artifact-build{flex:none;width:clamp(320px,56vw,760px);max-width:min(100%,calc(100vw - 64px));box-sizing:border-box;border:1px solid var(--workspace-line);border-radius:12px;background:color-mix(in oklch,var(--workspace-bg) 86%,transparent);backdrop-filter:blur(18px);box-shadow:0 8px 28px #0002;overflow:hidden;transition:opacity .5s}
+.artifact-build[data-phase=published]{opacity:.5}
+.artifact-build-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px}
+.artifact-build-head>div{min-width:0}
+.artifact-build-byline{color:var(--workspace-muted);font-size:11px;margin-bottom:3px}
+.artifact-build-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.artifact-build-expand,.artifact-build-dialog button{appearance:none;border:1px solid var(--workspace-line);border-radius:6px;background:transparent;color:var(--workspace-text);font:inherit;padding:4px 9px;cursor:pointer}
+.artifact-build-expand:hover,.artifact-build-dialog button:hover{background:var(--workspace-wash)}
+.artifact-build button:focus-visible,.artifact-build-dialog button:focus-visible{outline:2px solid var(--workspace-accent);outline-offset:2px}
+.artifact-build-scene{display:grid;grid-template-columns:minmax(0,1fr) clamp(88px,25%,188px);overflow:hidden;border-block:1px solid var(--workspace-line);background:color-mix(in oklch,var(--workspace-bg) 80%,transparent)}
+.artifact-build-preview{position:relative;width:100%;min-width:0;min-height:210px;aspect-ratio:1040/650;overflow:hidden}
+.artifact-build-preview::before{content:'Preview taking shape';position:absolute;inset:0;display:grid;place-items:center;padding:20px;color:var(--workspace-muted);font-size:12px;text-align:center}
+.has-preview .artifact-build-preview::before{display:none}
+.artifact-build-code{position:relative;min-width:0;border-left:1px solid var(--workspace-line);background:var(--workspace-wash)}
+.artifact-build-code-label{padding:10px 14px;color:var(--workspace-muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.artifact-build-frame{position:absolute;inset:0;width:1040px;height:650px;border:0;transform-origin:top left;pointer-events:none;background:var(--workspace-bg)}
+.artifact-build-minimap{position:absolute;inset:36px 14px 14px;display:grid;grid-template-rows:repeat(72,minmax(0,1fr));gap:1px;opacity:.9;overflow:hidden}
+.artifact-build-minimap i{display:block;align-self:center;width:var(--length);height:3px;max-height:100%;border-radius:2px;background:var(--workspace-accent);opacity:var(--tone)}
+.artifact-build-caption{grid-column:1/-1;padding:6px 10px;border-top:1px solid var(--workspace-line);font-size:10px;color:var(--workspace-muted);background:color-mix(in oklch,var(--workspace-bg) 90%,transparent)}
+.artifact-build-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;color:var(--workspace-muted);font-size:11px}
+.artifact-build-foot small{font-size:10px;white-space:nowrap}
+.artifact-build-foot>span::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:6px;background:var(--workspace-accent)}
+.just-updated:not(.is-quiet) .artifact-build-minimap{animation:artifact-build-ink .9s ease-out}
+.is-quiet .artifact-build-foot>span::before{background:var(--workspace-muted);opacity:.5}
+@keyframes artifact-build-ink{from{filter:brightness(1.9)}to{filter:brightness(1)}}
+.stage-scroll.is-canvas .stage-builds{position:absolute;top:12px;left:0;max-width:calc(100% - 24px);z-index:4}
+.artifact-build-dialog{width:min(1100px,90vw);height:min(800px,85vh);padding:0;border:1px solid var(--workspace-line);border-radius:12px;color:var(--workspace-text);background:var(--workspace-bg);font:14px/1.4 var(--workspace-font);overflow:hidden}
+.artifact-build-dialog[open]{display:flex;flex-direction:column}
+.artifact-build-dialog::backdrop{background:#0008;backdrop-filter:blur(4px)}
+.artifact-build-dialog header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px}
+.artifact-build-dialog p{flex:none;margin:0;padding:0 18px 14px;color:var(--workspace-muted);font-size:12px}
+.artifact-build-dialog-preview{position:relative;flex:1;min-height:0;overflow:hidden;border-top:1px solid var(--workspace-line)}
+.artifact-build-dialog .artifact-build-frame{width:100%;height:100%}
+@media(prefers-reduced-motion:reduce){.artifact-build,.artifact-build-minimap{animation:none!important;transition:none!important}}
+
+.artifact-build-image{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;background:var(--workspace-bg)}
+.artifact-build-transition{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;background:var(--workspace-bg)}
+.artifact-app-controls{display:flex;gap:6px;align-items:center;padding:8px 12px;border-top:1px solid var(--workspace-line);flex-wrap:wrap}
+.artifact-app-controls[hidden]{display:none}
+.artifact-build[data-kind="a2ui"] .artifact-build-code{display:none}
+.artifact-build[data-kind="a2ui"] .artifact-build-scene{grid-template-columns:minmax(0,1fr)}
+.artifact-build[data-kind="a2ui"] .artifact-build-preview{aspect-ratio:16/9;max-height:440px}
+.artifact-app-controls button{font:inherit;font-size:12px;color:var(--workspace-muted);border:1px solid transparent;border-radius:6px;background:transparent;padding:5px 9px;cursor:pointer}
+.artifact-app-controls button[aria-pressed="true"]{color:var(--workspace-text);background:color-mix(in oklch,var(--workspace-text) 9%,transparent);border-color:var(--workspace-line)}
+.artifact-app-controls button:last-child{margin-left:auto}
+.artifact-app-interactive{flex:1;min-height:0;display:flex;justify-content:center;overflow:hidden;border-top:1px solid var(--workspace-line)}
+.artifact-app-interactive iframe{height:100%;width:100%;border:0;background:var(--workspace-bg)}
+.artifact-app-interactive iframe[data-device="phone"]{width:390px;max-width:100%}

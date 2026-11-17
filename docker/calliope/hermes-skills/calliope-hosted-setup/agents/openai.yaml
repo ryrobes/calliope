@@ -1,0 +1,4 @@
+interface:
+  display_name: "Calliope Hosted Setup"
+  short_description: "Guide hosted first boot and proof"
+  default_prompt: "Use $calliope-hosted-setup to guide this hosted appliance through first boot."

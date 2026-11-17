@@ -1,0 +1,69 @@
+api_version: rvbbit.capability/v1
+kind: hf_backend
+name: e5_small_v2
+title: E5 Small Embeddings
+description: Small, fast E5 embeddings useful for CPU-friendly retrieval experiments and lightweight semantic joins.
+license: mit
+tags: [embedding, retrieval, cpu-friendly, semantic-join]
+source:
+  provider: huggingface
+  model: intfloat/e5-small-v2
+  url: https://huggingface.co/intfloat/e5-small-v2
+runtime:
+  template: hf-rvbbit-fastapi
+  handler: embedding
+  device: auto
+backend:
+  name: embed_e5_small
+  transport: rvbbit
+  batch_size: 128
+  max_concurrent: 2
+  timeout_ms: 120000
+  description: intfloat/e5-small-v2 sentence embeddings.
+operators:
+  - name: embed_e5_small
+    description: Return an E5-small embedding as JSON. For best retrieval quality, prefix inputs with `query:` or `passage:`.
+    arg_names: [text]
+    arg_types: [text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      text: "{{ inputs.text }}"
+  - name: semantic_embed
+    description: Return an embedding vector for semantic retrieval workflows, backed by E5 small.
+    arg_names: [text]
+    arg_types: [text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      text: "{{ inputs.text }}"
+  - name: similar_to
+    description: Cosine similarity in [0,1] between two text strings using E5 small embeddings.
+    arg_names: [left_text, right_text]
+    arg_types: [text, text]
+    return_type: float8
+    parser: score_0_1
+    steps:
+      - name: left_embedding
+        kind: specialist
+        specialist: embed_e5_small
+        inputs:
+          text: "query: {{ inputs.left_text }}"
+      - name: right_embedding
+        kind: specialist
+        specialist: embed_e5_small
+        inputs:
+          text: "passage: {{ inputs.right_text }}"
+      - name: score
+        kind: code
+        fn: cosine_similarity
+        inputs:
+          left: "{{ steps.left_embedding.output }}"
+          right: "{{ steps.right_embedding.output }}"
+smoke:
+  inputs:
+    - text: "query: refund request from angry customer"
+      left_text: refund request from angry customer
+      right_text: customer asking for money back after duplicate charge
+  sql:
+    - "SELECT jsonb_array_length(rvbbit.embed_e5_small('query: hello world'));"

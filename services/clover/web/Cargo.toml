@@ -1,0 +1,29 @@
+[package]
+name = "clover-web"
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "SSRF-safe web and document extraction sidecar for Clover"
+
+[dependencies]
+anydoc = "=0.1.3"
+axum = { version = "0.8", features = ["http1", "json", "tokio"] }
+firecrawl-html-extractor = { package = "html-extractor", git = "https://github.com/firecrawl/html-extractor", rev = "0a2b7432a20e356c2254f17e1b0acb2e79d88917" }
+futures-util = "0.3"
+hex = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["brotli", "deflate", "gzip", "json", "rustls-tls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+# This service has its own image and dependency lock.
+[workspace]

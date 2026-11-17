@@ -1,0 +1,431 @@
+"""Focused contracts for governed metrics across Gallery, Home, Brief, and Stage."""
+from __future__ import annotations
+
+import inspect
+import math
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
+sys.path.insert(0, str(HERE))
+import calliope  # noqa: E402
+import server  # noqa: E402
+
+
+class _Result:
+    def __init__(self, rows):
+        self.rows = rows if isinstance(rows, list) else ([rows] if rows else [])
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+def test_metric_identity_is_parameter_aware_order_independent_and_strict_json():
+    north_a = server._metric_canonical_key(
+        "recognized_revenue", {"region": "North", "window": 30},
+    )
+    north_b = server._metric_canonical_key(
+        "recognized_revenue", {"window": 30, "region": "North"},
+    )
+    south = server._metric_canonical_key(
+        "recognized_revenue", {"region": "South", "window": 30},
+    )
+
+    assert north_a == north_b
+    assert north_a != south
+    assert north_a.startswith("metric:recognized_revenue:")
+    assert calliope._metric_lineage_key(
+        "recognized_revenue", {"region": "North", "window": 30},
+    ) == calliope._metric_lineage_key(
+        "recognized_revenue", {"window": 30, "region": "North"},
+    )
+    with pytest.raises(ValueError, match="JSON object"):
+        server._metric_params(["North"])
+    with pytest.raises(ValueError, match="JSON values"):
+        server._metric_params({"value": math.nan})
+
+
+def test_metric_display_and_trend_use_governed_direction_not_arrow_color():
+    definition = {
+        "name": "support_backlog",
+        "labels": {
+            "display": {
+                "title": "Open support backlog",
+                "unit": "tickets",
+                "decimals": 0,
+                "preferred_direction": "lower",
+            }
+        },
+    }
+    display = server._metric_display(definition)
+    falling = server._metric_trend([
+        {"numeric_value": 120, "observation_id": 1},
+        {"numeric_value": 90, "observation_id": 2},
+    ], display["preferred_direction"])
+    rising = server._metric_trend([
+        {"numeric_value": 90, "observation_id": 2},
+        {"numeric_value": 120, "observation_id": 3},
+    ], display["preferred_direction"])
+
+    assert server._metric_title(definition) == "Open support backlog"
+    assert display["preferred_direction"] == "lower"
+    assert display["decimals"] == 0
+    assert falling["direction"] == "down" and falling["meaning"] == "good"
+    assert rising["direction"] == "up" and rising["meaning"] == "bad"
+
+
+def test_metric_display_canonicalizes_percentage_semantics_for_home_pins():
+    named_rate = server._metric_display({
+        "name": "applicant_conversion_rate",
+        "labels": {"display": {"title": "Applicant rate", "decimals": 2}},
+    })
+    declared_unit = server._metric_display({
+        "name": "applicant_conversion",
+        "labels": {"display": {"unit": "%", "decimals": 2}},
+    })
+    explicit = server._metric_display({
+        "name": "applicant_conversion_rate",
+        "labels": {"display": {"format": "ratio", "decimals": 4}},
+    })
+    ordinary = server._metric_display({
+        "name": "open_support_cases",
+        "labels": {"display": {"unit": "tickets", "decimals": 0}},
+    })
+
+    assert named_rate.get("format") is None
+    assert named_rate["decimals"] == 2
+    assert declared_unit["format"] == "percent"
+    assert explicit["format"] == "ratio"
+    assert ordinary.get("format") is None
+
+
+def test_metric_gallery_range_buckets_history_but_keeps_latest_value(monkeypatch):
+    definition = {
+        "name": "monthly_revenue",
+        "version": 4,
+        "description": "Recognized revenue.",
+        "params": {},
+        "grain": "company",
+        "labels": {"display": {"preferred_direction": "higher"}},
+        "has_check": True,
+        "category": "Finance",
+        "subcategory": "Revenue",
+        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+    series = [{
+        "observation_id": observation_id,
+        "metric_name": "monthly_revenue",
+        "metric_version": 4,
+        "value": value,
+        "verdict": {"ok": True},
+        "status": "healthy",
+        "trigger": "schedule",
+        "params": {},
+        "data_as_of": datetime(2026, 8, day, tzinfo=timezone.utc),
+        "observed_at": datetime(2026, 8, day, 1, tzinfo=timezone.utc),
+    } for observation_id, value, day in ((40, 100, 1), (41, 110, 4))]
+    latest = [{**series[-1], "observation_id": 42, "value": 999}]
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=None):
+            if "FROM rvbbit.metric_catalog" in query and "GROUP BY" not in query:
+                return _Result([definition])
+            if "date_bin" in query:
+                assert params == ("3 days", ["monthly_revenue"], 90)
+                return _Result(series)
+            if "DISTINCT ON (o.metric_name)" in query:
+                assert params == (["monthly_revenue"],)
+                return _Result(latest)
+            if "GROUP BY category" in query:
+                return _Result([{"category": "Finance", "count": 1}])
+            raise AssertionError(query)
+
+    monkeypatch.setattr(server, "_conn", lambda: Connection())
+    monkeypatch.setattr(server, "_metric_user_relations", lambda _owner: (set(), set()))
+
+    payload = server._metric_catalog_snapshot(
+        owner="analyst@example.com", days="90",
+    )
+
+    assert payload["range_days"] == 90
+    assert payload["metrics"][0]["snapshot"]["value"] == 999
+    assert [point["value"] for point in payload["metrics"][0]["series"]] == [100, 110]
+    assert payload["metrics"][0]["trend"]["percent"] == pytest.approx(10)
+    with pytest.raises(ValueError, match="week, month, or quarter"):
+        server._metric_catalog_snapshot(days=14)
+
+
+def test_metric_ticks_keep_restatements_and_use_latest_observation(monkeypatch):
+    stamp = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    rows = [{
+        "observation_id": i, "metric_name": "young_metric", "metric_version": 1,
+        "value": value, "params": {}, "data_as_of": stamp,
+        "observed_at": stamp + timedelta(days=i),
+    } for i, value in [(21, 100), (22, 80), (23, 120)]]
+    # The business date can move backwards on a later refresh. The latest
+    # recorded reading must still be the value and the final chart point.
+    rows[-1]["data_as_of"] = stamp - timedelta(days=7)
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, query, params=None):
+            if "FROM rvbbit.metric_catalog" in query and "GROUP BY" not in query:
+                return _Result([{"name": "young_metric", "version": 1, "category": "Core"}])
+            if "FROM rvbbit.metric_default_observations" in query:
+                assert params == (["young_metric"], 24)
+                assert "ORDER BY o.observed_at DESC,o.observation_id DESC LIMIT %s" in query
+                assert "ORDER BY h.metric_name,h.observed_at,h.observation_id" in query
+                assert "metric_default_observations" in query
+                assert "DISTINCT" not in query and "date_bin" not in query
+                assert "interval '1 day'" not in query
+                return _Result(rows)
+            if "GROUP BY category" in query: return _Result([])
+            raise AssertionError(query)
+
+    monkeypatch.setattr(server, "_conn", lambda: Connection())
+    monkeypatch.setattr(server, "_metric_user_relations", lambda _owner: (set(), set()))
+    payload = server._metric_catalog_snapshot(category="Core", ticks="24")
+    metric = payload["metrics"][0]
+    assert payload["range_days"] is None and payload["tick_limit"] == 24
+    assert metric["series_scope"] == "ticks"
+    assert [p["observation_id"] for p in metric["series"]] == [21, 22, 23]
+    assert metric["snapshot"]["value"] == 120
+    assert metric["trend"]["percent"] == pytest.approx(20)
+    assert metric["trend"]["basis"] == "First to latest of 3 recent readings"
+    rows[:] = rows[-1:]
+    metric = server._metric_catalog_snapshot(ticks=24)["metrics"][0]
+    assert len(metric["series"]) == 1 and metric["trend"] is None
+    rows.clear()
+    metric = server._metric_catalog_snapshot(ticks=24)["metrics"][0]
+    assert metric["series"] == [] and metric["snapshot"] is None
+
+
+@pytest.mark.parametrize("ticks", ["", "invalid", "2.5", 0, 1, -24, 121])
+def test_metric_ticks_reject_invalid_or_unbounded_requests(ticks):
+    with pytest.raises(ValueError, match="ticks must be an integer from 2 to 120"):
+        server._metric_catalog_snapshot(ticks=ticks)
+
+
+def test_metric_home_handle_tracks_latest_observation_without_replaying_sql(monkeypatch):
+    monkeypatch.setattr(server, "_metric_detail_snapshot", lambda *args, **kwargs: {
+        "name": "recognized_revenue",
+        "title": "Recognized revenue",
+        "description": "Booked revenue recognized in the selected region.",
+        "version": 7,
+        "grain": "company",
+        "category": "Finance",
+        "subcategory": "Revenue",
+        "parameter_defaults": {"region": "All"},
+        "params": {"region": "North"},
+        "display": {"currency": "USD", "preferred_direction": "higher"},
+        "canonical_key": server._metric_canonical_key(
+            "recognized_revenue", {"region": "North"},
+        ),
+        "snapshot": {
+            "observation_id": 42, "numeric_value": 125000, "value": 125000,
+            "data_as_of": "2026-08-02T12:00:00+00:00",
+        },
+        "series": [{"observation_id": 41, "numeric_value": 120000}],
+        "trend": {"direction": "up", "meaning": "good", "percent": 4.16},
+        "source_tables": ["finance.ledger"],
+    })
+
+    item = server._semantic_home_resolve_handle({
+        "kind": "metric",
+        "name": "recognized_revenue",
+        "params": {"region": "North"},
+    })
+
+    assert item["kind"] == "metric"
+    assert item["source"]["tracking"] == "latest"
+    assert item["source"]["pinned_version"] == 7
+    assert item["snapshot"]["observation_id"] == 42
+    assert item["replayable"] is False
+    assert item["trail"][1]["handle"] == {
+        "kind": "db_table", "table": "finance.ledger",
+    }
+    query = parse_qs(urlparse(item["open_url"]).query)
+    assert query["view"] == ["metrics"]
+    assert query["metric"] == ["recognized_revenue"]
+    assert '"region":"North"' in query["params"][0]
+
+
+def test_quiet_metric_follow_projects_durable_observation_into_personal_brief():
+    now = datetime(2026, 8, 2, 15, tzinfo=timezone.utc)
+    canonical = server._metric_canonical_key("active_accounts", {"segment": "SMB"})
+    row = {
+        "id": "2bf4e342-fb2d-4b07-9a0c-20533ccf442c",
+        "metric_name": "active_accounts",
+        "params": {"segment": "SMB"},
+        "canonical_key": canonical,
+        "definition_version": 3,
+        "description": "Accounts with activity in the last 30 days.",
+        "grain": "company",
+        "category": "Growth",
+        "subcategory": "Accounts",
+        "labels": {"display": {"title": "Active accounts"}},
+        "observation_id": 12,
+        "metric_version": 3,
+        "value": {"value": 220},
+        "numeric_value": 220,
+        "previous_observation_id": 11,
+        "previous_value": 200,
+        "status": "passing",
+        "verdict": {"ok": True},
+        "data_as_of": now,
+        "observed_at": now,
+    }
+    queries = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params):
+            queries.append((query, params))
+            return _Result([row])
+
+    items, coverage, warnings = calliope._brief_followed_metric_observations(
+        Connection, "analyst@example.com", now - timedelta(days=1), now + timedelta(days=1),
+    )
+
+    assert warnings == []
+    assert len(items) == 1
+    assert items[0]["kind"] == "metric"
+    assert items[0]["title"] == "Active accounts"
+    assert items[0]["source"] == "Metrics in Briefs"
+    assert "10.0% up" in items[0]["summary"]
+    assert items[0]["provenance"]["brief_section"] == "data_moved"
+    assert items[0]["provenance"]["viewer_relation"]["kind"] == "metric_follow"
+    assert items[0]["handle"]["params"] == {"segment": "SMB"}
+    assert coverage[0]["count"] == 1
+    assert coverage[0]["label"] == "Metrics in Briefs"
+    assert "metric_observations" in queries[0][0]
+    assert "NOT EXISTS" in queries[0][0]  # A Home pin owns the Brief projection once pinned.
+
+    row["data_as_of"] = now + timedelta(days=3)
+    future_items, _, _ = calliope._brief_followed_metric_observations(
+        Connection, "analyst@example.com", now - timedelta(days=1), now + timedelta(days=1),
+    )
+    assert future_items == []
+
+
+def test_gallery_metric_schema_routes_and_renderers_ship_as_one_contract():
+    migration = (
+        ROOT / "crates" / "pg_rvbbit" / "sql" / "migrations"
+        / "0236_calliope_metrics.sql"
+    ).read_text(encoding="utf-8")
+    registry = (ROOT / "crates" / "pg_rvbbit" / "src" / "migrations.rs").read_text(
+        encoding="utf-8"
+    )
+    backend = (HERE / "calliope.py").read_text(encoding="utf-8")
+    landing = (HERE / "server.py").read_text(encoding="utf-8")
+    stage_script = (HERE / "calliope" / "calliope.js").read_text(encoding="utf-8")
+    stage_css = (HERE / "calliope" / "calliope.css").read_text(encoding="utf-8")
+
+    assert "'artifact', 'artifact_object', 'metric'" in migration
+    assert "CREATE TABLE IF NOT EXISTS rvbbit.calliope_metric_follows" in migration
+    assert "UNIQUE (owner_email, canonical_key)" in migration
+    assert "0236_calliope_metrics" in registry
+    assert "CREATE TABLE IF NOT EXISTS rvbbit.calliope_metric_follows" in calliope._METRIC_FOLLOW_DDL
+    assert "conn.execute(_METRIC_FOLLOW_DDL)" in inspect.getsource(calliope.ensure_tables)
+    assert 'data-gallery-view="metrics"' in landing
+    assert "initial.searchParams.get('view')==='metrics'" in landing
+    assert 'id="metric-lens"' in landing
+    assert 'data-home-metric-open=' in landing
+    assert "if(open)openMetric(open.dataset.homeMetricOpen,params,90,true)" in landing
+    assert "var open=metric?'<button" in landing
+    assert "Current instance" in landing
+    assert "Definition default" in landing
+    assert "function metricViewActive()" in landing
+    assert "!metricViewActive()&&queryText().length>=2" in landing
+    assert "Brief me includes meaningful changes in future Briefs" in landing
+    assert "✓ In Briefs" in landing
+    assert '>In Briefs</button>' in landing
+    assert "/api/gallery/metrics/{name}" in landing
+    assert "/api/calliope/metrics/{name}/follow" in landing
+    assert "/api/calliope/gallery/metrics/{name}/ask" in backend
+    assert '"frozen": True' in backend
+    assert "Do not silently replace the frozen context" in backend
+    assert "function renderMetric(surface)" in stage_script
+    assert "payload.frozen" in stage_script
+    assert ".metric-frozen" in stage_css
+    assert ".metric-delta.good" in stage_css
+    assert ".metric-delta.bad" in stage_css
+
+
+def test_metric_gallery_groups_categories_and_explains_semantic_movement():
+    landing = (HERE / "server.py").read_text(encoding="utf-8")
+    landing += (HERE / "theme" / "metric-cards.js").read_text(encoding="utf-8")
+    landing += (HERE / "theme" / "metric-cards.css").read_text(encoding="utf-8")
+    docs = (ROOT / "docs" / "METRICS.md").read_text(encoding="utf-8")
+
+    assert 'class="metric-gallery-sections"' in landing
+    assert "function groupedMetrics(metrics)" in landing
+    assert "function categorySectionMarkup(group,index)" in landing
+    assert "groupedMetrics(visible).map(categorySectionMarkup)" in landing
+    assert "metric-card-kicker" not in landing
+    assert "metric-card-delta good" not in landing  # meaning is data-driven, never assumed.
+    assert "metric-card-delta '+meaning" in landing
+    assert "var(--success,#58c982)" in landing
+    assert "var(--danger,#df765f)" in landing
+    assert ".metric-gallery-card:hover .metric-card-actions" in landing
+    assert ".metric-card-chart{position:absolute;z-index:-1;inset:" in landing
+    assert 'data-metric-range="7"' in landing
+    assert 'data-metric-range="7" aria-pressed="true">Week' in landing
+    assert 'data-metric-range="90"' in landing
+    assert "fetch('/api/gallery/metrics?limit=600&days='+days" in landing
+    assert "function statusMarkup(status)" in landing
+    assert "metric-card-status missing" in landing
+    assert ".metric-card-value{position:absolute;top:18px;right:18px" in landing
+    assert ".metric-card-foot span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" in landing
+    assert "Higher is favorable" in landing
+    assert "Lower is favorable" in landing
+    assert "labels.display" in docs
+    assert '`preferred_direction`' in docs
+    assert '`"neutral"` (the default)' in docs
+
+
+def test_metric_browser_remains_available_without_artifacts_or_calliope(monkeypatch):
+    monkeypatch.setattr(calliope, "is_enabled", lambda: False)
+
+    page = server._landing_html([], "reader@example.com")
+
+    assert 'data-gallery-view="metrics"' in page
+    assert 'id="metrics-browser"' in page
+    assert 'id="artifact-browser"' in page
+    assert 'data-calliope="false"' in page
+
+
+def test_gallery_identity_does_not_expose_the_expert_data_desktop(monkeypatch):
+    monkeypatch.setenv("LENS_PUBLIC_URL", "https://desktop.example")
+
+    page = server._landing_html([], "reader@example.com")
+
+    assert '<span class="calliope-brand-name">Calliope</span>' in page
+    assert '<span class="calliope-brand-byline">by RVBBIT.AI</span>' in page
+    assert 'class="calliope-brand-provenance"' in page
+    assert 'class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg"' in page
+    assert "DATA RABBIT" not in page
+    assert "Open Data Desktop" not in page
+    assert "https://desktop.example/" not in page
+    assert "Open DataRabbit" not in page

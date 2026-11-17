@@ -1,0 +1,198 @@
+x-rvbbit-secret-env: &rvbbit-secret-env
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+  GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+  GMEET_CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+
+services:
+  postgres:
+    image: ${RVBBIT_POSTGRES_IMAGE:-ghcr.io/ryrobes/rvbbit-postgres:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-postgres
+    environment:
+      <<: *rvbbit-secret-env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rvbbit}
+      POSTGRES_DB: ${POSTGRES_DB:-rvbbit}
+      RVBBIT_DUCK_BACKEND: ${RVBBIT_DUCK_BACKEND:-true}
+    ports:
+      - "${RVBBIT_POSTGRES_PORT:-55433}:5432"
+    volumes:
+      - rvbbit_pgdata:/var/lib/postgresql
+      - rvbbit_staging:/staging
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/rvbbit/tuning.conf
+    healthcheck:
+      # Reject the temporary server used by docker-entrypoint during init;
+      # dependents must wait for the final PID 1 postgres process.
+      test: ["CMD-SHELL", "grep -qx postgres /proc/1/comm && pg_isready -U postgres -d ${POSTGRES_DB:-rvbbit}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    # Without this, a host reboot (or docker daemon restart) leaves the whole
+    # stack headless: lens/warren restart but postgres stays down and warren
+    # crash-loops. Found live in the v3.0.0 fresh-deploy test.
+    restart: unless-stopped
+
+  # One-shot: apply stacked schema migrations on EVERY `up`. First boot already
+  # migrates via docker-entrypoint-initdb.d, but initdb only runs on an EMPTY
+  # volume — so an UPGRADE (new image, existing data volume) would otherwise
+  # never receive new migrations (route bindings, route_model factory seed,
+  # etc.). rvbbit.migrate() is idempotent ("up to date" when nothing pending).
+  migrate:
+    image: ${RVBBIT_POSTGRES_IMAGE:-ghcr.io/ryrobes/rvbbit-postgres:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-rvbbit}
+    entrypoint: ["psql"]
+    command:
+      - -h
+      - postgres
+      - -U
+      - postgres
+      - -d
+      - ${POSTGRES_DB:-rvbbit}
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - CREATE EXTENSION IF NOT EXISTS pg_rvbbit; SELECT rvbbit.migrate();
+      - -c
+      - ALTER EXTENSION pg_rvbbit UPDATE
+    restart: "no"
+
+  lens:
+    image: ${RVBBIT_LENS_IMAGE:-ghcr.io/ryrobes/rvbbit-lens:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-lens
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *rvbbit-secret-env
+      RVBBIT_LENS_HOME: /data
+      # First-boot convenience: seed a working connection to this stack's own
+      # Postgres so the desktop connects with zero typing (server-side
+      # resolution means the service name, not localhost). Only applies when
+      # no connections.json exists yet — user edits/deletions stick.
+      RVBBIT_LENS_SEED_DSN: ${RVBBIT_LENS_SEED_DSN:-postgresql://postgres:${POSTGRES_PASSWORD:-rvbbit}@postgres:5432/${POSTGRES_DB:-rvbbit}}
+      RVBBIT_LOCAL_WORK_ROOT: ${RVBBIT_LOCAL_WORK_ROOT:-/data}
+      RVBBIT_CAPABILITY_ROOT: ${RVBBIT_CAPABILITY_ROOT:-/usr/share/rvbbit/capabilities}
+      RVBBIT_CAPABILITY_CLI: ${RVBBIT_CAPABILITY_CLI:-/usr/share/rvbbit/capabilities/tools/rvbbit-capability}
+      DOCKER_HOST: ${RVBBIT_DOCKER_HOST:-unix:///var/run/docker.sock}
+      RVBBIT_DOCKER_NETWORK: ${RVBBIT_DOCKER_NETWORK:-rvbbit_release}
+      # Local catalog installs run Compose from Lens. Forward the Meet policy
+      # settings and let Lens read the approved key file into GMEET_SA_KEY for
+      # the child sidecar (public capability manifests cannot bind host files).
+      GMEET_SA_KEY_FILE: /run/secrets/gmeet-service-account.json
+      GMEET_ADMIN_SUBJECT: ${GMEET_ADMIN_SUBJECT:-}
+      GMEET_SUBJECTS: ${GMEET_SUBJECTS:-}
+      GMEET_DOMAIN: ${GMEET_DOMAIN:-}
+      GMEET_DISCOVER_USERS: ${GMEET_DISCOVER_USERS:-true}
+      GMEET_MAX_SUBJECTS: ${GMEET_MAX_SUBJECTS:-500}
+      GMEET_LOOKBACK_DAYS: ${GMEET_LOOKBACK_DAYS:-29}
+      GMEET_CALENDAR_LOOKUP: ${GMEET_CALENDAR_LOOKUP:-true}
+      GMEET_AUTO_TRANSCRIBE: ${GMEET_AUTO_TRANSCRIBE:-false}
+      GMEET_AUTO_TRANSCRIBE_DAYS: ${GMEET_AUTO_TRANSCRIBE_DAYS:-7}
+      GMEET_DRIVE_ACL: ${GMEET_DRIVE_ACL:-true}
+      GMEET_ACL_MODE: ${GMEET_ACL_MODE:-calendar_invitees_strict}
+      GMEET_CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+      # The Hub (docs/HUB_PLAN.md): point these at a warehouse-mcp host to
+      # light up live-app embeds + thumbnails in the /?hub gallery. This
+      # stack doesn't run warehouse-mcp itself, so both pass straight through.
+      RVBBIT_APP_BASE: ${WAREHOUSE_PUBLIC_URL:-}
+      RVBBIT_APP_BASE_INTERNAL: ${RVBBIT_APP_BASE_INTERNAL:-}
+      WAREHOUSE_MCP_KEY: ${WAREHOUSE_MCP_KEY:-}
+    ports:
+      - "${RVBBIT_LENS_PORT:-3000}:3000"
+    volumes:
+      - rvbbit_lens:/data
+      - ${RVBBIT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${GMEET_SA_KEY_FILE:-/dev/null}:/run/secrets/gmeet-service-account.json:ro
+    restart: unless-stopped
+
+  warren:
+    image: ${RVBBIT_WARREN_AGENT_IMAGE:-ghcr.io/ryrobes/rvbbit-warren-agent:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-warren
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *rvbbit-secret-env
+      RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:-rvbbit}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      WARREN_NODE: ${WARREN_NODE:-compose-warren}
+      WARREN_WORK_DIR: /var/lib/rvbbit/warren
+      RVBBIT_DOCKER_NETWORK: ${RVBBIT_DOCKER_NETWORK:-rvbbit_release}
+      WARREN_LABELS: '${WARREN_LABELS:-{"capability":true,"docker":true,"gpu":false}}'
+      WARREN_CAPACITY: '${WARREN_CAPACITY:-{}}'
+      WARREN_METRICS_MS: ${WARREN_METRICS_MS:-10000}
+      WARREN_RECONCILE_MS: ${WARREN_RECONCILE_MS:-15000}
+      DOCKER_HOST: ${RVBBIT_DOCKER_HOST:-unix:///var/run/docker.sock}
+    volumes:
+      - ${RVBBIT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - rvbbit_warren:/var/lib/rvbbit/warren
+    restart: unless-stopped
+
+  # Document-brain extraction — ON BY DEFAULT: the brain must read
+  # pdf/docx/xlsx/pptx/images out of the box. 0047 pre-registered the
+  # extract_doc backend at this service name; nothing else to configure.
+  doc-extract:
+    image: ${RVBBIT_DOC_EXTRACT_IMAGE:-ghcr.io/ryrobes/rvbbit-doc-extract:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-doc-extract
+    volumes:
+      - rvbbit_staging:/staging
+    restart: unless-stopped
+
+  # Google Drive connector for brain remote sources — credential-gated, so it
+  # rides the "gdrive" profile: set GDRIVE_SA_KEY and start with
+  #   docker compose --profile gdrive -f docker/docker-compose.release.yml up -d
+  gdrive-connector:
+    profiles: ["gdrive"]
+    image: ${RVBBIT_GDRIVE_CONNECTOR_IMAGE:-ghcr.io/ryrobes/rvbbit-gdrive-connector:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-gdrive-connector
+    environment:
+      GDRIVE_SA_KEY: ${GDRIVE_SA_KEY:-}
+      CONNECTOR_TOKEN: ${GDRIVE_CONNECTOR_TOKEN:-}
+    volumes:
+      - rvbbit_staging:/staging
+    restart: unless-stopped
+
+  # Google Meet transcripts -> governed Brain documents. The REST poll is the
+  # reliable baseline; standard Cloud Pub/Sub can later accelerate notification
+  # without changing this source contract.
+  gmeet-connector:
+    profiles: ["gmeet"]
+    image: ${RVBBIT_GMEET_CONNECTOR_IMAGE:-ghcr.io/ryrobes/rvbbit-gmeet-connector:${RVBBIT_VERSION:-latest}}
+    container_name: rvbbit-gmeet-connector
+    environment:
+      GMEET_SA_KEY: ${GMEET_SA_KEY:-/run/secrets/gmeet-service-account.json}
+      GMEET_ADMIN_SUBJECT: ${GMEET_ADMIN_SUBJECT:-}
+      GMEET_SUBJECTS: ${GMEET_SUBJECTS:-}
+      GMEET_DOMAIN: ${GMEET_DOMAIN:-}
+      GMEET_DISCOVER_USERS: ${GMEET_DISCOVER_USERS:-true}
+      GMEET_MAX_SUBJECTS: ${GMEET_MAX_SUBJECTS:-500}
+      GMEET_LOOKBACK_DAYS: ${GMEET_LOOKBACK_DAYS:-29}
+      GMEET_CALENDAR_LOOKUP: ${GMEET_CALENDAR_LOOKUP:-true}
+      GMEET_AUTO_TRANSCRIBE: ${GMEET_AUTO_TRANSCRIBE:-false}
+      GMEET_AUTO_TRANSCRIBE_DAYS: ${GMEET_AUTO_TRANSCRIBE_DAYS:-7}
+      GMEET_DRIVE_ACL: ${GMEET_DRIVE_ACL:-true}
+      GMEET_ACL_MODE: ${GMEET_ACL_MODE:-calendar_invitees_strict}
+      CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+    volumes:
+      - ${GMEET_SA_KEY_FILE:-/dev/null}:/run/secrets/gmeet-service-account.json:ro
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ${RVBBIT_DOCKER_NETWORK:-rvbbit_release}
+
+volumes:
+  rvbbit_pgdata:
+  rvbbit_lens:
+  rvbbit_warren:
+  rvbbit_staging:

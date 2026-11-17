@@ -1,0 +1,33 @@
+# Optional GPU worker. Add to the Clover compose files only when wanted.
+# Fetch immutable weights once with:
+#   docker compose ... run --rm --no-deps clover-computer python3 models.py
+# Then start it and enable computer_decide using docker/clover/computer.routes.json.
+services:
+  clover-computer:
+    profiles: [computer-gpu]
+    image: calliope-clover-computer:selfhosted
+    build: ../services/clover/computer
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR:?Set CLOVER_CONFIG_DIR}/computer.env
+        format: raw
+    environment:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - clover_computer_models:/models
+    shm_size: 1gb
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  clover_computer_models:

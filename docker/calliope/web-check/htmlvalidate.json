@@ -1,0 +1,7 @@
+{
+  "extends": ["html-validate:recommended"],
+  "rules": {
+    "doctype-style": ["error", {"style": "uppercase"}],
+    "no-implicit-button-type": "error"
+  }
+}

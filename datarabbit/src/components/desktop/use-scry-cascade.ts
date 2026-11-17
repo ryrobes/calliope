@@ -1,0 +1,207 @@
+"use client"
+
+/**
+ * useScryCascade — the reactive "it" cascade, extracted from the original
+ * popover so the prompt-in-a-box and the full-screen Scry canvas share one
+ * source of truth. Pure logic: stages, race-guarded re-flow, no presentation.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject } from "react"
+import { randomUUID } from "@/lib/uuid"
+import type { DataSearchHit } from "@/lib/rvbbit/data-search"
+import { runScryStage, scopeFromHits, type ScryStage } from "@/lib/desktop/scry"
+
+export interface UseScryCascade {
+  stages: ScryStage[]
+  inputRefs: MutableRefObject<(HTMLInputElement | null)[]>
+  finalStage: ScryStage | undefined
+  finalHits: DataSearchHit[]
+  finalError: string | undefined
+  canRefine: boolean
+  setQuery: (i: number, q: string) => void
+  addStage: () => void
+  removeStage: (i: number) => void
+  onInputKey: (e: ReactKeyboardEvent<HTMLInputElement>, i: number) => void
+  submit: () => void
+}
+
+function emptyStage(): ScryStage {
+  return { id: randomUUID(), query: "", hits: [], loading: false }
+}
+
+export function useScryCascade(
+  connectionId: string | null,
+  open: boolean,
+  onSubmit: (chain: { query: string }[], hits: DataSearchHit[]) => void,
+  graph: string = "db_catalog",
+  /** Object-type filter (see scry-types). null/empty = every type. Toggling it
+   *  re-flows the cascade so results + rankings change. */
+  enabledTypes: Set<string> | null = null,
+  /** Restore a saved view: seed the cascade with these stage queries on open
+   *  (instead of a single empty stage) and run them. */
+  seedQueries: string[] | null = null,
+): UseScryCascade {
+  const [stages, setStagesState] = useState<ScryStage[]>([emptyStage()])
+  // Mirror in a ref so the async re-flow + key handlers read the latest stages.
+  const stagesRef = useRef(stages)
+  const runRef = useRef(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const onSubmitRef = useRef(onSubmit)
+  useEffect(() => {
+    onSubmitRef.current = onSubmit
+  }, [onSubmit])
+  const seedQueriesRef = useRef(seedQueries)
+  useEffect(() => {
+    seedQueriesRef.current = seedQueries
+  }, [seedQueries])
+
+  const setStages = useCallback((next: ScryStage[]) => {
+    stagesRef.current = next
+    setStagesState(next)
+  }, [])
+
+  // Patch one stage's result fields against the LATEST stages so a write that
+  // lands after the user edited another stage can't clobber their text.
+  const patch = useCallback(
+    (i: number, partial: Partial<ScryStage>) => {
+      setStages(stagesRef.current.map((s, idx) => (idx === i ? { ...s, ...partial } : s)))
+    },
+    [setStages],
+  )
+
+  // Re-flow stages [from..end]: each searches within the prior one's relations.
+  const recompute = useCallback(
+    async (from: number) => {
+      if (!connectionId) return
+      const myRun = ++runRef.current
+      let scope =
+        from === 0 ? null : await scopeFromHits(connectionId, graph, stagesRef.current[from - 1]?.hits ?? [])
+      if (runRef.current !== myRun) return
+      for (let i = from; i < stagesRef.current.length; i++) {
+        const q = stagesRef.current[i].query.trim()
+        if (!q) {
+          patch(i, { hits: [], loading: false, error: undefined })
+          scope = { nodeIds: new Set(), rels: new Set() }
+          continue
+        }
+        patch(i, { loading: true })
+        const { hits, error } = await runScryStage(connectionId, q, scope, graph, enabledTypes)
+        if (runRef.current !== myRun) return
+        patch(i, { hits, loading: false, error })
+        scope = await scopeFromHits(connectionId, graph, hits)
+        if (runRef.current !== myRun) return
+      }
+    },
+    [connectionId, patch, graph, enabledTypes],
+  )
+
+  // Re-flow the whole chain against the new graph when the source toggles.
+  const recomputeRef = useRef(recompute)
+  useEffect(() => {
+    recomputeRef.current = recompute
+  }, [recompute])
+  useEffect(() => {
+    if (open) void recomputeRef.current(0)
+  }, [graph, open, enabledTypes])
+
+  // On open: a fresh empty chain, OR — restoring a saved view — the seeded
+  // stages, run immediately. The graph + type filter are applied by the canvas
+  // before `open` flips true, so recompute here picks up the right scope.
+  // (Declared after recomputeRef so it doesn't forward-reference it.)
+  useEffect(() => {
+    if (!open) return
+    const t = setTimeout(() => {
+      const seed = seedQueriesRef.current
+      if (seed && seed.length > 0) {
+        setStages(seed.map((q) => ({ id: randomUUID(), query: q, hits: [], loading: false })))
+        runRef.current++
+        void recomputeRef.current(0)
+      } else {
+        setStages([emptyStage()])
+        runRef.current++
+        inputRefs.current[0]?.focus()
+      }
+    }, 30)
+    return () => clearTimeout(t)
+  }, [open, setStages])
+
+  const scheduleRecompute = useCallback(
+    (from: number) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => void recompute(from), 160)
+    },
+    [recompute],
+  )
+
+  const setQuery = useCallback(
+    (i: number, q: string) => {
+      setStages(stagesRef.current.map((s, idx) => (idx === i ? { ...s, query: q } : s)))
+      scheduleRecompute(i)
+    },
+    [setStages, scheduleRecompute],
+  )
+
+  const addStage = useCallback(() => {
+    const next = [...stagesRef.current, emptyStage()]
+    setStages(next)
+    const idx = next.length - 1
+    setTimeout(() => inputRefs.current[idx]?.focus(), 20)
+  }, [setStages])
+
+  const removeStage = useCallback(
+    (i: number) => {
+      if (stagesRef.current.length <= 1) return
+      const next = stagesRef.current.filter((_, idx) => idx !== i)
+      setStages(next)
+      scheduleRecompute(Math.max(0, i - 1))
+      setTimeout(() => inputRefs.current[Math.max(0, i - 1)]?.focus(), 20)
+    },
+    [setStages, scheduleRecompute],
+  )
+
+  const finalStage = useMemo(() => [...stages].reverse().find((s) => s.query.trim()), [stages])
+  const finalHits = useMemo(() => finalStage?.hits ?? [], [finalStage])
+  const finalError = finalStage?.error
+  const canRefine = !!stages[stages.length - 1]?.query.trim()
+
+  const submit = useCallback(() => {
+    const chain = stagesRef.current.filter((s) => s.query.trim()).map((s) => ({ query: s.query.trim() }))
+    if (chain.length === 0) return
+    const fs = [...stagesRef.current].reverse().find((s) => s.query.trim())
+    onSubmitRef.current(chain, fs?.hits ?? [])
+  }, [])
+
+  const onInputKey = useCallback(
+    (e: ReactKeyboardEvent<HTMLInputElement>, i: number) => {
+      if (e.key === "Enter") {
+        e.preventDefault()
+        submit()
+      } else if (e.key === "Tab" && !e.shiftKey) {
+        if (i === stagesRef.current.length - 1 && stagesRef.current[i].query.trim()) {
+          e.preventDefault()
+          addStage()
+        }
+      } else if (e.key === "Backspace" && stagesRef.current[i].query === "" && i > 0) {
+        e.preventDefault()
+        removeStage(i)
+      }
+    },
+    [submit, addStage, removeStage],
+  )
+
+  return {
+    stages,
+    inputRefs,
+    finalStage,
+    finalHits,
+    finalError,
+    canRefine,
+    setQuery,
+    addStage,
+    removeStage,
+    onInputKey,
+    submit,
+  }
+}

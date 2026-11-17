@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calliope · Desk</title>
+<link rel="stylesheet" href="/desk/desk.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand"><i>▦</i>CALLIOPE</span>
+  <nav class="views" role="tablist" aria-label="Views">
+    <button role="tab" aria-selected="true" data-view="today">Today</button>
+    <button role="tab" aria-selected="false" data-view="ask">Ask</button>
+    <button role="tab" aria-selected="false" data-view="board">Board</button>
+    <button role="tab" aria-selected="false" data-view="gallery">Gallery</button>
+  </nav>
+  <form class="searchbox" id="searchform">
+    <input id="searchinput" type="search" placeholder="Search the company brain…" autocomplete="off" spellcheck="false">
+    <kbd>⌘K</kbd>
+  </form>
+  <a class="notebook-link" href="/calliope" title="The full notebook">notebook →</a>
+</header>
+
+<div class="page">
+  <div class="view active" id="view-today">
+    <div class="today-head">
+      <h2 id="today-greeting">Today</h2>
+      <span class="date num" id="today-date"></span>
+    </div>
+    <div class="today-grid">
+      <div class="panel">
+        <h3>Decisions waiting · <b id="decision-count">0</b></h3>
+        <div id="decisions"><p class="empty">Nothing needs you right now.</p></div>
+        <div class="crew" id="crew" hidden>
+          <h3>Crew</h3>
+          <div id="crew-rows"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>The Edition</h3>
+        <div id="edition"><p class="empty">Quiet so far.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-ask">
+    <div class="metabar">
+      <span class="askquery" id="ask-query"></span>
+      <span class="meter num" id="ask-meter"></span>
+    </div>
+    <div id="ask-results"><p class="empty">Type a search above — a noun is enough.</p></div>
+  </div>
+
+  <div class="view" id="view-board">
+    <div class="boardbar">
+      <h2 class="boardname" id="board-name">Board</h2>
+      <span class="meter num" id="board-meter"></span>
+    </div>
+    <div class="kanban" id="kanban"><p class="empty">No work on the board yet. Cards appear here when Calliope or a specialist takes something on.</p></div>
+  </div>
+
+  <div class="view" id="view-gallery">
+    <iframe class="gallery-frame" src="/gallery" title="Artifact gallery" loading="lazy"></iframe>
+  </div>
+</div>
+
+<aside class="threadpanel" id="threadpanel" hidden aria-label="Conversation thread">
+  <div class="thead">
+    <div class="torigin">
+      <span class="tkind" id="thread-kind">◆ Thread</span>
+      <span class="tobj" id="thread-title"></span>
+    </div>
+    <div class="tacts">
+      <a id="thread-notebook" href="/calliope" title="Open in the full notebook">⛶</a>
+      <button id="thread-close" title="Back to where you were">✕</button>
+    </div>
+  </div>
+  <div class="tstream" id="thread-stream"></div>
+  <form class="tcomposer" id="thread-form">
+    <textarea id="thread-input" rows="1" placeholder="Ask about this…"></textarea>
+    <button class="tsend" type="submit" aria-label="Send">↑</button>
+  </form>
+</aside>
+
+<script src="/desk/desk.js"></script>
+</body>
+</html>

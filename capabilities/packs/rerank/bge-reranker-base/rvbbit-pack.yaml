@@ -1,0 +1,122 @@
+api_version: rvbbit.pack/v1
+id: rerank/bge-reranker-base
+name: bge_reranker_base
+title: BGE Reranker Base
+description: Smaller BGE cross-encoder reranker for query/document scoring and row ranking.
+license: mit
+tags:
+- rerank
+- retrieval
+- relevance
+- row
+- cpu-friendly
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: BAAI/bge-reranker-base
+  url: https://huggingface.co/BAAI/bge-reranker-base
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 1112206140
+    vram_required_bytes: 1390257675
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: rerank_bge_base
+  operators:
+  - rerank_bge_base_score
+  - rerank_bge_base_row
+  - about
+  - semantic_score
+  - means
+  - semantic_matches
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: rerank_score_shape
+    description: Score query/document relevance and assert a bounded score.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          score float8;
+          matched bool;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.rerank_bge_base_score(
+                  'suspicious login',
+                  'user had twelve failed logins from a new country'
+              ) INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'rerank_bge_base_score returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'object' OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected BGE reranker result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'reranker score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.rerank_bge_base_row(
+              'suspicious login',
+              '{"event":"login_failed","count":12,"country":"new","risk":"high"}'::jsonb
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'object' OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected BGE reranker row result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'reranker row score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.about(
+              'user had twelve failed logins from a new country',
+              'account takeover risk'
+          ) INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled about operator score out of range: %', score;
+          END IF;
+
+          SELECT rvbbit.semantic_score(
+              'user had twelve failed logins from a new country',
+              'account takeover risk'
+          ) INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled semantic_score out of range: %', score;
+          END IF;
+
+          SELECT rvbbit.means(
+              'user had twelve failed logins from a new country',
+              'account takeover risk'
+          ) INTO matched;
+          IF matched IS NULL THEN
+              RAISE EXCEPTION 'bundled means operator returned NULL';
+          END IF;
+
+          SELECT rvbbit.semantic_matches(
+              'user had twelve failed logins from a new country',
+              'account takeover risk',
+              '{"threshold":0.1}'::jsonb
+          ) INTO matched;
+          IF matched IS NULL THEN
+              RAISE EXCEPTION 'bundled semantic_matches operator returned NULL';
+          END IF;
+      END
+      $$;

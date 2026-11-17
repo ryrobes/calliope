@@ -1,0 +1,180 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 0208f2a..da9a355 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -1,6 +1,7 @@
+ """OpenAI-compatible API server platform adapter (aiohttp).
+ 
+-Serves /v1/chat/completions, /v1/responses, /v1/models, /v1/capabilities, /v1/commands
++Serves /v1/chat/completions, /v1/auxiliary/tts-rewrite (bounded one-shot TTS script rewrite
++through the configured auxiliary model), /v1/responses, /v1/models, /v1/capabilities, /v1/commands
+ (profile-scoped slash-command catalog, plus /execute and /prepare), /api/sessions,
+ /v1/runs, /api/jobs and /health* (full table: ``APIServerAdapter._http_route_table``); any
+ OpenAI-compatible frontend connects at http://localhost:8642/v1 with API_SERVER_KEY. Under
+@@ -1607,6 +1608,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+             ("POST", "/api/sessions/{session_id}/chat", self._handle_session_chat),
+             ("POST", "/api/sessions/{session_id}/chat/stream", self._handle_session_chat_stream),
+             ("POST", "/api/sessions/{session_id}/model", self._handle_session_model_lock),
++            ("POST", "/v1/auxiliary/tts-rewrite", self._handle_auxiliary_tts_rewrite),
+             ("POST", "/v1/chat/completions", self._handle_chat_completions),
+             ("POST", "/v1/responses", self._handle_responses),
+             ("GET", "/v1/responses/{response_id}", self._handle_get_response),
+@@ -3838,6 +3840,157 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+         return web.json_response(
+             {"object": "hermes.session.model_lock", "session_id": session_id, "runtime": runtime})
+ 
++    async def _handle_auxiliary_tts_rewrite(self, request: "web.Request") -> "web.Response":
++        """Run Calliope's supplied voice messages without an agent prompt.
++
++        This is deliberately narrower than ``/v1/chat/completions``: it has no
++        session, tools, memory, skills, SOUL, or Hermes system prompt.  The
++        configured Calliope-managed Background Tasks route is promoted from
++        fallback to primary for this latency-sensitive projection; a direct
++        ``auxiliary.tts_audio_tags`` task override still wins.
++        """
++        auth_err = self._check_auth(request)
++        if auth_err:
++            return auth_err
++        body, err = await self._read_json_body(request)
++        if err:
++            return err
++        if "messages" not in body or not set(body).issubset({"messages", "timeout_seconds"}):
++            return web.json_response(
++                _openai_error(
++                    "Only messages and timeout_seconds are accepted.",
++                    code="auxiliary_tts_invalid_request",
++                ),
++                status=400,
++            )
++        raw_timeout = body.get("timeout_seconds", 90)
++        if (
++            isinstance(raw_timeout, bool)
++            or not isinstance(raw_timeout, (int, float))
++            or raw_timeout != raw_timeout
++            or not 5 <= float(raw_timeout) <= 300
++        ):
++            return web.json_response(
++                _openai_error(
++                    "timeout_seconds must be a finite number from 5 through 300.",
++                    code="auxiliary_tts_invalid_timeout",
++                ),
++                status=400,
++            )
++        timeout_seconds = float(raw_timeout)
++        raw_messages = body.get("messages")
++        if not isinstance(raw_messages, list) or not 1 <= len(raw_messages) <= 12:
++            return web.json_response(
++                _openai_error(
++                    "messages must contain between 1 and 12 text messages.",
++                    code="auxiliary_tts_invalid_messages",
++                ),
++                status=400,
++            )
++        messages: List[Dict[str, str]] = []
++        total_chars = 0
++        for item in raw_messages:
++            if not isinstance(item, dict):
++                messages = []
++                break
++            role = item.get("role")
++            content = item.get("content")
++            if role not in {"system", "user", "assistant"} or not isinstance(content, str):
++                messages = []
++                break
++            total_chars += len(content)
++            messages.append({"role": role, "content": content})
++        if not messages or total_chars > 256_000:
++            return web.json_response(
++                _openai_error(
++                    "messages must be text-only and at most 256000 characters in total.",
++                    code="auxiliary_tts_invalid_messages",
++                ),
++                status=400,
++            )
++
++        from agent.auxiliary_client import async_call_llm
++        from hermes_cli.config import load_config_readonly
++
++        task = "tts_audio_tags"
++        task_config = (load_config_readonly().get("auxiliary") or {}).get(task) or {}
++        explicit_task_route = bool(
++            isinstance(task_config, dict)
++            and (
++                str(task_config.get("provider") or "").strip().lower() not in {"", "auto"}
++                or str(task_config.get("model") or "").strip()
++            )
++        )
++        managed_route = None
++        if isinstance(task_config, dict) and not explicit_task_route:
++            chain = task_config.get("fallback_chain")
++            managed_route = next(
++                (
++                    entry for entry in chain if isinstance(entry, dict)
++                    and entry.get("calliope_managed") is True
++                    and str(entry.get("provider") or "").strip()
++                    and str(entry.get("model") or "").strip()
++                ),
++                None,
++            ) if isinstance(chain, list) else None
++
++        route_info: Dict[str, str] = {}
++        call_kwargs: Dict[str, Any] = {
++            "task": task,
++            "messages": messages,
++            "route_info": route_info,
++            "timeout": timeout_seconds,
++        }
++        route_source = "task" if explicit_task_route else "automatic"
++        if managed_route is not None:
++            route_source = "background_tasks"
++            call_kwargs.update({
++                "provider": str(managed_route.get("provider") or "").strip(),
++                "model": str(managed_route.get("model") or "").strip(),
++                "base_url": str(managed_route.get("base_url") or "").strip() or None,
++                "api_key": str(managed_route.get("api_key") or "").strip() or None,
++            })
++
++        try:
++            response = await async_call_llm(**call_kwargs)
++            choices = getattr(response, "choices", None) or []
++            choice = choices[0] if choices else None
++            message = getattr(choice, "message", None) if choice is not None else None
++            if isinstance(message, dict):
++                content = message.get("content")
++            else:
++                content = getattr(message, "content", "")
++            content = _normalize_chat_content(content).strip()
++            if not content:
++                raise RuntimeError("auxiliary model returned no text")
++            finish_reason = (
++                choice.get("finish_reason") if isinstance(choice, dict)
++                else getattr(choice, "finish_reason", None)
++            )
++            response_model = str(getattr(response, "model", "") or route_info.get("model") or "")
++            return web.json_response({
++                "id": f"aux-tts-{uuid.uuid4().hex[:24]}",
++                "object": "hermes.auxiliary.completion",
++                "task": task,
++                "route_source": route_source,
++                "provider": route_info.get("provider") or "auto",
++                "model": response_model,
++                "choices": [{
++                    "finish_reason": str(finish_reason or "stop"),
++                    "message": {"role": "assistant", "content": content},
++                }],
++            })
++        except Exception as exc:
++            logger.error("Auxiliary TTS rewrite failed: %s", exc, exc_info=True)
++            return web.json_response(
++                _openai_error(
++                    "Hermes could not complete the auxiliary TTS rewrite.",
++                    err_type="server_error",
++                    code="auxiliary_tts_failed",
++                ),
++                status=502,
++            )
++
+     # -- Cron jobs API ----------------------------------------------------------------
+ 
+     _JOB_ID_RE = re.compile(r"[a-f0-9]{12}")

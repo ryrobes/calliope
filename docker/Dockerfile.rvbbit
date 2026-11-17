@@ -1,0 +1,176 @@
+# Build stage: install Rust, cargo-pgrx, and compile the extension
+# against system PG18 headers from the postgres:18 image.
+FROM postgres:18 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        curl \
+        git \
+        libclang-dev \
+        libssl-dev \
+        pkg-config \
+        postgresql-server-dev-18 \
+        # rvbbit-duck includes DataFusion's Substrait bridge, whose build
+        # script compiles its protocol definitions with protoc and imports
+        # the standard Protobuf definitions shipped by libprotobuf-dev.
+        protobuf-compiler \
+        libprotobuf-dev \
+        zstd libzstd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust toolchain. Pinned to keep local, CI, and image builds reproducible.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain 1.95.0 --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# cargo-pgrx must match the pgrx crate version (=0.18.0).
+RUN cargo install --locked cargo-pgrx --version 0.18.0
+
+# Tell pgrx to use the system PG18 rather than building its own copy.
+RUN cargo pgrx init --pg18 $(which pg_config)
+
+WORKDIR /build
+# Copy in dependency manifests first so the heavy crate-graph download/compile
+# is cached separately from source changes.
+COPY Cargo.toml Cargo.lock* rust-toolchain.toml ./
+COPY crates/pg_rvbbit/Cargo.toml crates/pg_rvbbit/Cargo.toml
+COPY crates/pg_rvbbit/pg_rvbbit.control crates/pg_rvbbit/
+COPY crates/rvbbit_storage/Cargo.toml crates/rvbbit_storage/Cargo.toml
+COPY warren/agent/Cargo.toml warren/agent/Cargo.toml
+# Stub src/ files so the workspace resolves before we drop in real sources.
+RUN mkdir -p crates/pg_rvbbit/src crates/rvbbit_storage/src warren/agent/src \
+    && echo 'fn _stub() {}' > crates/rvbbit_storage/src/lib.rs \
+    && echo 'use pgrx::prelude::*; ::pgrx::pg_module_magic!();' > crates/pg_rvbbit/src/lib.rs \
+    && echo 'fn main() {}' > warren/agent/src/main.rs \
+    && cargo fetch
+
+# Now the real sources.
+COPY crates/ crates/
+
+# Build and install into the system PG extension dir. The target/ cache
+# mount persists the compiled crate graph across rebuilds, so iterating on
+# extension source only recompiles the changed crates (minutes -> seconds).
+# The target/ cache mount keeps cargo's fingerprints across builds, and cargo decides
+# "unchanged" by source mtime, which BuildKit's COPY preserves. Sources edited BEFORE the
+# last build's checkout (e.g. after a worktree build) look older than the fingerprint and
+# are silently not recompiled (2026-09-23: a scan-safety change shipped as a byte-identical
+# .so). Touching the workspace sources makes cargo rebuild our crates every time; the
+# registry/dependency cache is untouched, so this costs a few minutes, not a cold build.
+RUN --mount=type=cache,target=/build/target \
+    find crates warren/agent -type f \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'build.rs' \) -exec touch {} + \
+    && cargo pgrx install --release --pg-config $(which pg_config) \
+    && find /usr/lib/postgresql/18/lib -maxdepth 1 -type f -name 'pg_rvbbit*.so' \
+        -exec strip --strip-unneeded {} +
+
+# Backend Duck routing uses a small native Rust sidecar from inside the
+# PostgreSQL container. It is guarded by the router and optional at runtime,
+# but installing it here makes normal Rvbbit backends capable by default.
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/build/crates/rvbbit_duck/target \
+    cargo build --release --locked --manifest-path crates/rvbbit_duck/Cargo.toml \
+        --bin rvbbit-duck \
+    && cp crates/rvbbit_duck/target/release/rvbbit-duck /build/rvbbit-duck \
+    && cp crates/rvbbit_duck/target/release/rvbbit-duck /build/rvbbit-gqe-bridge \
+    && strip --strip-unneeded /build/rvbbit-duck
+RUN strip --strip-unneeded /build/rvbbit-gqe-bridge
+
+# Runtime stage: clean PG18 image with the extension files dropped in.
+FROM postgres:18 AS runtime
+
+ENV RVBBIT_CAPABILITY_ROOT=/usr/share/rvbbit/capabilities
+ENV RVBBIT_CAPABILITY_PACKS_DIR=/usr/share/rvbbit/capabilities/packs
+
+# zstd runtime (parquet writes) + pg_cron (scheduled jobs; the Scheduler UI
+# manages it, preconfigured so catalog_crawl() etc. can be scheduled out of the box)
+# + HypoPG for plan-only index advice (hypothetical indexes are session-local
+# and never mutate user tables), plus pgvector/PostGIS for semantic/vector and
+# geographic workloads.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libzstd1 \
+        python3 \
+        openssl \
+        ca-certificates \
+        curl \
+        postgresql-18-cron \
+        postgresql-18-hypopg \
+        postgresql-18-postgis-3 \
+        postgresql-18-postgis-3-scripts \
+        postgresql-18-pgvector \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/share/postgresql/18/extension/pg_rvbbit* \
+        /usr/share/postgresql/18/extension/
+# Catch-up edges: field databases can be stranded on ANY historical extversion
+# (real schema is maintained by the version-decoupled rvbbit.migrate(); the
+# edge chain is bookkeeping). Old multi-hop edges can collide with
+# migration-created objects ("... is not a member of extension" aborts the
+# whole walk — seen in prod on a 2.2.1 catalog). Emit a direct no-op edge from
+# every known FROM-version to the current default_version: Postgres prefers
+# the shortest path, so ALTER EXTENSION UPDATE is always one safe hop.
+RUN set -e; \
+    EXTDIR=/usr/share/postgresql/18/extension; \
+    DEFVER=$(sed -n "s/^default_version *= *'\(.*\)'/\1/p" $EXTDIR/pg_rvbbit.control); \
+    for f in $EXTDIR/pg_rvbbit--*--*.sql; do \
+        base=$(basename "$f" .sql); vers=${base#pg_rvbbit--}; from=${vers%%--*}; \
+        [ "$from" = "$DEFVER" ] && continue; \
+        edge="$EXTDIR/pg_rvbbit--${from}--${DEFVER}.sql"; \
+        [ -f "$edge" ] || printf '/* no-op catch-up edge to %s: schema is maintained by rvbbit.migrate() */\n' "$DEFVER" > "$edge"; \
+    done
+COPY --from=builder /usr/lib/postgresql/18/lib/pg_rvbbit* \
+        /usr/lib/postgresql/18/lib/
+RUN mkdir -p /opt/rvbbit/gqe/bin
+COPY --from=builder /build/rvbbit-duck /usr/local/bin/rvbbit-duck
+COPY --from=builder /build/rvbbit-gqe-bridge /opt/rvbbit/gqe/bin/rvbbit-gqe-bridge
+COPY docker/bin/rvbbit-gqe /usr/local/bin/rvbbit-gqe
+RUN chmod 0755 /usr/local/bin/rvbbit-gqe /opt/rvbbit/gqe/bin/rvbbit-gqe-bridge
+
+# Ship the built-in capability source packs alongside the catalog seed. The
+# database stores deploy manifests inline, but these files give packaged
+# installs a stable provenance/inspection root instead of a developer checkout.
+COPY capabilities/catalog.json /usr/share/rvbbit/capabilities/catalog.json
+COPY capabilities/packs/ /usr/share/rvbbit/capabilities/packs/
+COPY capabilities/templates/ /usr/share/rvbbit/capabilities/templates/
+COPY capabilities/tools/ /usr/share/rvbbit/capabilities/tools/
+RUN chmod -R a+rX /usr/share/rvbbit/capabilities
+
+# Pre-load extension on first boot.
+COPY docker/init/ /docker-entrypoint-initdb.d/
+
+# Tuned Postgres config for analytics workloads. docker-compose passes
+# `-c config_file=/etc/rvbbit/tuning.conf` so this file becomes the
+# primary postgresql.conf. See the file header for rationale on each
+# setting; bump or override per service.
+COPY docker/config/rvbbit-tuning.conf /etc/rvbbit/tuning.conf
+COPY docker/clover/register.sh /usr/local/bin/rvbbit-clover-configure
+COPY docker/uber/bootstrap.sh /usr/local/bin/rvbbit-uber-bootstrap
+RUN chmod 0755 /usr/local/bin/rvbbit-uber-bootstrap /usr/local/bin/rvbbit-clover-configure
+
+# Belt-and-suspenders: also stamp shared_preload_libraries into the
+# stock conf sample. Only kicks in if someone runs the image without
+# `-c config_file=...` (in which case the data-dir conf is read).
+RUN echo "shared_preload_libraries = 'pg_rvbbit,pg_cron,pg_stat_statements'" \
+        >> /usr/share/postgresql/postgresql.conf.sample
+
+# A fresh volume installs current DDL and seed data, not the migration history.
+# Keep the historical installer embedded for upgrades and independent comparison.
+COPY --chmod=0755 scripts/schema/release.py /usr/local/bin/rvbbit-schema-release
+COPY --chmod=0755 scripts/release/postgres-tls.py /usr/local/bin/rvbbit-postgres-tls
+COPY release/calliope-release.json /usr/share/rvbbit/schema-release/release.json
+COPY release/schema-lock.json /usr/share/rvbbit/schema-release/schema-lock.json
+
+FROM runtime AS baseline-builder
+RUN apt-get update && apt-get install -y --no-install-recommends python3-venv \
+    && python3 -m venv /tmp/schema-env \
+    && /tmp/schema-env/bin/pip install --no-cache-dir pglast==7.20
+COPY scripts/schema/baseline.py /tmp/build-schema-baseline.py
+RUN --network=none /tmp/schema-env/bin/python /tmp/build-schema-baseline.py \
+    --output /tmp/schema-baseline \
+    --lock /usr/share/rvbbit/schema-release/schema-lock.json \
+    --engine "$(python3 -c "import json;print(json.load(open('/usr/share/rvbbit/schema-release/release.json'))['rvbbit_engine_version'])")"
+
+FROM runtime
+COPY --from=baseline-builder /tmp/schema-baseline /usr/share/rvbbit/schema-release/baseline
+COPY --from=baseline-builder /usr/share/postgresql/18/extension/pg_rvbbit--*-calliope-*.sql /usr/share/postgresql/18/extension/

@@ -1,0 +1,121 @@
+api_version: rvbbit.pack/v1
+id: extract/gliner-medium-v2.1
+name: gliner_medium_v2_1
+title: GLiNER Medium v2.1 Extraction
+description: Zero-shot entity extraction over arbitrary user-provided labels.
+license: apache-2.0
+tags:
+- extract
+- ner
+- zero-shot
+- entities
+- pii
+- business
+- row
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: urchade/gliner_medium-v2.1
+  url: https://huggingface.co/urchade/gliner_medium-v2.1
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: gliner
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 780735696
+    vram_required_bytes: 975919620
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: extract_gliner
+  operators:
+  - extract_entities
+  - extract_pii
+  - extract_business_entities
+  - extract_row_entities
+  - extract
+  - contains_entity
+  - has_pii
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: entity_extraction_shape
+    description: Extract business entities from an operations note and assert array output.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          first_value text;
+          present bool;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.extract_entities(
+                  'Invoice INV-1042 for Acme Corp is due Friday in Portland.',
+                  'organization, invoice number, date, location'
+              ) INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'extract_entities returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'array' THEN
+              RAISE EXCEPTION 'unexpected GLiNER extraction shape: %', result;
+          END IF;
+
+          SELECT rvbbit.extract_business_entities(
+              'Invoice INV-1042 for Acme Corp is due Friday in Portland.'
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'array' THEN
+              RAISE EXCEPTION 'unexpected business entity extraction shape: %', result;
+          END IF;
+
+          SELECT rvbbit.extract_pii(
+              'Jane Doe can be reached at jane@example.com or 415-555-0101.'
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'array' THEN
+              RAISE EXCEPTION 'unexpected PII extraction shape: %', result;
+          END IF;
+
+          SELECT rvbbit.extract_row_entities(
+              '{"note":"Invoice INV-1042 for Acme Corp is due Friday in Portland.","county":"Clackamas"}'::jsonb,
+              'organization, invoice number, date, location'
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'array' THEN
+              RAISE EXCEPTION 'unexpected row entity extraction shape: %', result;
+          END IF;
+
+          SELECT rvbbit.extract(
+              'Invoice INV-1042 for Acme Corp is due Friday in Portland.',
+              'organization'
+          ) INTO first_value;
+          IF first_value IS NULL THEN
+              RAISE EXCEPTION 'bundled extract operator returned NULL';
+          END IF;
+
+          SELECT rvbbit.contains_entity(
+              'Invoice INV-1042 for Acme Corp is due Friday in Portland.',
+              'organization'
+          ) INTO present;
+          IF present IS NULL THEN
+              RAISE EXCEPTION 'bundled contains_entity operator returned NULL';
+          END IF;
+
+          SELECT rvbbit.has_pii('Jane Doe can be reached at jane@example.com or 415-555-0101.') INTO present;
+          IF present IS NULL THEN
+              RAISE EXCEPTION 'bundled has_pii operator returned NULL';
+          END IF;
+      END
+      $$;

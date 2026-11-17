@@ -1,0 +1,127 @@
+api_version: rvbbit.capability/v1
+kind: hf_backend
+name: deberta_v3_base_zero_shot
+title: DeBERTa v3 Base Zero-Shot Classifier
+description: Smaller NLI zero-shot classifier for classifying text or JSONB rows into caller-provided labels.
+license: mit
+tags: [classify, zero-shot, nli, row, cpu-friendly]
+source:
+  provider: huggingface
+  model: MoritzLaurer/deberta-v3-base-zeroshot-v2.0
+  url: https://huggingface.co/MoritzLaurer/deberta-v3-base-zeroshot-v2.0
+runtime:
+  template: hf-rvbbit-fastapi
+  handler: zero_shot_classification
+  device: auto
+backend:
+  name: classify_deberta_base_zero_shot
+  transport: rvbbit
+  batch_size: 24
+  max_concurrent: 4
+  timeout_ms: 120000
+  description: DeBERTa v3 base NLI zero-shot classifier.
+operators:
+  - name: classify_zero_shot_base
+    description: Classify text into comma-separated categories using a smaller DeBERTa v3 zero-shot model.
+    arg_names: [text, categories]
+    arg_types: [text, text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      text: "{{ inputs.text }}"
+      labels: "{{ inputs.categories }}"
+  - name: classify_row_zero_shot_base
+    description: Classify a JSONB row into comma-separated categories using a smaller DeBERTa v3 zero-shot model.
+    arg_names: [row, categories]
+    arg_types: [jsonb, text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      text: "{{ inputs.row }}"
+      labels: "{{ inputs.categories }}"
+  - name: classify
+    description: Canonical semantic classifier backed by the smaller DeBERTa v3 zero-shot Warren.
+    arg_names: [text, categories]
+    arg_types: [text, text]
+    return_type: text
+    parser: strip
+    steps:
+      - name: nli
+        kind: specialist
+        specialist: classify_deberta_base_zero_shot
+        inputs:
+          text: "{{ inputs.text }}"
+          labels: "{{ inputs.categories }}"
+      - name: label
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.nli.output }}"
+          path: label
+          default: ""
+  - name: semantic_classify
+    description: Alias-style semantic classifier returning one caller-provided label.
+    arg_names: [text, categories]
+    arg_types: [text, text]
+    return_type: text
+    parser: strip
+    steps:
+      - name: nli
+        kind: specialist
+        specialist: classify_deberta_base_zero_shot
+        inputs:
+          text: "{{ inputs.text }}"
+          labels: "{{ inputs.categories }}"
+      - name: label
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.nli.output }}"
+          path: label
+          default: ""
+  - name: bucket
+    description: Bucket text into one of the caller-provided labels.
+    arg_names: [text, buckets]
+    arg_types: [text, text]
+    return_type: text
+    parser: strip
+    steps:
+      - name: nli
+        kind: specialist
+        specialist: classify_deberta_base_zero_shot
+        inputs:
+          text: "{{ inputs.text }}"
+          labels: "{{ inputs.buckets }}"
+      - name: label
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.nli.output }}"
+          path: label
+          default: ""
+  - name: intent
+    description: Classify communicative intent for support, CRM, social, and notes.
+    arg_names: [text]
+    arg_types: [text]
+    return_type: text
+    parser: strip
+    steps:
+      - name: nli
+        kind: specialist
+        specialist: classify_deberta_base_zero_shot
+        inputs:
+          text: "{{ inputs.text }}"
+          labels: request, question, complaint, praise, cancellation, refund, bug report, sales inquiry, other
+      - name: label
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.nli.output }}"
+          path: label
+          default: other
+smoke:
+  inputs:
+    - text: account was locked after too many login attempts
+      row: '{"event":"login_failed","count":12,"country":"unknown","status":"locked"}'
+      categories: auth, billing, support, fraud, product
+      buckets: auth, billing, support, fraud, product

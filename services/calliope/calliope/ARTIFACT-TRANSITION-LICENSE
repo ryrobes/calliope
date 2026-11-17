@@ -1,0 +1,35 @@
+GL Transitions: old_tv_lost_signal
+Author: mernking (gitlab: Godswork)
+Preview: https://gl-transitions.com/editor/old_tv_lost_signal
+Source: https://github.com/gl-transitions/gl-transitions/blob/8cb8d2e8ee7b494f10046d3efb3763b8db82dbd0/transitions/old_tv_lost_signal.glsl
+SHA-256 of upstream shader: 274814dee2f8b54b5227980917d2596e200c30abe11d2a2d35e1fc3b29fdc05e
+
+The shader is embedded unchanged in artifact-transition.js, between the opening
+and closing newlines of the `effect` template literal. Calliope supplies the
+WebGL player, aspect-ratio handling, timing, and resource lifecycle.
+
+MIT License
+
+Copyright (c) 2017-present gl-transitions contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Note: Individual transitions in the transitions/ directory may have their own
+license specified in their file header comments. When no license is specified,
+the transition is covered by this MIT license.

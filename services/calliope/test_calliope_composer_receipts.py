@@ -1,0 +1,1792 @@
+"""Exact composer-object and durable response-receipt contracts."""
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import sys
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
+sys.path.insert(0, str(HERE))
+import calliope  # noqa: E402
+
+
+class _Result:
+    def __init__(self, rows):
+        self.rows = rows if isinstance(rows, list) else ([rows] if rows else [])
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+def test_upstream_sse_wait_emits_keepalives_without_cancelling_the_read():
+    class PausedResponse:
+        def __init__(self):
+            self.lines = asyncio.Queue()
+
+        async def aiter_lines(self):
+            while True:
+                line = await self.lines.get()
+                if line is None:
+                    return
+                yield line
+
+    async def exercise():
+        response = PausedResponse()
+        events = calliope._iter_sse(response, heartbeat_seconds=0.01)
+
+        # The first quiet interval creates a downstream heartbeat. The same
+        # pending upstream read remains alive and can still deliver Hermes data.
+        assert await events.__anext__() == (None, None)
+        await response.lines.put("event: assistant.delta")
+        await response.lines.put('data: {"delta":"still working"}')
+        await response.lines.put("")
+        assert await events.__anext__() == (
+            "assistant.delta",
+            {"delta": "still working"},
+        )
+        await response.lines.put(": upstream keepalive")
+        assert await events.__anext__() == (None, None)
+        assert await events.__anext__() == (None, None)
+        await events.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_turn_stream_broker_survives_one_browser_and_replays_to_the_next():
+    async def exercise():
+        release = asyncio.Event()
+        turn_id = "94da7082-b64c-4f3b-8bc4-63e59fcb7d57"
+        started = calliope._sse("calliope.turn.started", {"turn_id": turn_id})
+        completed = calliope._sse(
+            "calliope.turn.completed",
+            {"turn_id": turn_id, "assistant_message": "Finished once."},
+        )
+
+        async def source():
+            yield started
+            await release.wait()
+            yield completed
+
+        broker = calliope._start_turn_stream(turn_id, source())
+        first_browser = calliope._subscribe_turn_stream(broker)
+        assert await first_browser.__anext__() == started
+        await first_browser.aclose()
+
+        # Closing the browser-facing iterator does not own or cancel Hermes.
+        assert broker.task is not None
+        assert not broker.task.done()
+
+        second_browser = calliope._subscribe_turn_stream(broker)
+        assert await second_browser.__anext__() == started
+        release.set()
+        assert await second_browser.__anext__() == completed
+        with pytest.raises(StopAsyncIteration):
+            await second_browser.__anext__()
+        await broker.task
+        assert turn_id not in calliope._TURN_STREAM_BROKERS
+
+    asyncio.run(exercise())
+
+
+def test_turn_request_identity_ignores_its_uuid_but_not_its_payload():
+    first = {
+        "client_turn_id": "94da7082-b64c-4f3b-8bc4-63e59fcb7d57",
+        "message": "Build the forecast",
+        "attachments": [],
+    }
+    retry = {
+        **first,
+        "client_turn_id": "1166ef63-0c7d-423b-8eda-f905e96aef04",
+    }
+    different = {**retry, "message": "Build the risk register"}
+    assert calliope._turn_request_fingerprint(first) == calliope._turn_request_fingerprint(retry)
+    assert calliope._turn_request_fingerprint(first) != calliope._turn_request_fingerprint(different)
+
+
+def test_compression_collision_does_not_claim_browser_storage_is_full():
+    message = calliope._friendly_turn_stream_error(
+        "Session 'abc' is being compressed by another writer"
+    )
+    assert "original turn is still finishing" in message.lower()
+    assert "disk" not in message.lower()
+    assert "permissions" not in message.lower()
+
+
+def test_turn_lifecycle_keeps_heartbeats_and_completed_transport_failures_separate():
+    backend_source = (HERE / "calliope.py").read_text()
+    browser_source = (HERE / "calliope" / "calliope.js").read_text()
+
+    assert 'yield b": keepalive\\n\\n"' in backend_source
+    assert "_TURN_STREAM_HEARTBEAT_SECONDS = 5.0" in backend_source
+    assert "_start_turn_stream(turn_id, stream(), conn_factory)" in backend_source
+    assert 'f"{run_base}/v1/runs"' in backend_source
+    assert "recover_running_turn_stream" in backend_source
+    assert "calliope_turn_events" in backend_source
+    assert "_subscribe_turn_stream(broker)" in backend_source
+    assert "calliope_turns_client_turn_idx" in backend_source
+    assert "return { completed: true, transportClosed: true, projectionErrors };" in browser_source
+    assert "if (!streamResult.completed) throw refreshError;" in browser_source
+    assert 'let streamedAssistantMessage = "";' in browser_source
+    assert '["complete", "partial"].includes(reconciledTurn?.status)' in browser_source
+    assert 'visibleTurn.assistant_message ||= streamedAssistantMessage;' in browser_source
+    assert "client_turn_id: clientTurnId" in browser_source
+    assert "TURN_STREAM_RECONNECT_ATTEMPTS = 2" in browser_source
+    assert "ACTIVE_TURN_STORAGE_KEY" in browser_source
+    assert "function scheduleActiveTurnReconnect()" in browser_source
+    assert "reattach: true" in browser_source
+    assert '"/api/calliope/turn-lifecycle"' in backend_source
+    assert "reportActiveTurnLifecycle(\"pagehide\"" in browser_source
+    assert "X-Calliope-Page-Id" in browser_source
+
+
+def test_browser_turn_owns_live_notebook_state_without_detaching_execution():
+    browser_source = (HERE / "calliope" / "calliope.js").read_text()
+
+    # A refresh or selection request that began before send cannot replace the
+    # turns/stage after the active-turn generation changes.
+    assert "turnActivityGeneration: 0" in browser_source
+    assert "sessionSelectSequence: 0" in browser_source
+    assert "activityGeneration === state.turnActivityGeneration" in browser_source
+    assert "selectionSequence !== state.sessionSelectSequence" in browser_source
+    assert "state.turnActivityGeneration += 1;" in browser_source
+    assert browser_source.count("{ allowDuringTurn: true }") >= 2
+
+    # Session notifications are ignored during the turn, while an accidental
+    # page exit receives the browser's normal unsaved-work guard.
+    assert "function disconnectSessionEvents()" in browser_source
+    assert "function protectActiveTurnExit(event)" in browser_source
+    assert 'window.addEventListener("beforeunload", protectActiveTurnExit);' in browser_source
+    assert 'window.removeEventListener("beforeunload", protectActiveTurnExit);' in browser_source
+
+    # A presentation bug must not stop reading the attached response and cause
+    # Starlette to observe http.disconnect. Server-declared errors remain fatal.
+    assert 'error?.code === "CALLIOPE_STREAM_ERROR"' in browser_source
+    assert "projectionErrors.length < 3" in browser_source
+    assert "stream retained" in browser_source
+
+
+def test_composer_markers_are_typed_bounded_deduplicated_and_readable():
+    body = (
+        "Compare [[metric:lead_velocity|Lead velocity]] with "
+        "[[artifact:enrollment-pulse@7|Enrollment pulse]] and ask "
+        "[[person:42|Ada Lovelace]]. [[person:42|Ada]]"
+    )
+    assert calliope._composer_object_markers(body) == [
+        {"kind": "metric", "ref_id": "lead_velocity", "mention": "Lead velocity"},
+        {
+            "kind": "artifact",
+            "ref_id": "enrollment-pulse@7",
+            "mention": "Enrollment pulse",
+        },
+        {"kind": "person", "ref_id": "42", "mention": "Ada Lovelace"},
+    ]
+    assert calliope._composer_plain_text(body) == (
+        "Compare Lead velocity with Enrollment pulse and ask Ada Lovelace. Ada"
+    )
+    with pytest.raises(ValueError, match="supported Calliope object type"):
+        calliope._composer_object_markers("[[password:secret|Nope]]")
+    too_many = " ".join(
+        f"[[metric:metric_{index}|Metric {index}]]" for index in range(25)
+    )
+    with pytest.raises(ValueError, match="at most 24"):
+        calliope._composer_object_markers(too_many)
+
+
+def test_submitted_object_handles_must_be_small_and_exactly_typed():
+    assert calliope._decode_composer_object_handles([
+        {"kind": "workflow", "ref_id": "9be90d18-572d-4b97-9ccd-57ee7b71b55c@3"},
+        {"kind": "workflow", "ref_id": "9be90d18-572d-4b97-9ccd-57ee7b71b55c@3"},
+    ]) == [{
+        "kind": "workflow",
+        "ref_id": "9be90d18-572d-4b97-9ccd-57ee7b71b55c@3",
+    }]
+    with pytest.raises(ValueError, match="supported kind"):
+        calliope._decode_composer_object_handles([{"kind": "secret", "ref_id": "x"}])
+
+
+def test_composer_agent_mentions_are_explicit_bounded_and_not_email_matches():
+    rows = [
+        {
+            "specialist_key": "analytical-skeptic",
+            "profile_name": "analytical-skeptic",
+            "display_name": "Cassandra",
+            "description": "Analytical Skeptic",
+            "capabilities": ["analytical_review", "value_systems"],
+        },
+        {
+            "specialist_key": "knowledge-gardener",
+            "profile_name": "knowledge-gardener",
+            "display_name": "Demeter",
+            "description": "Knowledge Gardener",
+            "capabilities": ["company_brain", "business_topology"],
+        },
+    ]
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, query, _args=None):
+            assert "calliope_specialists" in query
+            return _Result(rows)
+
+    conn_factory = lambda: Connection()
+    assert calliope._composer_agent_mentions(
+        conn_factory, "For @Cassandra.smith@example.com and @all.staff@example.com", []
+    ) == []
+    mentions = calliope._composer_agent_mentions(
+        conn_factory,
+        "Email alice@example.com, then ask @Cassandra and @Demeter.",
+        ["analytical-skeptic", "knowledge-gardener"],
+    )
+    assert [item["specialist_key"] for item in mentions] == [
+        "analytical-skeptic",
+        "knowledge-gardener",
+    ]
+    context = calliope._composer_agent_context_text(mentions)
+    assert "direct invitation" in context
+    assert "delegate_calliope_specialist" in context
+    assert "business_topology" in context
+
+    all_mentions = calliope._composer_agent_mentions(
+        conn_factory,
+        "@all Give me your independent takes.",
+        ["analytical-skeptic", "knowledge-gardener"],
+    )
+    assert [item["specialist_key"] for item in all_mentions] == [
+        "analytical-skeptic",
+        "knowledge-gardener",
+    ]
+    assert all(item["_summon_scope"] == "all" for item in all_mentions)
+    all_context = calliope._composer_agent_context_text(all_mentions)
+    assert "used @all" in all_context
+    assert "in parallel" in all_context
+    assert (
+        "mcp__Roundtable__delegate_all_calliope_specialists exactly once"
+        in all_context
+    )
+    assert "generous roundtable execution budget" in all_context
+    assert "Do not call delegate_calliope_specialist separately" in all_context
+
+    with pytest.raises(ValueError, match="do not match"):
+        calliope._composer_agent_mentions(
+            conn_factory,
+            "Ask @Cassandra.",
+            ["knowledge-gardener"],
+        )
+
+
+def test_composer_editor_offers_specialist_mentions_and_posts_typed_keys():
+    editor = (HERE / "calliope-editor" / "editor.js").read_text(encoding="utf-8")
+    browser = (HERE / "calliope" / "calliope.js").read_text(encoding="utf-8")
+
+    assert "function mentionCompletionSource(lookupAgents, lookupPeople)" in editor
+    assert "apply: `@${name} `" in editor
+    assert "mentionCompletionSource(options.agents, lookupPeople)" in editor
+    assert "agents: lookupComposerAgents" in browser
+    assert "function composerAgentMentions(value)" in browser
+    assert 'name: "all"' in browser
+    assert "Invite every active specialist except Calliope" in browser
+    assert "agent_mentions: outgoingAgentMentions" in browser
+
+
+def test_all_specialist_result_projects_each_real_child_conversation():
+    def result(run_id, thread_id, key, name):
+        return {
+            "status": "complete",
+            "run_id": run_id,
+            "thread_id": thread_id,
+            "round": 1,
+            "round_count": 1,
+            "thread_status": "open",
+            "objective": "Give an independent view",
+            "specialist": {"key": key, "name": name, "profile": key},
+            "conversation": [
+                {"role": "calliope", "content": "Give an independent view", "round": 1},
+                {"role": "specialist", "content": "My view", "round": 1},
+            ],
+        }
+
+    projected = calliope._project_tool_result(
+        "delegate_all_calliope_specialists",
+        {
+            "status": "complete",
+            "results": [
+                result(
+                    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    "signal-watch",
+                    "Argus",
+                ),
+                result(
+                    "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                    "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    "knowledge-gardener",
+                    "Demeter",
+                ),
+            ],
+        },
+        {},
+        "fanout-call",
+    )
+
+    assert [item["title"] for item in projected] == [
+        "Specialist · Argus",
+        "Specialist · Demeter",
+    ]
+    assert len({item["lineage_key"] for item in projected}) == 2
+
+
+def test_soft_object_hints_use_strong_acl_search_results_and_never_auto_insert(monkeypatch):
+    lookups = []
+
+    def lookup(_conn_factory, owner, query, *, kind="", limit=6):
+        lookups.append((owner, query, kind, limit))
+        if query == "Ada":
+            return [{
+                "kind": "person",
+                "ref_id": "42",
+                "label": "Ada Lovelace",
+                "source": "Company Brain",
+                "match_basis": "alias_exact",
+            }]
+        if query == "Enrollment Rate":
+            return [{
+                "kind": "metric",
+                "ref_id": "enrollment_rate",
+                "label": "Enrollment Rate",
+                "source": "Governed metrics",
+            }]
+        return [{
+            "kind": "project",
+            "ref_id": "99",
+            "label": "Apollo Program",
+            "source": "Company Brain",
+        }]
+
+    monkeypatch.setattr(calliope, "_composer_objects", lookup)
+    hints = calliope._composer_object_hints(object, "owner@example.com", [
+        {"key": "0:3", "text": "Ada", "kind": "person"},
+        {"key": "8:23", "text": "Enrollment Rate"},
+        {"key": "24:27", "text": "App"},
+        {"key": "28:34", "text": "Apollo"},
+        {"key": "30:33", "text": "Ada", "kind": "person"},
+    ])
+
+    assert [hint["key"] for hint in hints] == ["0:3", "8:23", "28:34", "30:33"]
+    assert hints[0]["objects"][0]["ref_id"] == "42"
+    assert hints[1]["objects"][0]["ref_id"] == "enrollment_rate"
+    assert hints[2]["objects"][0]["label"] == "Apollo Program"
+    # Repeated spans reuse the permission-filtered lookup within one debounce call.
+    assert [entry[1] for entry in lookups].count("Ada") == 1
+    with pytest.raises(ValueError, match="At most 12"):
+        calliope._composer_object_hints(
+            object,
+            "owner@example.com",
+            [{"key": str(index), "text": "Ada"} for index in range(13)],
+        )
+
+
+def test_composer_exact_resolution_rechecks_brain_acl_and_artifact_version():
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=None):
+            if "WITH visible_docs AS MATERIALIZED" in query:
+                assert params == ("owner@example.com", [42])
+                return _Result({
+                    "node_id": 42,
+                    "graph_id": "brain",
+                    "kind": "person",
+                    "label": "Ada Lovelace",
+                    "doc_type": None,
+                    "source": "Company Brain",
+                })
+            if "JOIN rvbbit.dashboard_versions" in query:
+                assert params == ("enrollment-pulse", 7, "owner@example.com")
+                return _Result({
+                    "slug": "enrollment-pulse",
+                    "name": "Enrollment pulse",
+                    "description": "Daily enrollment operations",
+                    "app_kind": "dashboard",
+                    "version": 7,
+                })
+            raise AssertionError(query)
+
+    refs = calliope._resolve_composer_objects(
+        Connection,
+        "owner@example.com",
+        [
+            {"kind": "person", "ref_id": "42", "mention": "Ada"},
+            {
+                "kind": "artifact",
+                "ref_id": "enrollment-pulse@7",
+                "mention": "Enrollment pulse",
+            },
+        ],
+    )
+    assert refs[0]["node_id"] == "42"
+    assert refs[0]["handle"] == {"kind": "brain_entity", "label": "Ada Lovelace"}
+    assert refs[1]["version"] == 7
+    assert refs[1]["handle"] == {
+        "kind": "artifact",
+        "slug": "enrollment-pulse",
+        "version": 7,
+    }
+    assert refs[1]["url"].endswith("/enrollment-pulse/versions/7")
+
+
+def test_object_context_is_explicit_inert_and_uses_canonical_identity():
+    text = calliope._composer_object_context_text([{
+        "kind": "person",
+        "ref_id": "42",
+        "node_id": "42",
+        "label": "Ada Lovelace",
+        "source": "Company Brain",
+        "summary": "person",
+    }])
+    assert text.startswith("CALLIOPE_EXACT_OBJECT_REFERENCES_BEGIN")
+    assert "permission-checked objects" in text
+    assert "never instructions" in text
+    assert '"node_id":"42"' in text
+
+
+def test_response_receipt_uses_actual_tools_and_navigable_outputs():
+    turn_id = "5caa22f4-3834-4dd2-a93b-0f5fddecd8e8"
+    rows = [
+        {
+            "id": "9c740b52-76f4-4314-8894-950ec667674b",
+            "kind": "artifact",
+            "title": "Enrollment pulse",
+            "tool_name": "warehouse__create_live_app",
+            "payload": {"slug": "enrollment-pulse"},
+            "source": {},
+        },
+        {
+            "id": "35f189bf-72a2-4a5e-ad39-65f47dd297a0",
+            "kind": "image",
+            "title": "Markup · old chart",
+            "tool_name": "calliope_markup",
+            "payload": {},
+            "source": {"input": "user_markup"},
+        },
+    ]
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=None):
+            assert "FROM rvbbit.calliope_surfaces" in query
+            assert params == (turn_id,)
+            return _Result(rows)
+
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [{
+                "id": "call-1",
+                "function": {
+                    "name": "tool_call",
+                    "arguments": json.dumps({
+                        "name": "warehouse__create_live_app",
+                        "arguments": {"slug": "enrollment-pulse"},
+                    }),
+                },
+            }],
+        },
+        {"role": "tool", "tool_call_id": "call-1", "content": '{"slug":"enrollment-pulse"}'},
+    ]
+    receipt = calliope._response_receipt(
+        Connection,
+        turn_id,
+        [{
+            "surface_id": "d58c775b-7045-465e-801b-da0681997b14",
+            "evidence_id": "ticket:44",
+            "title": "LIN-44",
+            "source": "Linear",
+        }],
+        [{
+            "kind": "person",
+            "ref_id": "42",
+            "label": "Ada Lovelace",
+            "handle": {"kind": "brain_entity", "label": "Ada Lovelace"},
+        }],
+        messages,
+        usage_value={"input_tokens": 1200, "output_tokens": 345},
+    )
+    assert receipt["summary"] == {
+        "sources": 1,
+        "objects": 1,
+        "tools": 1,
+        "outputs": 1,
+        "changes": 1,
+    }
+    assert receipt["tools"] == [{
+        "name": "warehouse__create_live_app",
+        "status": "complete",
+        "count": 1,
+        "complete_count": 1,
+        "failed_count": 0,
+    }]
+    assert receipt["outputs"][0]["surface_id"] == rows[0]["id"]
+    assert receipt["outputs"][0]["effect"] == "changed"
+    assert receipt["usage"] == {
+        "input_tokens": 1200,
+        "output_tokens": 345,
+        "total_tokens": 1545,
+    }
+
+
+def test_response_receipt_preserves_mixed_outcomes_for_grouped_tool_calls():
+    calls = []
+    results = []
+    for index in range(6):
+        call_id = f"skill-{index}"
+        calls.append({
+            "id": call_id,
+            "function": {"name": "skill_view", "arguments": "{}"},
+        })
+        results.append({
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": '{"error":"category is not a skill"}' if index == 0 else '{"success":true}',
+        })
+
+    tools = calliope._response_receipt_tools([
+        {"role": "assistant", "tool_calls": calls},
+        *results,
+    ])
+
+    assert tools == [{
+        "name": "skill_view",
+        "status": "partial",
+        "count": 6,
+        "complete_count": 5,
+        "failed_count": 1,
+    }]
+
+
+def test_object_refs_and_receipts_ship_as_durable_ui_contracts():
+    migration = (
+        ROOT / "crates" / "pg_rvbbit" / "sql" / "migrations"
+        / "0240_calliope_object_refs_and_response_receipts.sql"
+    ).read_text(encoding="utf-8")
+    registry = (ROOT / "crates" / "pg_rvbbit" / "src" / "migrations.rs").read_text(
+        encoding="utf-8"
+    )
+    backend = (HERE / "calliope.py").read_text(encoding="utf-8")
+    page = (HERE / "calliope" / "index.html").read_text(encoding="utf-8")
+    script = (HERE / "calliope" / "calliope.js").read_text(encoding="utf-8")
+    css = (HERE / "calliope" / "calliope.css").read_text(encoding="utf-8")
+    editor = (HERE / "calliope-editor" / "editor.js").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN IF NOT EXISTS object_refs" in migration
+    assert "ADD COLUMN IF NOT EXISTS response_receipt" in migration
+    assert "0240_calliope_object_refs_and_response_receipts" in registry
+    assert '@mcp.custom_route("/api/calliope/objects", methods=["GET"])' in backend
+    assert '@mcp.custom_route("/api/calliope/object-hints", methods=["POST"])' in backend
+    assert '"object_refs": object_refs' in backend
+    assert '"response_receipt": response_receipt' in backend
+    assert 'id="message-editor"' in page
+    assert "function initializeComposerEditor()" in script
+    assert "object_refs: outgoingObjectHandles" in script
+    assert "function renderTurnReceipt(turn)" in script
+    assert "${completed} completed, ${failed} failed" in script
+    assert ".message-receipt" in css
+    assert ".message-receipt-body .partial" in css
+    assert "window.CalliopeObjectEditor" in editor
+    assert "getObjectRefs" in editor
+
+
+def test_browser_reconnects_an_incomplete_stream_without_resending_the_turn(tmp_path):
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    class QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(QuietHandler, directory=str(HERE)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session_id = "73ea6745-ee4f-48eb-bc8c-350fb99d096a"
+    turn_id = "94da7082-b64c-4f3b-8bc4-63e59fcb7d57"
+    requests = []
+    completed = False
+    page_errors = []
+
+    def route_api(route):
+        nonlocal completed
+        request = route.request
+        path = urlparse(request.url).path
+        if path == "/api/calliope/config":
+            payload = {
+                "healthy": True,
+                "personal_briefs": False,
+                "google_calendar": False,
+                "speech_to_text": {"enabled": False},
+                "text_to_speech": {"enabled": False},
+            }
+        elif path == "/api/calliope/inbox":
+            payload = {"items": [], "counts": {"unread": 0, "open": 0, "shown": 0, "by_kind": {}}}
+        elif path in {"/api/calliope/styles", "/api/calliope/instruments", "/api/calliope/workflows"}:
+            payload = {path.rsplit("/", 1)[-1]: []}
+        elif path == "/api/calliope/sessions" and request.method == "GET":
+            payload = {"sessions": [{
+                "id": session_id,
+                "title": "Reconnect check",
+                "updated_at": "2026-08-09T15:00:00Z",
+                "access_role": "owner",
+                "read_only": False,
+            }]}
+        elif path == f"/api/calliope/sessions/{session_id}" and request.method == "GET":
+            client_turn_id = requests[0]["client_turn_id"] if requests else None
+            payload = {
+                "session": {
+                    "id": session_id,
+                    "title": "Reconnect check",
+                    "access_role": "owner",
+                    "read_only": False,
+                },
+                "turns": ([{
+                    "id": turn_id,
+                    "client_turn_id": client_turn_id,
+                    "session_id": session_id,
+                    "ordinal": 1,
+                    "user_message": "Please recover this once",
+                    "assistant_message": "Recovered exactly once.",
+                    "attachments": [],
+                    "status": "complete",
+                    "turn_kind": "chat",
+                    "evidence_refs": [],
+                    "object_refs": [],
+                    "response_receipt": {},
+                }] if completed else []),
+                "surfaces": [],
+            }
+        elif path == f"/api/calliope/sessions/{session_id}/turn":
+            body = json.loads(request.post_data or "{}")
+            requests.append(body)
+            started = (
+                "event: calliope.turn.started\n"
+                + "data: "
+                + json.dumps({
+                    "turn_id": turn_id,
+                    "client_turn_id": body["client_turn_id"],
+                    "ordinal": 1,
+                    "attachments": [],
+                    "evidence_refs": [],
+                    "object_refs": [],
+                })
+                + "\n\n"
+            )
+            if len(requests) == 1:
+                # A clean but incomplete body models a proxy/browser stream drop.
+                route.fulfill(status=200, content_type="text/event-stream", body=started)
+                return
+            completed = True
+            stream = (
+                started
+                + "event: assistant.completed\n"
+                + 'data: {"content":"Recovered exactly once."}\n\n'
+                + "event: calliope.turn.completed\n"
+                + "data: "
+                + json.dumps({
+                    "turn_id": turn_id,
+                    "assistant_message": "Recovered exactly once.",
+                    "surface_count": 0,
+                    "response_receipt": {},
+                })
+                + "\n\n"
+            )
+            route.fulfill(status=200, content_type="text/event-stream", body=stream)
+            return
+        elif path == "/api/calliope/session-events":
+            route.fulfill(status=204, body="")
+            return
+        else:
+            route.fulfill(status=404, content_type="application/json", body='{"error":{"message":"fixture"}}')
+            return
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    try:
+        with playwright.sync_playwright() as runtime:
+            browser = runtime.chromium.launch(
+                headless=True,
+                executable_path="/usr/bin/chromium",
+            )
+            page = browser.new_page(viewport={"width": 1200, "height": 800})
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            page.route("**/api/**", route_api)
+            page.goto(
+                f"http://127.0.0.1:{server.server_port}/calliope/index.html?session={session_id}",
+                wait_until="networkidle",
+            )
+            editor = page.locator("#message-editor .cm-content")
+            editor.click()
+            editor.type("Please recover this once")
+            editor.press("Enter")
+            playwright.expect(page.locator(".message.assistant .message-body")).to_contain_text(
+                "Recovered exactly once."
+            )
+            page.wait_for_function("() => document.querySelector('#send-message')?.disabled === false")
+            assert page.evaluate(
+                "key => sessionStorage.getItem(key)",
+                "rvbbit-calliope-active-turn-v1",
+            ) is None
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert page_errors == []
+    assert len(requests) == 2
+    assert requests[0]["client_turn_id"] == requests[1]["client_turn_id"]
+    assert requests[0]["message"] == requests[1]["message"]
+
+
+def test_stage_tool_card_is_live_then_replaced_by_its_published_surface(tmp_path):
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    class QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(QuietHandler, directory=str(HERE)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session_id = "73ea6745-ee4f-48eb-bc8c-350fb99d096a"
+    turn_id = "94da7082-b64c-4f3b-8bc4-63e59fcb7d57"
+    surface_id = "1166ef63-0c7d-423b-8eda-f905e96aef04"
+    page_errors = []
+    surface = {
+        "id": surface_id,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "ordinal": 1,
+        "kind": "metric",
+        "title": "Active Accounts",
+        "tool_name": "mcp__Warehouse__metric_history",
+        "tool_call_id": "call-live-1",
+        "lineage_key": "metric:active_accounts",
+        "payload": {
+            "name": "active_accounts",
+            "result": 41,
+            "api_token": "working-secret-output",
+        },
+        "source": {
+            "phase": "exploration",
+            "args": {
+                "metric": "active_accounts",
+                "access_token": "working-secret-input",
+            },
+        },
+        "presentation": {"phase": "exploration"},
+        "created_at": "2026-09-03T14:01:00Z",
+    }
+    completed_turn = {
+        "id": turn_id,
+        "client_turn_id": None,
+        "session_id": session_id,
+        "ordinal": 1,
+        "user_message": "Show active accounts",
+        "assistant_message": "There are 41 active accounts.",
+        "attachments": [],
+        "status": "complete",
+        "turn_kind": "chat",
+        "evidence_refs": [],
+        "object_refs": [],
+        "response_receipt": {},
+    }
+
+    def route_api(route):
+        request = route.request
+        path = urlparse(request.url).path
+        if path == "/api/calliope/config":
+            payload = {
+                "healthy": True,
+                "personal_briefs": False,
+                "google_calendar": False,
+                "speech_to_text": {"enabled": False},
+                "text_to_speech": {"enabled": False},
+            }
+        elif path == "/api/calliope/inbox":
+            payload = {"items": [], "counts": {"unread": 0, "open": 0, "shown": 0, "by_kind": {}}}
+        elif path in {"/api/calliope/styles", "/api/calliope/instruments", "/api/calliope/workflows"}:
+            payload = {path.rsplit("/", 1)[-1]: []}
+        elif path == "/api/calliope/sessions" and request.method == "GET":
+            payload = {"sessions": [{
+                "id": session_id,
+                "title": "Live Stage check",
+                "updated_at": "2026-09-03T14:00:00Z",
+                "access_role": "owner",
+                "read_only": False,
+            }]}
+        elif path == f"/api/calliope/sessions/{session_id}" and request.method == "GET":
+            payload = {
+                "session": {
+                    "id": session_id,
+                    "title": "Live Stage check",
+                    "access_role": "owner",
+                    "read_only": False,
+                },
+                "turns": [],
+                "surfaces": [],
+            }
+        elif path == "/api/calliope/session-events":
+            route.fulfill(status=204, body="")
+            return
+        else:
+            route.fulfill(status=404, content_type="application/json", body='{"error":{"message":"fixture"}}')
+            return
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    stream_setup = f"""
+      (() => {{
+        const nativeFetch = window.fetch.bind(window);
+        const sessionId = {json.dumps(session_id)};
+        const turnId = {json.dumps(turn_id)};
+        const surface = {json.dumps(surface)};
+        const completedTurn = {json.dumps(completed_turn)};
+        let completed = false;
+        window.fetch = (input, init = {{}}) => {{
+          const rawUrl = typeof input === "string" ? input : input.url;
+          const url = new URL(rawUrl, window.location.href);
+          const method = String(init.method || input?.method || "GET").toUpperCase();
+          if (url.pathname === `/api/calliope/sessions/${{sessionId}}/turn` && method === "POST") {{
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream({{
+              start(controller) {{
+                const push = (event, data) => controller.enqueue(
+                  encoder.encode(`event: ${{event}}\\ndata: ${{JSON.stringify(data)}}\\n\\n`)
+                );
+                push("calliope.turn.started", {{
+                  turn_id: turnId,
+                  ordinal: 1,
+                  attachments: [],
+                  evidence_refs: [],
+                  object_refs: [],
+                }});
+                setTimeout(() => push("calliope.plan", {{
+                  todos: [
+                    {{id: "inspect", content: "Inspect governed metric", status: "completed"}},
+                    {{id: "measure", content: "Measure active accounts", status: "in_progress"}},
+                    {{id: "explain", content: "Explain the result", status: "pending", parent: "measure"}},
+                  ],
+                  revision: 1,
+                  confirmed: true,
+                }}), 220);
+                setTimeout(() => push("tool.started", {{
+                  tool_name: "mcp__Warehouse__metric_history",
+                  preview: "Reading governed metric history",
+                }}), 500);
+                setTimeout(() => push("calliope.surfaces", {{
+                  turn_id: turnId,
+                  surfaces: [surface],
+                }}), 1200);
+                setTimeout(() => push("tool.completed", {{
+                  tool_name: "mcp__Warehouse__metric_history",
+                  call_id: "call-live-1",
+                }}), 1260);
+                setTimeout(() => push("calliope.plan", {{
+                  todos: [
+                    {{id: "inspect", content: "Inspect governed metric", status: "completed"}},
+                    {{id: "measure", content: "Measure active accounts", status: "completed"}},
+                    {{id: "explain", content: "Explain the result", status: "in_progress", parent: "measure"}},
+                  ],
+                  revision: 2,
+                  confirmed: true,
+                }}), 1500);
+                setTimeout(() => push("assistant.completed", {{
+                  content: "There are 41 active accounts.",
+                }}), 5200);
+                setTimeout(() => {{
+                  completed = true;
+                  push("calliope.turn.completed", {{
+                    turn_id: turnId,
+                    assistant_message: "There are 41 active accounts.",
+                    surface_count: 1,
+                    response_receipt: {{}},
+                  }});
+                  controller.close();
+                }}, 5600);
+              }},
+            }});
+            return Promise.resolve(new Response(stream, {{
+              status: 200,
+              headers: {{"Content-Type": "text/event-stream"}},
+            }}));
+          }}
+          if (completed && url.pathname === `/api/calliope/sessions/${{sessionId}}` && method === "GET") {{
+            completedTurn.client_turn_id = JSON.parse(init.body || "null")?.client_turn_id || null;
+            return Promise.resolve(new Response(JSON.stringify({{
+              session: {{id: sessionId, title: "Live Stage check", access_role: "owner", read_only: false}},
+              turns: [completedTurn],
+              surfaces: [surface],
+            }}), {{status: 200, headers: {{"Content-Type": "application/json"}}}}));
+          }}
+          return nativeFetch(input, init);
+        }};
+      }})();
+    """
+
+    try:
+        with playwright.sync_playwright() as runtime:
+            browser = runtime.chromium.launch(
+                headless=True,
+                executable_path="/usr/bin/chromium",
+            )
+            page = browser.new_page(viewport={"width": 1500, "height": 900})
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            page.add_init_script(script=stream_setup)
+            page.route("**/api/**", route_api)
+            page.goto(
+                f"http://127.0.0.1:{server.server_port}/calliope/index.html?session={session_id}&view=zen",
+                wait_until="networkidle",
+            )
+            editor = page.locator("#message-editor .cm-content")
+            editor.click()
+            editor.type("Show active accounts")
+            page.locator("#send-message").click()
+
+            # The turn reserves one stable Stage slot before its first tool.
+            # Cards fade within it; they never push durable surfaces around.
+            working_set = page.locator("#stage-working-set")
+            playwright.expect(working_set).to_have_attribute("aria-hidden", "true")
+            assert working_set.evaluate("node => !node.hidden")
+            reserved_stage_top = page.locator("#stage").evaluate(
+                "node => node.getBoundingClientRect().top"
+            )
+
+            # Hermes versions that omit the call id on start still correlate
+            # by the exact active tool name when the durable receipt arrives.
+            working = page.locator("#stage-working-set .stage-working-card")
+            playwright.expect(working).to_have_class(re.compile("is-active"), timeout=1200)
+            playwright.expect(working).to_contain_text("metric history")
+            playwright.expect(working.locator(".stage-working-card-detail pre")).to_contain_text(
+                "Reading governed metric history"
+            )
+            playwright.expect(working_set).to_have_attribute("aria-hidden", "false")
+            live_plan = page.locator("#stage-turn-plan")
+            playwright.expect(live_plan).to_contain_text("Inspect governed metric")
+            playwright.expect(live_plan).to_contain_text("Measure active accounts")
+            playwright.expect(live_plan).to_contain_text("Explain the result")
+            playwright.expect(page.locator("#stage-turn-plan-meta")).to_have_text(
+                "2 open · 1 done · r1"
+            )
+            assert live_plan.evaluate("node => node.getBoundingClientRect().left") > working.evaluate(
+                "node => node.getBoundingClientRect().left"
+            )
+            active_stage_top = page.locator("#stage").evaluate(
+                "node => node.getBoundingClientRect().top"
+            )
+            assert active_stage_top == pytest.approx(reserved_stage_top, abs=0.5)
+            working_bottom = working_set.evaluate(
+                "node => node.getBoundingClientRect().bottom"
+            )
+            assert active_stage_top - working_bottom >= 13
+            durable_selector = (
+                f'[data-surface-id="{surface_id}"],'
+                f'[data-zen-ledger-surface="{surface_id}"]'
+            )
+            playwright.expect(page.locator(durable_selector)).to_have_count(0)
+            page.screenshot(path=str(tmp_path / "calliope-stage-tool-running.png"), full_page=True)
+
+            durable = page.locator(durable_selector)
+            playwright.expect(durable).to_be_visible(timeout=2500)
+            playwright.expect(working).to_have_class(re.compile("is-published"), timeout=800)
+            playwright.expect(working).to_contain_text("Result excerpt")
+            playwright.expect(working).to_contain_text("41")
+            playwright.expect(working).to_contain_text("active_accounts")
+            playwright.expect(working).to_contain_text("[redacted]")
+            assert "working-secret" not in working.inner_text()
+            playwright.expect(page.locator("#stage-turn-plan-meta")).to_have_text(
+                "1 open · 2 done · r2"
+            )
+            playwright.expect(
+                page.locator('#stage-turn-plan li[aria-current="step"]')
+            ).to_contain_text("Explain the result")
+            page.screenshot(path=str(tmp_path / "calliope-stage-tool-published.png"), full_page=True)
+
+            playwright.expect(working).to_have_count(0, timeout=4500)
+            assert working_set.evaluate("node => !node.hidden")
+            clearing_stage_top = page.locator("#stage").evaluate(
+                "node => node.getBoundingClientRect().top"
+            )
+            assert clearing_stage_top == pytest.approx(reserved_stage_top, abs=0.5)
+            playwright.expect(page.locator("#stage-working-set")).to_be_hidden(timeout=4000)
+            playwright.expect(durable).to_be_visible()
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert page_errors == []
+
+
+def test_rendered_composer_selects_exact_objects_and_shows_durable_receipt(tmp_path):
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    class QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(QuietHandler, directory=str(HERE)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session_id = "9e4e61fb-abd1-4289-8e04-76c604f4d0ee"
+    turn_id = "d6dfb4ad-598f-401b-8baf-c6b467225f43"
+    output_id = "35dcfd8d-375f-41f2-99dd-4d9f3139f18c"
+    posted = []
+    hint_requests = []
+    errors = []
+
+    def response_receipt():
+        objects = [
+            {
+                "kind": "metric",
+                "ref_id": "enrollment_rate",
+                "label": "Enrollment Rate",
+                "source": "Governed metrics",
+                "version": 4,
+                "handle": {
+                    "kind": "metric",
+                    "name": "enrollment_rate",
+                    "relation": "enrollment_rate",
+                    "params": {},
+                },
+            },
+            {
+                "kind": "person",
+                "ref_id": "42",
+                "label": "Ada Lovelace",
+                "source": "Company Brain",
+                "node_id": "42",
+                "handle": {"kind": "brain_entity", "label": "Ada Lovelace"},
+            },
+        ]
+        return {
+            "version": 1,
+            "evidence": [],
+            "objects": objects,
+            "tools": [{"name": "warehouse__metric_history", "status": "complete", "count": 1}],
+            "outputs": [{
+                "surface_id": output_id,
+                "kind": "metric",
+                "title": "Enrollment Rate",
+                "effect": "created",
+            }],
+            "summary": {"sources": 0, "objects": 2, "tools": 1, "outputs": 1, "changes": 0},
+        }, objects
+
+    def api_route(route):
+        request = route.request
+        parsed = urlparse(request.url)
+        path = parsed.path
+        if path == "/api/calliope/config":
+            payload = {
+                "healthy": True,
+                "evidence_search": True,
+                "personal_briefs": False,
+                "google_calendar": False,
+                "action_library": True,
+                "speech_to_text": {"enabled": False},
+            }
+        elif path == "/api/calliope/inbox":
+            payload = {"items": [], "counts": {"unread": 0, "open": 0, "shown": 0, "by_kind": {}}}
+        elif path == "/api/calliope/styles":
+            payload = {"profiles": []}
+        elif path == "/api/calliope/instruments":
+            payload = {"instruments": []}
+        elif path == "/api/calliope/workflows":
+            payload = {"workflows": []}
+        elif path == "/api/calliope/sessions" and request.method == "GET":
+            payload = {"sessions": [{
+                "id": session_id,
+                "title": "Composer receipt check",
+                "updated_at": "2026-08-03T14:00:00Z",
+                "surface_count": 0,
+            }]}
+        elif path == f"/api/calliope/sessions/{session_id}" and request.method == "GET":
+            receipt, resolved_objects = response_receipt()
+            payload = {
+                "session": {
+                    "id": session_id,
+                    "title": "Composer receipt check",
+                    "updated_at": "2026-08-03T14:00:00Z",
+                },
+                "turns": ([{
+                    "id": turn_id,
+                    "session_id": session_id,
+                    "ordinal": 1,
+                    "user_message": "Compare Enrollment Rate with Ada Lovelace",
+                    "assistant_message": "Enrollment Rate is currently 73%. Ada owns the next review.",
+                    "attachments": [],
+                    "status": "complete",
+                    "turn_kind": "chat",
+                    "evidence_refs": [],
+                    "object_refs": resolved_objects,
+                    "response_receipt": receipt,
+                    "created_at": "2026-08-03T14:01:00Z",
+                    "completed_at": "2026-08-03T14:01:04Z",
+                }] if posted else []),
+                "surfaces": ([{
+                    "id": output_id,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "ordinal": 1,
+                    "kind": "metric",
+                    "title": "Enrollment Rate",
+                    "tool_name": "warehouse__metric_history",
+                    "tool_call_id": "call-1",
+                    "lineage_key": "metric:enrollment_rate",
+                    "payload": {"name": "enrollment_rate", "value": 0.73},
+                    "source": {},
+                    "presentation": {},
+                    "created_at": "2026-08-03T14:01:00Z",
+                }] if posted else []),
+            }
+        elif path == "/api/calliope/objects":
+            query = parse_qs(parsed.query).get("q", [""])[0].lower()
+            if "ada" in query:
+                objects = [{
+                    "kind": "person",
+                    "ref_id": "42",
+                    "node_id": "42",
+                    "label": "Ada Lovelace",
+                    "source": "Company Brain",
+                    "summary": "person",
+                    "handle": {"kind": "brain_entity", "label": "Ada Lovelace"},
+                }]
+            else:
+                objects = [{
+                    "kind": "metric",
+                    "ref_id": "enrollment_rate",
+                    "label": "Enrollment Rate",
+                    "source": "Governed metrics",
+                    "summary": "Current enrollment conversion rate",
+                    "version": 4,
+                    "handle": {
+                        "kind": "metric",
+                        "name": "enrollment_rate",
+                        "relation": "enrollment_rate",
+                        "params": {},
+                    },
+                }]
+            payload = {"objects": objects, "query": query}
+        elif path == "/api/calliope/object-hints":
+            body = json.loads(request.post_data or "{}")
+            hint_requests.append(body)
+            hints = []
+            for candidate in body.get("candidates", []):
+                if str(candidate.get("text") or "").lower() == "bigfoot":
+                    objects = [
+                        {
+                            "kind": "thing",
+                            "ref_id": "2199",
+                            "node_id": "2199",
+                            "label": "bigfoot",
+                            "source": "Company Brain",
+                            "summary": "topic",
+                            "handle": {"kind": "brain_entity", "label": "bigfoot"},
+                        },
+                        {
+                            "kind": "thing",
+                            "ref_id": "2333",
+                            "node_id": "2333",
+                            "label": "bigfoot_sightings",
+                            "source": "Company Brain",
+                            "summary": "table",
+                            "handle": {"kind": "brain_entity", "label": "bigfoot_sightings"},
+                        },
+                    ]
+                elif candidate.get("text") == "Ada Lovelace":
+                    objects = [{
+                        "kind": "person",
+                        "ref_id": "42",
+                        "node_id": "42",
+                        "label": "Ada Lovelace",
+                        "source": "Company Brain",
+                        "summary": "person",
+                        "handle": {"kind": "brain_entity", "label": "Ada Lovelace"},
+                    }]
+                else:
+                    continue
+                hints.append({
+                    "key": candidate["key"],
+                    "text": candidate["text"],
+                    "objects": objects,
+                })
+            payload = {"hints": hints}
+        elif path == f"/api/calliope/sessions/{session_id}/turn":
+            body = json.loads(request.post_data or "{}")
+            posted.append(body)
+            receipt, objects = response_receipt()
+            surface = {
+                "id": output_id,
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "ordinal": 1,
+                "kind": "metric",
+                "title": "Enrollment Rate",
+                "tool_name": "warehouse__metric_history",
+                "tool_call_id": "call-1",
+                "lineage_key": "metric:enrollment_rate",
+                "payload": {"name": "enrollment_rate", "value": 0.73},
+                "source": {},
+                "presentation": {},
+                "created_at": "2026-08-03T14:01:00Z",
+            }
+            events = [
+                ("calliope.turn.started", {
+                    "turn_id": turn_id,
+                    "ordinal": 1,
+                    "attachments": [],
+                    "evidence_refs": [],
+                    "object_refs": objects,
+                }),
+                ("assistant.completed", {
+                    "content": "Enrollment Rate is currently 73%. Ada owns the next review."
+                }),
+                ("calliope.surfaces", {"turn_id": turn_id, "surfaces": [surface]}),
+                ("calliope.turn.completed", {
+                    "turn_id": turn_id,
+                    "assistant_message": "Enrollment Rate is currently 73%. Ada owns the next review.",
+                    "surface_count": 1,
+                    "response_receipt": receipt,
+                }),
+            ]
+            stream = "".join(
+                f"event: {event}\ndata: {json.dumps(data)}\n\n" for event, data in events
+            )
+            route.fulfill(status=200, content_type="text/event-stream", body=stream)
+            return
+        elif path == "/api/calliope/trails":
+            payload = {
+                "subject": {
+                    "kind": "brain_entity",
+                    "label": "Ada Lovelace",
+                    "handle": {"kind": "brain_entity", "label": "Ada Lovelace"},
+                },
+                "facts": [],
+                "connections": [],
+                "route_summary": {"resolved": 0, "bounded": False, "sections": {}},
+            }
+        else:
+            route.fulfill(status=404, content_type="application/json", body='{"error":{"message":"missing fixture"}}')
+            return
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    try:
+        with playwright.sync_playwright() as runtime:
+            browser = runtime.chromium.launch(
+                headless=True,
+                executable_path="/usr/bin/chromium",
+            )
+            page = browser.new_page(viewport={"width": 1500, "height": 950})
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/**", api_route)
+            page.goto(
+                f"http://127.0.0.1:{server.server_port}/calliope/index.html?session={session_id}",
+                wait_until="networkidle",
+            )
+            editor = page.locator("#message-editor .cm-content")
+            editor.click()
+            editor.type(
+                "Can we find where the bigfoot data might be? There are tables "
+                "somewhere. Might be _location or not, whatever one is richer. Traffic?"
+            )
+            bigfoot_hint = page.locator("#message-editor .cm-object-hint", has_text="bigfoot")
+            bigfoot_hint.wait_for()
+            expect = playwright.expect
+            expect(bigfoot_hint).to_have_class(re.compile("cm-object-hint-ambiguous"))
+            page.screenshot(path=str(tmp_path / "calliope-lowercase-object-hint.png"), full_page=True)
+            bigfoot_hint.click()
+            expect(page.locator(".cm-tooltip-autocomplete li")).to_have_count(2)
+            page.keyboard.press("Escape")
+            editor.press("Control+A")
+            editor.press("Backspace")
+            editor.type("Please ask Ada Lovelace")
+            soft_hint = page.locator("#message-editor .cm-object-hint", has_text="Ada Lovelace")
+            soft_hint.wait_for()
+            expect(editor).not_to_contain_text("[[")
+            page.screenshot(path=str(tmp_path / "calliope-soft-object-hint.png"), full_page=True)
+            soft_hint.click()
+            hint_choice = page.locator(".cm-tooltip-autocomplete li", has_text="Ada Lovelace")
+            hint_choice.wait_for()
+            hint_choice.click()
+            expect(editor).to_contain_text("[[person:42|Ada Lovelace]]")
+            editor.press("Control+A")
+            editor.press("Backspace")
+            editor.type("Compare [[Enroll")
+            page.locator(".cm-tooltip-autocomplete li").first.wait_for()
+            editor.press("Enter")
+            expect(editor).to_contain_text("[[metric:enrollment_rate|Enrollment Rate]]")
+            editor.type(" with [[Ada")
+            page.locator(".cm-tooltip-autocomplete li").first.wait_for()
+            editor.press("Enter")
+            expect(editor).to_contain_text("[[person:42|Ada Lovelace]]")
+            editor.press("Enter")
+            expect(page.locator(".message.user .message-body")).to_contain_text(
+                "Compare Enrollment Rate with Ada Lovelace"
+            )
+            expect(page.locator(".message.user .message-body")).not_to_contain_text("[[")
+            expect(page.locator(".message-receipt summary")).to_contain_text(
+                "Used 2 · Ran 1 · Made 1"
+            )
+            expect(page.locator(".message-objects button")).to_have_count(2)
+            page.locator(".message-receipt summary").click()
+            expect(page.locator(".message-receipt-body section")).to_have_count(3)
+            expect(page.locator(".message-receipt-body [data-focus-surface]")).to_have_count(1)
+            page.screenshot(path=str(tmp_path / "calliope-composer-receipt.png"), full_page=True)
+            page.locator(".message-objects button").nth(1).click()
+            expect(page.locator("#surface-viewer-title")).to_have_text("Ada Lovelace")
+            page.screenshot(path=str(tmp_path / "calliope-object-trail.png"), full_page=True)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert errors == []
+    assert any(
+        candidate.get("text") == "Ada Lovelace"
+        for request in hint_requests
+        for candidate in request.get("candidates", [])
+    )
+    assert len(posted) == 1
+    assert posted[0]["message"] == (
+        "Compare [[metric:enrollment_rate|Enrollment Rate]] with "
+        "[[person:42|Ada Lovelace]]"
+    )
+    assert posted[0]["object_refs"] == [
+        {"kind": "metric", "ref_id": "enrollment_rate"},
+        {"kind": "person", "ref_id": "42"},
+    ]
+
+
+def test_stage_only_runs_artifact_iframes_inside_its_scroll_viewport():
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    class QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(QuietHandler, directory=str(HERE)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session_id = "viewport-artifact-session"
+    artifact_loads = []
+    errors = []
+    turns = []
+    surfaces = []
+    for index in range(10):
+        turn_id = f"viewport-turn-{index}"
+        slug = f"viewport-dashboard-{index}"
+        turns.append({
+            "id": turn_id,
+            "session_id": session_id,
+            "ordinal": index + 1,
+            "user_message": f"Revision {index + 1}",
+            "assistant_message": "Revision ready.",
+            "attachments": [],
+            "status": "complete",
+            "turn_kind": "chat",
+            "created_at": f"2026-08-03T14:{index:02d}:00Z",
+            "completed_at": f"2026-08-03T14:{index:02d}:04Z",
+        })
+        surfaces.append({
+            "id": f"viewport-surface-{index}",
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "ordinal": 1,
+            "kind": "artifact",
+            "title": f"Dashboard revision {index + 1}",
+            "tool_name": "warehouse__create_live_app",
+            "tool_call_id": f"viewport-call-{index}",
+            "lineage_key": "artifact:viewport-dashboard",
+            "artifact_slug": slug,
+            "artifact_version": index + 1,
+            "payload": {
+                "slug": slug,
+                "version": index + 1,
+                "display_url": f"/calliope/artifacts/{slug}/versions/{index + 1}",
+            },
+            "source": {},
+            "presentation": {},
+            "created_at": f"2026-08-03T14:{index:02d}:01Z",
+        })
+
+    def api_route(route):
+        request = route.request
+        path = urlparse(request.url).path
+        if path == "/api/calliope/config":
+            payload = {
+                "healthy": True,
+                "evidence_search": True,
+                "personal_briefs": False,
+                "google_calendar": False,
+                "action_library": True,
+                "speech_to_text": {"enabled": False},
+            }
+        elif path == "/api/calliope/inbox":
+            payload = {
+                "items": [],
+                "counts": {"unread": 0, "open": 0, "shown": 0, "by_kind": {}},
+            }
+        elif path == "/api/calliope/styles":
+            payload = {"profiles": []}
+        elif path == "/api/calliope/instruments":
+            payload = {"instruments": []}
+        elif path == "/api/calliope/workflows":
+            payload = {"workflows": []}
+        elif path == "/api/calliope/sessions" and request.method == "GET":
+            payload = {"sessions": [{
+                "id": session_id,
+                "title": "Viewport iframe check",
+                "updated_at": "2026-08-03T15:00:00Z",
+                "surface_count": len(surfaces),
+            }]}
+        elif path == f"/api/calliope/sessions/{session_id}" and request.method == "GET":
+            payload = {
+                "session": {
+                    "id": session_id,
+                    "title": "Viewport iframe check",
+                    "updated_at": "2026-08-03T15:00:00Z",
+                },
+                "turns": turns,
+                "surfaces": surfaces,
+            }
+        else:
+            route.fulfill(
+                status=404,
+                content_type="application/json",
+                body='{"error":{"message":"missing fixture"}}',
+            )
+            return
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    def artifact_route(route):
+        slug = urlparse(route.request.url).path.split("/")[3]
+        artifact_loads.append(slug)
+        route.fulfill(
+            status=200,
+            content_type="text/html",
+            body=(
+                "<!doctype html><html><body style='margin:0;background:#071018;color:white'>"
+                f"<main style='height:540px;padding:30px'>{slug}</main>"
+                "</body></html>"
+            ),
+        )
+
+    viewport_contract = """() => {
+      const root = document.querySelector('#stage-scroll');
+      const rootRect = root.getBoundingClientRect();
+      const frames = [...document.querySelectorAll('#stage iframe[data-artifact-src]')];
+      return frames.length === 10 && frames.every(frame => {
+        const rect = frame.getBoundingClientRect();
+        const visible = Math.min(rect.bottom, rootRect.bottom)
+          - Math.max(rect.top, rootRect.top) > 0;
+        const active = frame.dataset.artifactActive === 'true';
+        return active === visible && Boolean(frame.getAttribute('src')) === active;
+      });
+    }"""
+
+    try:
+        with playwright.sync_playwright() as runtime:
+            browser = runtime.chromium.launch(
+                headless=True,
+                executable_path="/usr/bin/chromium",
+            )
+            page = browser.new_page(viewport={"width": 1500, "height": 950})
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/**", api_route)
+            page.route("**/calliope/artifacts/**", artifact_route)
+            page.goto(
+                f"http://127.0.0.1:{server.server_port}/calliope/index.html?session={session_id}",
+                wait_until="networkidle",
+            )
+            page.wait_for_function(viewport_contract)
+            initial_active = page.locator(
+                '#stage iframe[data-artifact-active="true"]'
+            ).count()
+            assert 0 < initial_active < len(surfaces)
+            assert len(set(artifact_loads)) == initial_active
+
+            page.locator("#stage-scroll").evaluate(
+                "node => { node.style.scrollBehavior = 'auto'; node.scrollTop = node.scrollHeight; }"
+            )
+            page.wait_for_timeout(1_100)
+            page.wait_for_function(viewport_contract)
+            bottom_active = page.locator(
+                '#stage iframe[data-artifact-active="true"]'
+            ).count()
+            assert 0 < bottom_active < len(surfaces)
+            assert page.locator(
+                '#stage iframe[data-artifact-active="false"][src]'
+            ).count() == 0
+
+            # Selecting the already-open session rebuilds the Stage just like a
+            # surface mutation. Historical cards must remain dormant afterward.
+            page.locator(f'[data-session-id="{session_id}"]').click()
+            page.wait_for_function(
+                "document.querySelector('#stage-scroll').scrollTop < 1"
+            )
+            page.wait_for_function(viewport_contract)
+            assert page.locator(
+                '#stage iframe[data-artifact-active="true"]'
+            ).count() < len(surfaces)
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert errors == []
+
+
+def test_rendered_artifact_markup_uses_folded_exact_version_capture(tmp_path):
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    class QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        partial(QuietHandler, directory=str(HERE)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session_id = "9e4e61fb-abd1-4289-8e04-76c604f4d0ee"
+    turn_id = "d6dfb4ad-598f-401b-8baf-c6b467225f43"
+    artifact_id = "35dcfd8d-375f-41f2-99dd-4d9f3139f18c"
+    capture_id = "51b33d22-631f-49a0-a93c-349bdf707acd"
+    capture_requests = []
+    errors = []
+
+    artifact = {
+        "id": artifact_id,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "ordinal": 1,
+        "kind": "artifact",
+        "title": "Growth Brief",
+        "tool_name": "mcp__warehouse__create_live_app",
+        "tool_call_id": "artifact-1",
+        "lineage_key": "artifact:growth-brief",
+        "artifact_slug": "growth-brief",
+        "artifact_version": 4,
+        "payload": {
+            "slug": "growth-brief",
+            "version": 4,
+            "display_url": "/calliope/artifacts/growth-brief/versions/4",
+        },
+        "source": {},
+        "presentation": {},
+        "created_at": "2026-08-03T14:01:00Z",
+    }
+    capture = {
+        "id": capture_id,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "ordinal": 2,
+        "kind": "image",
+        "title": "Capture · Growth Brief",
+        "tool_name": "calliope_artifact_capture",
+        "tool_call_id": "capture-1",
+        "lineage_key": "capture:growth-brief",
+        "parent_surface_id": artifact_id,
+        "artifact_slug": "growth-brief",
+        "artifact_version": 4,
+        "payload": {
+            "slug": "growth-brief",
+            "version": 4,
+            "image_url": f"/api/calliope/surfaces/{capture_id}/image",
+            "width": 1200,
+            "height": 800,
+        },
+        "source": {"origin": "calliope_markup_capture"},
+        "presentation": {"companion": True, "purpose": "markup"},
+        "created_at": "2026-08-03T14:01:03Z",
+    }
+    captured = False
+
+    def api_route(route):
+        nonlocal captured
+        request = route.request
+        path = urlparse(request.url).path
+        if path == "/api/calliope/config":
+            payload = {
+                "healthy": True,
+                "evidence_search": True,
+                "personal_briefs": False,
+                "google_calendar": False,
+                "action_library": True,
+                "speech_to_text": {"enabled": False},
+                "max_image_bytes": 8 * 1024 * 1024,
+            }
+        elif path == "/api/calliope/inbox":
+            payload = {"items": [], "counts": {"unread": 0, "open": 0, "shown": 0, "by_kind": {}}}
+        elif path == "/api/calliope/styles":
+            payload = {"profiles": []}
+        elif path == "/api/calliope/instruments":
+            payload = {"instruments": []}
+        elif path == "/api/calliope/workflows":
+            payload = {"workflows": []}
+        elif path == "/api/calliope/sessions" and request.method == "GET":
+            payload = {"sessions": [{
+                "id": session_id,
+                "title": "Artifact markup check",
+                "updated_at": "2026-08-03T14:00:00Z",
+                "surface_count": 2 if captured else 1,
+            }]}
+        elif path == f"/api/calliope/sessions/{session_id}" and request.method == "GET":
+            payload = {
+                "session": {
+                    "id": session_id,
+                    "title": "Artifact markup check",
+                    "updated_at": "2026-08-03T14:00:00Z",
+                },
+                "turns": [{
+                    "id": turn_id,
+                    "session_id": session_id,
+                    "ordinal": 1,
+                    "user_message": "Build the growth brief",
+                    "assistant_message": "The live brief is ready.",
+                    "attachments": [],
+                    "status": "complete",
+                    "turn_kind": "chat",
+                    "created_at": "2026-08-03T14:00:00Z",
+                    "completed_at": "2026-08-03T14:01:04Z",
+                }],
+                "surfaces": [capture, artifact] if captured else [artifact],
+            }
+        elif path == (
+            f"/api/calliope/sessions/{session_id}/surfaces/{artifact_id}/capture"
+        ):
+            capture_requests.append(json.loads(request.post_data or "{}"))
+            captured = True
+            route.fulfill(status=201, content_type="application/json", body=json.dumps({
+                "surface": capture,
+                "reused": False,
+            }))
+            return
+        elif path == f"/api/calliope/surfaces/{capture_id}/image":
+            svg = """<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800">
+              <defs><linearGradient id="g"><stop stop-color="#112b38"/><stop offset="1" stop-color="#071018"/></linearGradient></defs>
+              <rect width="1200" height="800" fill="url(#g)"/>
+              <rect x="80" y="120" width="1040" height="560" rx="22" fill="#102c39" stroke="#6dc5db"/>
+              <text x="120" y="190" fill="#eaf7fa" font-size="42">Growth Brief</text>
+              <rect x="120" y="250" width="300" height="300" fill="#59a9bd"/>
+            </svg>"""
+            route.fulfill(status=200, content_type="image/svg+xml", body=svg)
+            return
+        else:
+            route.fulfill(status=404, content_type="application/json", body='{"error":{"message":"missing fixture"}}')
+            return
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    def artifact_route(route):
+        html = """<!doctype html><html><body style="margin:0;background:#071018;color:white">
+          <button id="revenue" style="margin:80px;width:300px;height:120px">Revenue +18%</button>
+          <script>
+          addEventListener('message', event => {
+            if (event.data?.type !== 'calliope.artifact.inspect.start') return;
+            parent.postMessage({type:'calliope.artifact.inspect.selected',target:{
+              selection_id:'cda76b1c-e1b7-4b4f-b5ea-902fbe6e7f26',label:'Revenue +18%',
+              selector:'#revenue',tag:'button',role:'',text:'Revenue +18%',data:{metric:'revenue'},
+              bounds:{x:80,y:80,width:300,height:120},viewport:{width:1200,height:800},
+              click:{x:200,y:130},table:null
+            }},'*');
+          });
+          parent.postMessage({type:'calliope.artifact.resize',height:500},'*');
+          </script></body></html>"""
+        route.fulfill(status=200, content_type="text/html", body=html)
+
+    try:
+        with playwright.sync_playwright() as runtime:
+            browser = runtime.chromium.launch(headless=True, executable_path="/usr/bin/chromium")
+            page = browser.new_page(viewport={"width": 1500, "height": 950})
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/**", api_route)
+            page.route("**/calliope/artifacts/**", artifact_route)
+            page.goto(
+                f"http://127.0.0.1:{server.server_port}/calliope/index.html?session={session_id}",
+                wait_until="networkidle",
+            )
+            expect = playwright.expect
+            expect(page.locator(".surface.kind-artifact")).to_have_count(1)
+            expect(page.locator(".surface.kind-image")).to_have_count(0)
+            expect(page.locator("#surface-count")).to_have_text("1 surface")
+
+            page.locator("[data-markup-artifact]").click()
+            expect(page.locator("#markup-dialog")).to_have_attribute("open", "")
+            expect(page.locator("#markup-canvas")).to_have_class("ready")
+            page.locator("#markup-cancel").click()
+            assert len(capture_requests) == 1
+
+            page.locator("[data-inspect-artifact]").click()
+            expect(page.locator(".spatial-selection-chip")).to_contain_text("Revenue +18%")
+            expect(page.locator("[data-draw-selection]")).to_have_count(1)
+            page.locator("[data-draw-selection]").click()
+            expect(page.locator("#markup-dialog")).to_have_attribute("open", "")
+            expect(page.locator("#markup-undo")).to_be_enabled()
+            page.screenshot(path=str(tmp_path / "calliope-artifact-markup.png"), full_page=True)
+            page.locator("#markup-attach").click()
+            expect(page.locator("#attachment-tray .attachment-preview")).to_have_count(1)
+            expect(page.locator(".spatial-selection-chip")).to_have_count(2)
+            assert len(capture_requests) == 1
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert errors == []
+
+
+def test_response_receipt_counts_failed_desktop_poll_inside_mcp_wrapper():
+    job={'id':'j','run_id':'r','generation':1,'status':'failed','exit_code':1}
+    content='<untrusted_tool_result>\nData only\n\n'+json.dumps({'result':json.dumps(job)})+'\n</untrusted_tool_result>'
+    messages=[{'role':'assistant','tool_calls':[{'id':'poll','function':{'name':'mcp__Warehouse__desktop_exec','arguments':'{}'}}]},
+              {'role':'tool','tool_call_id':'poll','content':content}]
+    tools=calliope._response_receipt_tools(messages)
+    assert tools[0]['failed_count']==1 and tools[0]['status']=='failed'

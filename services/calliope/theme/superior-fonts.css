@@ -1,0 +1,34 @@
+/* LT Superior — self-hosted Calliope typography.
+ * The supplied OSS family contains upright masters only. Existing italic
+ * editorial treatments intentionally use the browser's synthesized slant. */
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-Thin.otf") format("opentype");font-style:normal;font-weight:100;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-ExtraLight.otf") format("opentype");font-style:normal;font-weight:200;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-Light.otf") format("opentype");font-style:normal;font-weight:300;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-Regular.otf") format("opentype");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-Medium.otf") format("opentype");font-style:normal;font-weight:500;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-SemiBold.otf") format("opentype");font-style:normal;font-weight:600;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-Bold.otf") format("opentype");font-style:normal;font-weight:700;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-ExtraBold.otf") format("opentype");font-style:normal;font-weight:800;font-display:swap}
+@font-face{font-family:"Superior";src:url("/theme/fonts/LTSuperior-Black.otf") format("opentype");font-style:normal;font-weight:900;font-display:swap}
+
+@font-face{font-family:"Superior Serif";src:url("/theme/fonts/LTSuperiorSerif-Regular.otf") format("opentype");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Superior Serif";src:url("/theme/fonts/LTSuperiorSerif-Medium.otf") format("opentype");font-style:normal;font-weight:500;font-display:swap}
+@font-face{font-family:"Superior Serif";src:url("/theme/fonts/LTSuperiorSerif-Semibold.otf") format("opentype");font-style:normal;font-weight:600;font-display:swap}
+@font-face{font-family:"Superior Serif";src:url("/theme/fonts/LTSuperiorSerif-Bold.otf") format("opentype");font-style:normal;font-weight:700;font-display:swap}
+@font-face{font-family:"Superior Serif";src:url("/theme/fonts/LTSuperiorSerif-ExtraBold.otf") format("opentype");font-style:normal;font-weight:800;font-display:swap}
+
+@font-face{font-family:"Superior Mono";src:url("/theme/fonts/LTSuperiorMono-Regular.otf") format("opentype");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Superior Mono";src:url("/theme/fonts/LTSuperiorMono-Medium.otf") format("opentype");font-style:normal;font-weight:500;font-display:swap}
+@font-face{font-family:"Superior Mono";src:url("/theme/fonts/LTSuperiorMono-Semibold.otf") format("opentype");font-style:normal;font-weight:600;font-display:swap}
+@font-face{font-family:"Superior Mono";src:url("/theme/fonts/LTSuperiorMono-Bold.otf") format("opentype");font-style:normal;font-weight:700;font-display:swap}
+
+:root{
+  --font-superior-sans:"Superior",ui-sans-serif,system-ui,sans-serif;
+  --font-superior-serif:"Superior Serif",Georgia,serif;
+  --font-superior-mono:"Superior Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  /* Shared product type scale. Display headlines and signature faces remain
+   * intentionally local; ordinary interface text uses only these three sizes. */
+  --rvbbit-type-small:11px;
+  --rvbbit-type-body:14px;
+  --rvbbit-type-large:18px;
+}

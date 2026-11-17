@@ -1,0 +1,64 @@
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -229,7 +229,7 @@
+         status != previous_status
+         or status in TERMINAL_STATUSES
+         or bool(field_names & {
+-            "output", "error", "usage", "pending_steer", "session_id", "shutdown_requested_at"}))
++            "output", "error", "usage", "pending_steer", "steer_receipts", "session_id", "shutdown_requested_at"}))
+     if run_id in self._run_idempotency_ids and should_persist:
+         try:
+             self._run_idempotency_store.update_status(run_id, current)
+@@ -1220,21 +1220,31 @@
+         self, request, _api_server=_api_server, permission=None, active_fallback=False)
+     if err is not None:
+         return err
+-    # /stop keeps agent refs during cooperative shutdown, so the status gate (not the
+-    # agent ref) is what rejects stop-then-steer.
+-    if status.get("status") != "running" or not hasattr(agent, "steer"):
+-        return _json_error(
+-            _openai_error, f"Run is not currently accepting steer input: {run_id}",
+-            code="run_not_accepting_steer", status=409)
+     body, err = await self._read_json_body(request)
+     if err:
+         return err
+     raw_text = body.get("input") or body.get("message") or body.get("text") or ""
+     steer_text = _api_server._normalize_chat_content(raw_text).strip()
+     if not steer_text:
+-        return _json_error(
+-            _openai_error, "Missing non-empty steer text; expected 'input', 'message', or 'text'.",
+-            code="invalid_steer_input", status=400)
++        return _json_error(_openai_error, "Missing non-empty steer text.", code="invalid_steer_input", status=400)
++    key = str(body.get("request_id") or "")
++    if len(key)>128:
++        return _json_error(_openai_error, "Steer request ID too long.", code="invalid_steer_id", status=400)
++    import hashlib
++    digest = hashlib.sha256(steer_text.encode()).hexdigest()
++    receipts = dict(status.get("steer_receipts") or {})
++    prior = receipts.get(key) if key else None
++    if prior:
++        if prior.get("sha256") != digest:
++            return _json_error(_openai_error, "Steer ID reused with different input.", code="steer_id_conflict", status=409)
++        # Retry after a lost HTTP reply, even after completion: do not inject twice.
++        return web.json_response({"object":"hermes.run.steer", "run_id":run_id,
++            "accepted":True, "request_id":key, "replayed":True})
++    if status.get("status") != "running" or not hasattr(agent, "steer"):
++        return _json_error(_openai_error, f"Run is not currently accepting steer input: {run_id}",
++            code="run_not_accepting_steer", status=409)
++    if key and len(receipts)>=256:
++        return _json_error(_openai_error, "Run steering receipt limit reached.", code="steer_receipt_limit", status=409)
+     try:
+         accepted = bool(agent.steer(steer_text))
+     except Exception as exc:
+@@ -1243,7 +1253,10 @@
+     if not accepted:
+         return _json_error(
+             _openai_error, f"Run did not accept steer text: {run_id}", code="steer_not_accepted", status=409)
+-    _mark_run_event(self, run_id, "run.steered", accepted=True)
++    if key:
++        receipts[key] = {"sha256":digest,"accepted_at":time.time()}
++        self._set_run_status(run_id, "running", steer_receipts=receipts)
++    _mark_run_event(self, run_id, "run.steered", accepted=True, request_id=key)
+     return web.json_response({"object": "hermes.run.steer", "run_id": run_id, "accepted": True})
+ 
+ 

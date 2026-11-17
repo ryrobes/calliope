@@ -1,0 +1,98 @@
+api_version: rvbbit.pack/v1
+id: classify/twitter-roberta-sentiment
+name: twitter_roberta_sentiment
+title: RoBERTa Sentiment Classifier
+description: Practical positive/neutral/negative sentiment classifier for reviews, tickets, social text,
+  and notes.
+license: cc-by-4.0
+tags:
+- classify
+- sentiment
+- text
+- tabular
+- row
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: cardiffnlp/twitter-roberta-base-sentiment-latest
+  url: https://huggingface.co/cardiffnlp/twitter-roberta-base-sentiment-latest
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 501045531
+    vram_required_bytes: 626306914
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: classify_twitter_roberta_sentiment
+  operators:
+  - classify_sentiment
+  - classify_row_sentiment
+  - sentiment
+  - sentiment_confidence
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: sentiment_review_sample
+    description: Classify a product-review style note and assert sentiment JSON shape.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          label text;
+          score float8;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.classify_sentiment('the setup was simple and the dashboard is fantastic') INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'classify_sentiment returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'label')
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected sentiment result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'sentiment score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.classify_row_sentiment(
+              '{"review":"the setup was simple and the dashboard is fantastic","stars":5,"plan":"pro"}'::jsonb
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'label')
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected row sentiment result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'row sentiment score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.sentiment('the setup was simple and the dashboard is fantastic') INTO label;
+          IF coalesce(btrim(label), '') = '' THEN
+              RAISE EXCEPTION 'bundled sentiment operator returned empty label';
+          END IF;
+
+          SELECT rvbbit.sentiment_confidence('the setup was simple and the dashboard is fantastic') INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled sentiment_confidence out of range: %', score;
+          END IF;
+      END
+      $$;

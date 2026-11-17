@@ -1,0 +1,63 @@
+/* Chat's materials and control geometry, shared by the embedded workspaces. */
+:root {
+  --workspace-font: var(--sans, var(--data-font, var(--font-superior-sans, system-ui, sans-serif)));
+  --workspace-mono: var(--mono, var(--data-font-mono, var(--font-superior-mono, ui-monospace, monospace)));
+  --workspace-text: var(--bone, var(--foreground, #e8ddcc));
+  --workspace-bright: var(--bone-bright, var(--foreground, #fff7e9));
+  --workspace-muted: var(--fog, var(--chrome-text, #98aab5));
+  --workspace-bg: var(--panel, var(--background, #171310));
+  --workspace-raised: var(--panel-raised, var(--chrome-bg, #1d1813));
+  --workspace-line: var(--line, var(--chrome-border, #344751));
+  --workspace-accent: var(--amber, var(--main, #f5b446));
+  --workspace-line-hot: var(--line-hot, var(--workspace-accent));
+  --workspace-inset: color-mix(in oklch, var(--workspace-bg) 88%, #000);
+  --workspace-wash: color-mix(in oklch, var(--workspace-accent) 7%, transparent);
+  --workspace-radius: 9px;
+  --workspace-control-height: 36px;
+  --workspace-control-font: 500 13px/1.3 var(--workspace-font);
+  --workspace-header-height: 70px;
+  --workspace-gutter: 16px;
+}
+
+.workspace-control {
+  min-height: var(--workspace-control-height);
+  padding: 7px 10px;
+  border: 1px solid var(--workspace-line);
+  border-radius: var(--workspace-radius);
+  background: transparent;
+  color: var(--workspace-muted);
+  font: var(--workspace-control-font);
+  box-shadow: none;
+  cursor: pointer;
+  transition: color .18s, background .18s, border-color .18s;
+}
+.workspace-control:hover:not(:disabled) {
+  border-color: var(--workspace-line-hot);
+  background: var(--workspace-wash);
+  color: var(--workspace-bright);
+}
+.workspace-control:focus-visible {
+  outline: 2px solid var(--workspace-accent);
+  outline-offset: 2px;
+}
+.workspace-control:disabled { opacity: .4; cursor: default; }
+.workspace-control-primary {
+  color: var(--workspace-accent);
+  border-color: color-mix(in oklch, var(--workspace-accent) 40%, var(--workspace-line));
+  background: var(--workspace-wash);
+}
+.workspace-field {
+  width: 100%; min-width: 0;
+  padding: 12px 14px;
+  border: 0; border-radius: 10px;
+  outline: 2px solid transparent; outline-offset: -2px;
+  background: var(--workspace-inset); color: var(--workspace-text);
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / .12);
+  font: 16px/1.5 var(--workspace-font);
+  transition: outline-color .18s;
+}
+.workspace-field:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--workspace-accent) 55%, var(--workspace-bg));
+  outline-offset: -2px;
+}
+.workspace-field::placeholder { color: var(--workspace-muted); }

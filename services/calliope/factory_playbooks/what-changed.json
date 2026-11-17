@@ -1,0 +1,97 @@
+{
+  "name": "playbook.what-changed",
+  "title": "What Changed",
+  "contract": {
+    "method": [
+      "Treat the user's question as a change question, not a dashboard brief and not an open exploration.",
+      "Search the Library and find (governed terms come first) for a governed metric or cube before reconstructing arithmetic from raw tables; Business Context is the older projection, use it only for a promoted Value System. Prefer a promoted definition. If only a proposed or provisional definition exists, say so and do not present it as canonical.",
+      "Lock metric and window before storytelling. If grain, population, or comparison window would change the answer and no high-confidence default exists, block and ask a multiple-choice Floor question. Do not pick a grain to look busy.",
+      "Default window when the user said this week / last week / why did it drop without dates: the last closed business week versus the prior closed week, using the metric's governed calendar and the deployment's business timezone. If neither is defined and it could change the answer, ask rather than assuming a timezone or week boundary. Say the dates and timezone.",
+      "Run the headline comparison first: current period, prior period, absolute delta, percent delta. Put that on Stage as a compact table or metric tile. Prose does not invent a number the Stage does not show.",
+      "Check freshness and magnitude. If the file never landed, the window is incomplete, or the move is not a real change, say that and stop. Do not write a why.",
+      "Choose one decomposition cut that can sum to the headline delta. Run it. Put one row per contributor, biggest movement first, with current, prior, and delta. If the mix does not add to the headline, say so instead of inventing a story.",
+      "Publish exactly one claim chart: the shape of the locked metric over the locked window (and the comparison window if that is the claim). Title it with the claim, not the table name. Use live SQL-backed Stage charts. Do not chart intermediates, lookups, or a second metric unless the user asks.",
+      "Chat stays short: what moved, by how much, which mix explains it, what to look at next. Then stop. No mock, no HTML, no while-I-was-in-there extras.",
+      "Follow-ups are pokes on the same claim (break Facebook down; same thing for enrollments; watch this; make this a dashboard) — not a new product unless they explicitly switch playbooks.",
+      "Stay on the thread. Do not delegate unless the user @-mentions a specialist. Argus, if mentioned, red-teams the same claim; he does not write a second briefing."
+    ],
+    "outcome": "The user understands whether a named metric actually moved in a locked comparison window, what mix of contributors accounts for that delta, and what to look at next — without a dashboard, a briefing, or a pile of extra charts.",
+    "triggers": [
+      "Why did leads drop?",
+      "What changed this week?",
+      "What moved?",
+      "Why is this number down/up?",
+      "Use the What Changed playbook.",
+      "What changed vs last week?"
+    ],
+    "fallbacks": [
+      "If no governed metric exists, use a documented local domain definition when one is available and label it as local, not promoted. If the grain or population is unresolved, ask before comparing; do not import another organization's definition.",
+      "If the user named dates or a month, use those instead of the closed-week default.",
+      "If no cut explains the delta, say the mix is unexplained rather than stretching a weak dimension.",
+      "If Argus is @-mentioned, send only the locked claim and evidence for critique, then integrate.",
+      "If they ask to watch it, that is an alert/Workflow, not more charts.",
+      "If they ask to make it a dashboard, switch to Dashboards and stop this method."
+    ],
+    "guardrails": [
+      "Do not skip locking metric and window. A story without a grain is not this playbook.",
+      "Do not substitute persons, events, or a mart's aggregate for the metric's defined grain. Cost-per-outcome denominators must use the same qualifying population and event definition in both periods.",
+      "Do not present a proposed Business Context metric as promoted.",
+      "Do not dump five charts or a concat dashboard. One claim chart.",
+      "Do not write a why when the number barely moved or the data is stale.",
+      "Do not turn this into Dashboards, a weekly brief, or a Decision memo.",
+      "Do not fabricate contributor math in prose; the decomposition table must show the mix.",
+      "Keep artifacts private until the user approves sharing.",
+      "Calliope stays 1:1 unless the user @-mentions a specialist."
+    ],
+    "deliverable": "A short chat answer plus Stage evidence: a headline comparison, one decomposition table whose mix is honest about whether it adds up, and one claim chart of the locked metric in the locked window. The user can see the definition, the dates, and the next poke.",
+    "when_to_use": [
+      "The user asks why a number moved, dropped, spiked, or looks off versus a prior period.",
+      "The user asks what changed this week, last week, or versus last month for a known operational metric.",
+      "The work should stay a short Stage answer: headline delta, one decomposition, one claim chart, then stop."
+    ],
+    "when_not_to_use": [
+      "The user asked for a durable dashboard, mock, or live HTML page — that is Dashboards.",
+      "A one-number lookup, definition question, or list of names with no comparison.",
+      "The user is choosing among options or asking for a recommendation to act on — that is Decision, not this.",
+      "A scheduled weekly brief. Cadence is a Workflow that may reuse this method; it is not a third playbook.",
+      "Data-quality, freshness, or warehouse repair as the primary ask."
+    ],
+    "context_to_gather": [
+      "The metric the user named, and whether Business Context or a governed metric already defines grain, population, and time semantics.",
+      "The comparison window: use the metric's governed business calendar and the deployment's business timezone for the last two closed weeks unless the user named another window. Resolve missing calendar or timezone context before relying on it.",
+      "Whether the warehouse is fresh enough for that window; a partial current day is a stub, not a crash.",
+      "A cut that can actually explain the delta (source, location, program, closer) rather than a decorative dimension.",
+      "Whether grain is events, persons, or something else — especially for leads vs submissions."
+    ],
+    "completion_criteria": [
+      "Metric definition and comparison window are explicit, including timezone and whether the latest day is partial.",
+      "Headline current, prior, delta, and percent are on Stage from executed queries.",
+      "One decomposition cut is on Stage; the method states whether contributor deltas add to the headline.",
+      "Exactly one claim chart was published for the locked metric and window, titled with the claim.",
+      "Chat states what moved, the mix that explains it, and one next look — then stops.",
+      "No dashboard mock or HTML was started unless the user switched to Dashboards.",
+      "If blocked on grain or window, a multiple-choice question was asked instead of guessing."
+    ],
+    "optional_capabilities": [
+      "Argus only when @-mentioned, as a red-team of the same claim.",
+      "Company Brain for a qualitative reason after the number is locked.",
+      "Decision playbook if they then ask to pick an action.",
+      "Dashboards playbook if they then ask for a durable page."
+    ],
+    "required_capabilities": [
+      "Governed SQL execution.",
+      "Business Context or house metric definitions for grain.",
+      "Stage tables for the headline and decomposition.",
+      "Live SQL-backed Stage charts (publish_chart) for the one claim chart.",
+      "A Floor / multiple-choice question when grain or window is consequential and unlocked."
+    ],
+    "preferred_capabilities": [
+      "Promoted metrics, metric_history, and business_metric_change when a canonical contributor tree exists.",
+      "Cubes that already compare closed weeks.",
+      "read_chart / update_chart if the claim chart fails to render.",
+      "Library search so this Playbook is loaded instead of Dashboards or Exploration."
+    ]
+  },
+  "synopsis": "A 90-second answer to why a number moved: lock the metric and comparison window, show the delta, show the mix that explains it, one claim chart, then stop. Not a dashboard, not a briefing, not extra charts.",
+  "readiness": "ready"
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "calliope.app.v1",
+  "title": "Database clock",
+  "data": {
+    "state": {},
+    "clock": "Loading\u2026"
+  },
+  "components": [
+    {
+      "id": "root",
+      "component": "CStack",
+      "children": [
+        "title",
+        "time"
+      ]
+    },
+    {
+      "id": "title",
+      "component": "CText",
+      "text": "A different app, same runtime",
+      "size": "title"
+    },
+    {
+      "id": "time",
+      "component": "CText",
+      "text": {
+        "path": "/clock"
+      },
+      "family": "mono"
+    }
+  ],
+  "queries": {
+    "clock": {
+      "sql": "SELECT to_char(current_timestamp, 'YYYY-MM-DD HH24:MI:SS TZ') AS time",
+      "path": "/clock",
+      "shape": "value"
+    }
+  },
+  "events": {}
+}

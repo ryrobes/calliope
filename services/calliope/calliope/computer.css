@@ -1,0 +1,120 @@
+.computer-shelf { flex: 0 0 auto; min-width: 0; margin: 0 16px 10px; border: 1px solid var(--line, #45403b); border-radius: 7px; overflow: hidden; background: transparent; }
+.computer-shelf[hidden], .computer-shelf [hidden] { display: none !important; }
+.computer-shelf > header { display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px var(--workspace-gutter); }
+.computer-identity{display:flex;align-items:center;gap:10px;flex:1 1 100%;min-width:0}
+.computer-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%;min-width:0}
+.computer-shelf > header strong {font:500 15px/1.4 var(--workspace-font);color:var(--workspace-bright);overflow-wrap:anywhere}
+.computer-status {flex:1;min-width:0;color:var(--workspace-muted);font:12px/1.4 var(--workspace-font)}
+.computer-shelf select{font:var(--workspace-control-font);color:var(--workspace-text);background:var(--workspace-bg);border:1px solid var(--workspace-line);border-radius:var(--workspace-radius);min-height:36px;padding:7px 10px;cursor:pointer}
+.computer-shelf button:disabled { opacity: .45; cursor: default; }
+
+.computer-context {border:0;padding:0;background:transparent;color:var(--workspace-accent);font:12px/1.4 var(--workspace-font);cursor:pointer;max-width: 150px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.computer-screen { width: 100%; aspect-ratio: var(--computer-aspect, 4 / 3); max-height: min(57vh, 680px); background: var(--void, #111); }
+.computer-screen iframe { display: block; border: 0; width: 100%; height: 100%; }
+.computer-shelf:fullscreen,#workspace-desktop .computer-shelf:fullscreen {background:var(--workspace-bg);margin:0; display: flex; flex-direction: column; border: 0; border-radius: 0; }
+.computer-shelf:fullscreen .computer-screen { flex: 1; height: auto; min-height: 0; max-height: none; aspect-ratio: auto; }
+.computer-history {padding:12px var(--workspace-gutter) 20px;max-height:45vh;overflow:auto;font:13px/1.6 var(--workspace-font);color:var(--workspace-muted)}
+.computer-history video { display: block; width: 100%; max-height: 340px; background: #111; margin: 8px 0; }
+.computer-events details { padding: 6px 0; }
+.computer-events summary { cursor: pointer; }
+.computer-events pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font-size: 11px; }
+.computer-feedback { display: flex; gap: 8px; margin-top: 10px; }
+.computer-feedback textarea { flex: 1; min-width: 0; min-height:84px; }
+.computer-teaching { border-top: 1px solid var(--line, #45403b); padding:12px var(--workspace-gutter);font:12px/1.5 var(--workspace-font);color:var(--workspace-muted); }
+.computer-teaching summary { cursor: pointer; }
+.computer-teaching p { margin: 6px 0 0; opacity: .7; }
+.computer-feedback { flex-wrap: wrap; }
+.computer-feedback select { max-width: 100%; }
+@media (max-width: 650px) { .computer-shelf { margin-inline: 6px; } .computer-shelf > header { gap: 5px; } .computer-status { flex-basis: 60%; } .computer-screen { max-height: 45vh; } }
+.computer-shelf[hidden], #computer-open[hidden] { display: none !important; }
+
+/* The installation desktop occupies its workspace tab. */
+#workspace-desktop .computer-shelf{background:transparent;display:flex;flex-direction:column;flex:1;min-height:0;margin:0;border:0;border-radius:0;overflow:auto}
+#workspace-desktop .computer-screen{flex:none;width:calc(100% - 2 * var(--workspace-gutter));margin:var(--workspace-gutter) var(--workspace-gutter) 0;min-height:0;aspect-ratio:var(--computer-aspect,16 / 9);max-height:52dvh;border:1px solid var(--workspace-line);border-radius:var(--workspace-radius);overflow:hidden}
+#workspace-desktop .computer-screen iframe{height:100%}
+#workspace-desktop .computer-terminal,#workspace-desktop .computer-history{flex:1 0 180px;min-height:180px;max-height:none;overflow:auto}
+#workspace-desktop .computer-shelf>header,#workspace-desktop .computer-tabs,#workspace-desktop .computer-teaching{flex:none}
+#workspace-desktop .computer-window-controls{margin-left:auto}
+.computer-shelf.is-small { margin: 0 0 10px; background: var(--panel, #151311); }
+.computer-shelf.is-small > header { gap: 5px; padding: 6px 8px; flex-wrap: nowrap; }
+.computer-shelf.is-small > header strong { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-shelf.is-small .computer-status { min-width: 0; flex-basis: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-shelf.is-small .computer-screen { max-height: 30dvh; }
+.computer-shelf.is-small iframe { pointer-events: none; }
+.computer-terminal {padding:12px var(--workspace-gutter);background:transparent;color:var(--workspace-muted);font:12px/1.5 var(--workspace-font);min-width:0}
+.computer-terminal-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.computer-terminal-bar > span:first-child { flex: 1; }
+.computer-terminal-bar input { min-width: 60px; max-width: 200px; flex: 1; }
+.computer-terminal-output { overflow: auto; }
+.computer-terminal details { margin-top: 6px; }
+.computer-terminal pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+.computer-terminal .xterm-viewport { scrollbar-width: thin; }
+.computer-terminal-output {border:1px solid var(--workspace-line);border-radius:var(--workspace-radius);padding:8px;background:var(--workspace-wash)}
+.computer-terminal-bar {font:12px/1.5 var(--workspace-font);color:var(--workspace-muted)}
+.computer-terminal-bar input {accent-color:var(--workspace-accent)}
+.computer-terminal .xterm{padding:0}
+.computer-terminal summary{cursor:pointer;color:var(--workspace-muted);font:12px/1.5 var(--workspace-font)}
+.computer-empty{margin:12px 0;color:var(--workspace-muted);font:13px/1.6 var(--workspace-font)}
+.computer-shelf.is-small .computer-terminal { padding: 5px; }
+.computer-shelf.is-small .computer-terminal details { display: none; }
+html body[data-warehouse-page="calliope"] .stage-working-set.has-computer.is-plan-drawer { top: var(--stage-plan-top, var(--computer-rail-top, 144px)); margin-top: 0; max-height: calc(100dvh - var(--stage-plan-top, var(--computer-rail-top, 144px)) - 16px); overflow: auto; scrollbar-width: thin; }
+html body[data-warehouse-page="calliope"] .stage-working-set.has-computer.is-plan-drawer .stage-turn-plan { max-height: none; }
+
+.computer-tabs {display:flex;gap:12px;margin:0 var(--workspace-gutter);padding:0;border-bottom:1px solid var(--workspace-line)}
+.computer-tabs [role="tab"] {position:relative;min-height:36px;border:0;border-radius:0;padding:7px 16px 9px 0;color:var(--workspace-muted)}
+.computer-tabs [aria-selected="true"] {background:transparent;color:var(--workspace-accent);box-shadow:inset 0 -1px var(--workspace-accent)}
+.computer-tabs .has-activity::after, .computer-tabs .has-unseen::after { content: ''; position: absolute; right: 6px; top: 50%; width: 5px; height: 5px; margin-top: -2px; border-radius: 50%; background: var(--workspace-accent); }
+.computer-tabs .has-activity::after { animation: computer-activity 1.5s ease-in-out infinite; }
+@keyframes computer-activity { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .computer-tabs .has-activity::after { animation: none; } }
+.computer-shelf.is-small .computer-tabs { display: none; }
+.computer-shelf .computer-history { border-top: 0; }
+.computer-shelf:fullscreen .computer-history { max-height: none; flex: 1; }
+#workspace-desktop .computer-shelf:fullscreen .computer-screen{flex:1;min-height:0;max-height:none;aspect-ratio:auto;width:100%;margin:0;border:0;border-radius:0}
+.computer-shelf:fullscreen .computer-tabs,.computer-shelf:fullscreen .computer-history,.computer-shelf:fullscreen .computer-terminal,.computer-shelf:fullscreen .computer-teaching{display:none}
+
+/* Recordings are part of the workspace, with media fetched only on expansion. */
+.computer-history-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font:12px/1.5 var(--workspace-font)}
+.computer-history-heading button{border:0;min-height:28px;padding:4px 0;background:transparent}
+.computer-run-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(160px,100%),1fr));gap:18px 12px;align-items:start}
+.computer-run{min-width:0}
+.computer-run-open{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--workspace-text);font:13px/1.5 var(--workspace-font);text-align:left;cursor:pointer}
+.computer-run-open:focus-visible{outline:2px solid var(--workspace-accent);outline-offset:4px;border-radius:var(--workspace-radius)}
+.computer-run-preview{display:block;position:relative;aspect-ratio:16 / 10;overflow:hidden;border:1px solid var(--workspace-line);border-radius:var(--workspace-radius);background:var(--workspace-wash)}
+.computer-run-preview img{display:block;width:100%;height:100%;object-fit:contain}
+.computer-run-placeholder{display:grid;place-items:center;width:100%;height:100%;padding-bottom:32px;color:var(--workspace-muted);font:11px/1.5 var(--workspace-font)}
+.computer-run-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:30px;height:30px;border:1px solid #ffffff40;border-radius:50%;background:#0009;color:#fff;font:12px/1 sans-serif;opacity:.75;transition:opacity .15s}
+.computer-run-open:hover .computer-run-preview{border-color:var(--workspace-line-hot)}
+.computer-run-open:hover .computer-run-play{opacity:1}
+.computer-run-copy{display:block;padding-top:7px}
+.computer-run-copy strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:500;color:var(--workspace-bright);overflow-wrap:anywhere}
+.computer-run-meta{display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:4px;font:11px/1.5 var(--workspace-font);color:var(--workspace-muted)}
+.computer-run-meta>span{text-transform:capitalize}
+.computer-run.is-open{grid-column:1 / -1;padding-bottom:16px;border-bottom:1px solid var(--workspace-line)}
+.computer-run.is-open .computer-run-open{display:flex;align-items:center;gap:12px}
+.computer-run.is-open .computer-run-preview{width:88px;flex:none}
+.computer-run.is-open .computer-run-play{display:none}
+.computer-run.is-open .computer-run-copy{padding:0;flex:1;min-width:0}
+.computer-run.is-open .computer-run-open::after{content:'⌃';align-self:start;color:var(--workspace-muted)}
+.computer-run-detail{padding-top:8px;min-width:0;overflow-wrap:anywhere}
+.computer-run-detail p{font:12px/1.6 var(--workspace-font);margin:8px 0}
+.computer-run-detail video{border:1px solid var(--workspace-line);border-radius:var(--workspace-radius)}
+.computer-run-detail a{font:12px/1.5 var(--workspace-font);color:var(--workspace-accent);margin-right:10px}
+.computer-run-detail>.workspace-control{min-height:28px;padding:4px 8px;margin:4px 8px 4px 0}
+.computer-events{margin-top:12px;border-top:1px solid var(--workspace-line)}
+.computer-events summary{font:12px/1.6 var(--workspace-font);color:var(--workspace-text)}
+.computer-events .workspace-control{min-height:28px;padding:4px 8px;margin:6px 0}
+.computer-history-more{display:block;margin:16px auto 0}
+.computer-storage-settings{margin-top:24px;padding-top:12px;border-top:1px solid var(--workspace-line);font:12px/1.6 var(--workspace-font)}
+.computer-storage-settings summary{cursor:pointer}
+.computer-storage-settings input{width:90px;padding:6px;color:var(--workspace-text);background:transparent;border:1px solid var(--workspace-line);border-radius:var(--workspace-radius)}
+.computer-storage-settings button{font:var(--workspace-control-font);color:var(--workspace-text);background:transparent;border:1px solid var(--workspace-line);border-radius:var(--workspace-radius);padding:7px 10px}
+
+.computer-window-controls { display: flex; align-items: center; gap:8px;flex-shrink:0;flex-wrap:wrap; }
+.computer-shelf .computer-window-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 4px; border: 0; opacity: .7; }
+.computer-shelf .computer-window-icon:hover { opacity: 1; }
+.computer-window-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
+.computer-window-icon:focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: -2px; opacity: 1; }
+
+@container (max-width:360px){.computer-actions{gap:6px}.computer-window-controls{gap:6px}.computer-actions .workspace-control{padding-inline:8px}}
+#workspace-desktop{container-type:inline-size}

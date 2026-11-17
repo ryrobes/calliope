@@ -1,0 +1,20 @@
+.desktop-stage[hidden],.desktop-stage-card [hidden]{display:none!important}
+.desktop-stage{width:clamp(300px,32%,580px);max-width:100%;pointer-events:auto}
+.desktop-stage-card{--stage-span:1;min-width:0;box-sizing:border-box;overflow:hidden;border:1px solid var(--workspace-line);border-radius:12px;background:color-mix(in oklch,var(--workspace-bg) 86%,transparent);backdrop-filter:blur(18px);color:var(--workspace-text);font:13px/1.4 var(--workspace-font);box-shadow:0 8px 28px #0002}
+.desktop-stage-head{display:flex;align-items:center;gap:12px;padding:12px 14px}
+.desktop-stage-identity{flex:1;min-width:0}
+.desktop-stage-agent,.desktop-stage-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desktop-stage-agent{color:var(--workspace-muted);font-size:11px;margin-bottom:3px}
+.desktop-stage-title{font-weight:500}
+.desktop-stage-actions{display:flex;align-items:center;gap:6px;flex:none}
+.desktop-stage-actions button{appearance:none;border:1px solid var(--workspace-line);border-radius:6px;background:transparent;color:var(--workspace-text);font:inherit;padding:4px 8px;cursor:pointer}
+.desktop-stage-actions button:hover{background:var(--workspace-wash)}
+.desktop-stage-actions button:focus-visible{outline:2px solid var(--workspace-accent);outline-offset:2px}
+.desktop-stage-screen{position:relative;width:100%;aspect-ratio:var(--desktop-stage-aspect,16 / 10);overflow:hidden;border-block:1px solid var(--workspace-line);background:var(--void);cursor:pointer}
+.desktop-stage-frame{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;pointer-events:none}
+.desktop-stage-caption{margin:0;padding:8px 14px;color:var(--workspace-muted);font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+html body.zen[data-warehouse-page="calliope"] .zen-packed [data-stage-desktop-slot],
+html body.zen[data-warehouse-page="calliope"] .zen-packed .desktop-stage:not([hidden]){display:contents}
+html body.zen[data-warehouse-page="calliope"] .zen-packed .desktop-stage-card{grid-column:span 1;width:auto;margin:0}
+html body.zen[data-warehouse-page="calliope"] .zen-packed.is-masonry .desktop-stage-card{position:absolute}
+@media(max-width:600px){.desktop-stage{width:100%}}

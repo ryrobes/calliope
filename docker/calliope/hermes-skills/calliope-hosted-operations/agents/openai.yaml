@@ -1,0 +1,4 @@
+interface:
+  display_name: "Calliope Hosted Operations"
+  short_description: "Operate and repair a Calliope appliance"
+  default_prompt: "Use $calliope-hosted-operations to inspect and operate this Calliope appliance."

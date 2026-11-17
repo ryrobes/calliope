@@ -1,0 +1,113 @@
+{
+  "name": "playbook.dashboards",
+  "title": "Dashboards",
+  "contract": {
+    "method": [
+      "Treat the user's request as the brief. Investigate the domain and data before asking questions. Choose a high-confidence default when one is obvious.",
+      "Search the Library and find (governed terms come first) for an existing Playbook, metric, cube, or proven query; Business Context is the older projection, use it only for a promoted Value System. Adapt rather than reinvent when a governed definition already answers the request.",
+      "Settle the data queries first: run them, keep the exact SQL, returned column names, and row shape. Label anything still unconstructed as unvalidated. Do not treat a prose specification as a validated query.",
+      "Define the visual composition in writing before any implementation: the main answer, its supporting evidence, important qualifications, and secondary details. Name which elements belong together, relative visual importance, and how the layout should adapt to narrower widths. Preserve natural content heights; do not plan uniform cards or fixed-height clipping.",
+      "If research leaves a consequential gap and no high-confidence assumption exists, block and ask the user multiple-choice questions before continuing. Do not guess a metric definition, grain, audience, or visual priority that would change the artifact.",
+      "Optionally use Cassandra in parallel to red-team findings when that work is independent and safe to overlap, then synthesize her critique into the locked story. Do not delegate the whole dashboard.",
+      "Design what the dashboard should look like with the real data already pulled. Generate an image mock focused on composition, hierarchy, legibility, and real data. Follow the user's visual direction; use a design profile only when the user explicitly pinned one, otherwise author styling for the user's brief.",
+      "Inspect the mock against the intended composition. Regenerate or edit via the image generator if it fails hierarchy, grouping, emphasis, legibility, or data honesty. Do not exceed three versions; on the third, keep the best and move forward.",
+      "Once satisfied with the mock, stop the thread. Let the user inspect and edit it. Do not implement HTML, publish, or hand off to a builder until the user gives the go-ahead.",
+      "After go-ahead, compile the user's edits against the original mock and note any new data requirements. If data must change or be added, settle and re-validate those queries before implementation.",
+      "Package a cohesive implementation vision that keeps the builder's assumption budget small: overall design reference, composition brief, the actual chosen mockup image, and a few coherent visual regions. For each region: purpose, validated queries, expected width range, and visual priority.",
+      "Regions should be independently useful and readable without each needing its own container, large heading, or repeated explanation. Shared typography and styling are inherited; regions do not invent separate design systems.",
+      "Give every builder the exact executed SQL with column names and row shape, plus the actual mockup image alongside the written brief. A description of the image is not enough; the builder must open and visually inspect it before writing HTML. Use the image for visual relationships and styling, and the validated queries for values and meaning. Call out intentional departures explicitly.",
+      "Handle the work as a direct 1:1 exchange. Do not delegate to specialists unless the user explicitly @-mentions one or the task strictly requires a capability only a specialist holds; even then, delegate the narrowest piece and integrate it yourself.",
+      "Implement in free-form HTML mode. The dashboard name is the artifact; HTML is the hatch. Do not use Tanner, Quick App, or slot-templates as the authoring path. Composition brief plus the mock occupy the design role that widget APIs and generic templates must not take.",
+      "After assembly, run a dedicated composition pass from an actual browser capture. Compare the live page to the design reference explicitly: what dominates, what sits together, what is visible early, and whether warnings keep their intended emphasis. A successful render alone does not complete the review.",
+      "The designer may change layout, typography, spacing, component presentation, and redundant text, or request targeted region revisions. Preserve validated metric definitions and data meaning.",
+      "Use judgment on fixes: cheap nits, fix and republish yourself; material visual misses, kick back to the builder with the capture and mock as needed. Do not trade data truth for visual polish."
+    ],
+    "outcome": "A curated live HTML dashboard that answers the user's request with governed data, a locked visual composition, and a published page that matches the approved mock in hierarchy, grouping, emphasis, and meaning, with styling guided by the user's brief and any explicitly pinned design profile.",
+    "triggers": [
+      "Make a dashboard for…",
+      "Build me a dashboard.",
+      "Use the Dashboards playbook.",
+      "Curated dashboard",
+      "Composition-led dashboard",
+      "Image-first dashboard"
+    ],
+    "fallbacks": [
+      "If image generation fails, use the session Sketch as a spatial mock that still stops for user inspection before HTML.",
+      "If a third mock is still imperfect, keep the best and state the remaining visual risks at the inspect gate.",
+      "If the user says just build it, keep validated queries and composition notes but skip the inspect pause.",
+      "If new data is required after go-ahead, halt HTML until those queries are executed and the brief is updated.",
+      "If a specialist is @-mentioned, give them only the named slice with the mock image and validated SQL, then integrate the result yourself.",
+      "If Cassandra is unavailable, red-team the queries and composition yourself before locking the mock.",
+      "If a nit is cheaper to fix locally than to round-trip, fix and recapture; only send material misses back.",
+      "Honor explicit user direction about palette, brand, or light/dark mode; use only the constraints of an explicitly pinned profile, or choose task-appropriate styling when unpinned."
+    ],
+    "guardrails": [
+      "Do not skip the mock-and-stop gate. Implementation starts only after the user inspects the mock and gives the go-ahead, unless they explicitly waived that pause in this request.",
+      "Do not fabricate numbers in the mock; use verified query results, representative real rows, or clearly marked placeholders.",
+      "Do not describe unrun SQL as validated. Remaining query construction must be labeled as such.",
+      "Do not send a builder only a prose spec or a mention of the mockup; the actual image and exact executed SQL travel together.",
+      "Do not invent a new design system per region. Do not wrap every region in a card, large heading, or repeated explanation.",
+      "Do not clip content to uniform card heights. Preserve natural content heights.",
+      "Do not delegate by default. Calliope stays on the thread unless the user @-mentions a specialist or a capability is uniquely theirs.",
+      "Do not use Cassandra as a substitute for locking queries or as a builder. She red-teams or parallelizes only when that is safe and then her findings are synthesized.",
+      "Do not treat a clean capture, healthy bridge, or missing page errors as composition success. Compare hierarchy and emphasis to the mock.",
+      "Do not change canonical metric meaning to make the layout prettier.",
+      "Do not prescribe a fixed palette in the playbook or reject a mock solely for its hue choices. Only user-pinned design profiles apply additional styling; keep the mock and implementation focused on composition, meaning, legibility, and interaction.",
+      "If blocked on a consequential unknown, ask multiple-choice questions rather than proceeding on a weak assumption.",
+      "Keep artifacts private until the user approves sharing."
+    ],
+    "deliverable": "A published free-form HTML live dashboard plus the retained mock, composition brief, validated queries, and a composition-pass capture compared against the approved design. The user can see what was asked, what the data returned, what the mock committed to, and how the live page matches.",
+    "when_to_use": [
+      "The user asks to create, rebuild, or curate a dashboard and supplies what they want shown or decided.",
+      "The work should be composition-led and image-first rather than widget-template first.",
+      "The intended surface is a free-form HTML live app, not a slot-template or Quick App.",
+      "A mock must be inspected before implementation, or the request is a new curated dashboard rather than a tiny edit."
+    ],
+    "when_not_to_use": [
+      "A quick factual query, ordinary table, one-off chart, or a small edit that does not change composition.",
+      "An urgent repair where a new mock or rediscovery would delay restoration.",
+      "A dashboard whose layout, metrics, queries, and visual spec are already complete and approved.",
+      "Work that should intentionally follow a house template without a mock or composition pass."
+    ],
+    "context_to_gather": [
+      "What the user wants answered, for whom, and any explicit design direction (palette, density, brand, do-nots).",
+      "Governed Business Context, metrics, cubes, and existing dashboards that already cover the question.",
+      "Real warehouse relations: grain, population, freshness, joins, time semantics, quality traps.",
+      "Executed candidate queries with column names and row shape, not prose specs.",
+      "Whether anything remains ambiguous after research, such that no high-confidence assumption exists.",
+      "Viewport expectations, especially how the composition should read as width narrows."
+    ],
+    "completion_criteria": [
+      "Queries used for values were actually executed; the handoff records exact SQL, column names, and row shape, and labels any unvalidated construction.",
+      "The composition names the main answer, supporting evidence, qualifications, and secondary details, including grouping, visual priority, and narrow-width behavior.",
+      "An image mock was generated from real pulled data, inspected for composition and legibility, and limited to three versions.",
+      "The thread stopped for user inspection of the mock and did not implement until go-ahead, unless the user waived that gate.",
+      "User-requested mock edits and any new data needs were compiled; data changes were settled before HTML.",
+      "Implementation used free-form HTML with shared styling, region briefs, the actual mockup image, and validated queries—not templates as the design source.",
+      "Builders (or Calliope in solo) opened and visually inspected the mock before coding, and intentional departures from it are explicit.",
+      "A dedicated composition pass used an actual browser capture and compared dominance, grouping, early visibility, and warning emphasis to the design reference.",
+      "Validated metric definitions and data meaning survived layout, typography, and copy edits.",
+      "The live page is the curated answer to the original request, not a generic KPI grid."
+    ],
+    "optional_capabilities": [
+      "Iris or another named builder only when the user @-mentions them.",
+      "Company Brain for narrative, policy, or ticket context behind the dashboard.",
+      "Work Inbox result when the finished dashboard is a meaningful async handoff."
+    ],
+    "required_capabilities": [
+      "Governed SQL execution and data discovery.",
+      "Image generation (or Sketch) for the mock.",
+      "Free-form HTML live app publish and update.",
+      "Browser capture of the assembled page.",
+      "A durable inspect gate before implementation."
+    ],
+    "preferred_capabilities": [
+      "Business Context, metrics, and cubes when a canonical definition exists.",
+      "Library search for an existing Dashboards or related Playbook before reinventing.",
+      "Calliope input questions when blocked on a consequential choice.",
+      "Cassandra for parallel red-team of findings when that work is independent."
+    ]
+  },
+  "synopsis": "Curated dashboard creation: the user names what they want; Calliope settles governed queries and a visual composition, designs a mock from real data, stops for inspection, then implements free-form HTML from region briefs that carry the mockup plus exact executed SQL. Styling follows the user's brief and any explicitly pinned design profile.",
+  "readiness": "ready"
+}

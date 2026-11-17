@@ -1,0 +1,6 @@
+.shared-files-dialog{width:min(1120px,calc(100vw - 24px));height:min(780px,calc(100dvh - 48px));max-width:none;max-height:none;overflow:hidden;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--bone);font-family:var(--sans)}
+.shared-files-dialog::backdrop{background:#0008}
+.shared-files-host{height:100%;min-height:0}
+@media(max-width:700px){.shared-files-dialog{padding:12px;height:calc(100dvh - 24px)}}
+.attachment-file-label{display:block;padding:12px 28px 12px 10px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--bone)}
+.message-attachments .attachment-file-link{display:inline-flex;gap:8px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:6px;font-size:12px;color:var(--jade);max-width:100%;overflow-wrap:anywhere}

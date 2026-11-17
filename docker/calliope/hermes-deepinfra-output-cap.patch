@@ -1,0 +1,34 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/agent/model_metadata.py b/agent/model_metadata.py
+index 4f38ec1..ca82b66 100644
+--- a/agent/model_metadata.py
++++ b/agent/model_metadata.py
+@@ -1344,6 +1344,10 @@ def parse_available_output_tokens_from_error(error_msg: str) -> Optional[int]:
+         r'supports at most\s+(\d+)\s*(?:completion\s+)?tokens',
+         # Scaleway: "max_completion_tokens is limited to 16384 for glm-5.2".
+         r'(?:max_tokens|max_completion_tokens) is limited to\s*(\d+)',
++        # DeepInfra: "max_tokens=65536 cannot be greater than max_model_len=max_total_tokens=28672".
++        # The route's cap is max_total_tokens (sometimes nested after max_model_len); it is an
++        # output request cap, not evidence that the conversation input is too large.
++        r'max_total_tokens\s*=\s*(\d+)',
+         r'=\s*(\d+)\s*$',
+     ):
+         match = re.search(pattern, error_lower)
+@@ -1400,6 +1404,7 @@ _OUTPUT_CAP_SIGNALS = (
+     ("output limit",), ("maximum allowed number of output tokens",),
+     ("max_tokens is too large", "supports at most"), ("tokens from the input messages", "tokens for the completion"),
+     ("limited to",),  # Scaleway: "max_completion_tokens is limited to 16384 for <model>" (#67453)
++    ("cannot be greater than",),  # DeepInfra: "max_tokens=N cannot be greater than max_model_len=max_total_tokens=M"
+ )
+ _INPUT_OVERFLOW_SIGNALS = (
+     "prompt is too long", "prompt too long", "input is too long", "input token",
+@@ -1418,6 +1423,9 @@ _PARSEABLE_OUTPUT_CAP_SIGNALS = (
+     ("output limit",), ("max_tokens", "maximum allowed number of output tokens"),
+     ("max_tokens is too large", "supports at most"), ("tokens from the input messages", "tokens for the completion"),
+     ("limited to",),
++    # DeepInfra: "max_tokens=65536 cannot be greater than max_model_len=max_total_tokens=28672".
++    ("max_tokens", "cannot be greater than", "max_total_tokens"),
++    ("max_tokens", "cannot be greater than", "max_model_len"),
+ )
+ 
+ 

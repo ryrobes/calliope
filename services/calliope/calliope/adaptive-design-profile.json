@@ -1,0 +1,112 @@
+{
+  "id": "ca1100e0-0000-4000-8000-000000000001",
+  "version_id": "ca1100e0-0000-4000-8000-000000000104",
+  "name": "Adaptive Calliope",
+  "description": "A dense editorial dashboard system that adopts each viewer's Calliope room.",
+  "owner_email": "calliope@system",
+  "source_summary": "Built into Calliope. Structure, typography, and information-design rules are fixed; palette, mode, wallpaper, and material tokens resolve from each viewer's browser with a deterministic editorial fallback for captures and exports.",
+  "markdown": "# Adaptive Calliope\n\n## Design priorities\nCreate an analytical publication with a clear point of view: one primary decision, evidence beside it, and a legible route into detail. Preserve the data's meaning first, reading hierarchy second, and stylistic character third. Use the viewer's theme tokens for color; use composition, typography, and alignment to give the work an identity. A profile is a visual system, not a mandatory inventory of widgets.\n\nBefore building, choose the dominant task and its appropriate composition. A comparison needs aligned scales and side-by-side evidence; an investigation needs an overview and an exception table; a trend needs a substantial time plot and its context. Pick one primary region and at most two supporting levels. When revising a working artifact, preserve useful structure and interactions. Change composition when the reading problem demands it, rather than merely recoloring a weak layout or rebuilding unrelated sections.\n\n## Runtime theme contract\nThe runtime supplies canonical CSS custom properties from each viewer's Calliope appearance. Bind authored styles to these variables; do not sample today's palette and freeze it into the artifact. Load `/theme/superior-fonts.css`. Captures and exports must remain complete with the bundled fallback palette.\n\n- Canvas and text: `var(--artifact-bg, #0b1218)` and `var(--artifact-text, #edf2f4)`.\n- Surfaces: `var(--artifact-panel, #111d25)`, `var(--artifact-panel-raised, #172731)`, `var(--artifact-panel-soft, rgba(17,29,37,.76))`.\n- Supporting text: `var(--artifact-muted, #9aa8ae)`; reserve `var(--artifact-faint)` for nonessential decoration, never required labels.\n- Structure: `var(--artifact-border)` and `var(--artifact-border-hot)`.\n- Emphasis: `var(--artifact-accent, #68c7b2)` and `var(--artifact-accent-alt, #f5b446)`.\n- Meaning: `var(--artifact-positive)`, `var(--artifact-warning)`, `var(--artifact-danger)`. Up is not automatically favorable.\n- Series: `var(--artifact-chart-1)` through `var(--artifact-chart-6)`. Keep category-to-color assignments consistent across views and filter changes.\n- Materials: `var(--artifact-glass-bg)`, `var(--artifact-glass-border)`, `var(--artifact-shadow)`, `var(--artifact-backdrop-blur)`.\n- Typography: `var(--artifact-font-display)`, `var(--artifact-font-body)`, `var(--artifact-font-mono)`.\n- Background: the runtime owns `--artifact-wallpaper` and `--artifact-wallpaper-opacity`; never embed the viewer's image URL in authored markup.\n\nCSS and SVG should consume variables directly. Canvas charts read computed root tokens when painting. For live recoloring, observe only the root's style attribute with a MutationObserver, coalesce callbacks into one animation frame, compare the chart colors, and repaint from already-loaded data only when they changed. The runtime emits no `rvbbit:adaptive-theme` event. A theme change must never rerun SQL, rebuild the data model, reset filters, or restart an animation. Never inspect parent DOM or storage; embedded artifacts receive appearance through the existing Stage bridge.\n\n## Typography\nSuperior Serif supplies short editorial titles and section openers. Superior sans supplies body text, controls, descriptions, eyebrows, section labels, and table headers. Superior Mono is for code, identifiers, timestamps, chart ticks, and numeric table cells. A class named eyebrow or kicker does not imply uppercase or monospace. Use sentence case; reserve uppercase for an occasional short accent.\n\nBuild a restrained type ladder: 13–15px reading text, 12–13px supporting labels, 18–24px section headings, and 32–48px for the primary value or title. A larger value needs a genuine focal role. Use weight and placement before adding more sizes. Keep body leading around 1.45–1.6, display leading compact, and numerals tabular. Never shrink essential labels to make an overcrowded panel fit.\n\n## Composition and density\nStart with a flexible 12-column editorial grid, fluid 12–22px gutters, and a practical maximum near 1800px. An 8/4 lead-and-evidence rail, a 7/5 comparison, small multiples, or a table-led view are alternatives, not sections to include together. Stack them in reading order at narrow widths. Give dense tables bounded horizontal scrolling; prevent page-wide overflow.\n\nThe first viewport should contain a compact title, the decision question, active period/freshness, and substantial evidence. Avoid a headline, a row of oversized KPIs, and an empty first screen. Keep related labels, values, and comparisons close; leave more space between unrelated sections. Use shared alignment and whitespace for most grouping. Add a rule or panel when it clarifies a boundary, without nesting borders around every chart and stat. Inset inputs slightly into their surface; reserve stronger outlines for keyboard focus and discrete controls.\n\n## Material policy\nUse the runtime's wallpaper as ambient context, never as the content. Glass can form one coherent reading surface or a few grouped regions using --artifact-glass-bg, --artifact-glass-border, and --artifact-backdrop-blur. Do not put every KPI, caption, and nested chart in its own glass card. Use opaque --artifact-panel surfaces when busy imagery or dense data requires them; check contrast in both light and dark themes. If the viewer has no wallpaper, use quiet tonal surfaces and avoid gratuitous blur. Keep corners square to subtly rounded and shadows limited to foreground overlays.\n\n## Evidence and visualization\nChoose marks for the question: lines for ordered change, bars or dots for comparison, distributions for spread, tables for exact lookup. Align scales for comparisons. Bar lengths use an honest zero baseline. Label units, periods, denominators, and filters. Prefer direct labels and a useful annotation to a detached legend or decorative chart chrome. Keep grids quieter than data. Pair critical color meaning with text, shape, or line style. Use text or muted tokens for small labels; let accent and status colors mark a dot, rule, or chart unless their text contrast has been checked against the actual surface.\n\nA KPI needs a value, unit, and meaningful comparison when the data provides one. Show the comparison period and whether the change is favorable. Never invent targets, trends, certainty, or a narrative conclusion to complete the design. Show missing values as missing rather than zero. Distinguish partial, stale, loading, empty, and error states. Add sparklines only when their shape adds evidence.\n\nTables use clear headers, right-aligned measures, stable column widths, tabular values, and a visible row count. Add sorting, filters, sticky headers, or frozen identifying columns when the data volume warrants them. Long names must remain usable. Critical values and caveats cannot be hover-only.\n\n## Interaction and finish\nControls must be visibly interactive, keyboard usable, and labeled. Preserve filter and scroll context during refresh. Provide a clear reset and an understandable empty result. Motion should explain a state transition and settle quickly; honor reduced motion. Never add repeating animation to make a static report feel alive.\n\n## Acceptance pass\nRender the real artifact at a desktop size and a narrow viewport before declaring completion. Inspect the actual result, not just the markup. Check light and dark palettes and a busy background: primary text and essential chart marks must remain legible. Check a long label, a missing value, and both sparse and crowded results without changing underlying facts.\n\nAssess in order: can the reader identify the question and main evidence immediately; are labels, units and comparisons complete; does the hierarchy survive grayscale; do controls work; does the layout avoid clipped text and horizontal page scrolling; does the palette remain live? Repair the weakest structural issue before polishing colors. A screenshot that happens to look attractive is not proof that the artifact works.\n\n## Avoid\nNo generic application shell, ornamental hero section, uniform wall of cards, giant empty gutters, all-caps mono labeling system, gratuitous gauges, invented data, excessive pills, decorative glow, or replacement palette. Do not restyle Calliope itself. Preserve the character of this profile through authored composition rather than extra chrome.",
+  "tokens": {
+    "schema_version": "rvbbit.design-profile.v1",
+    "behavior": {
+      "theme_source": "viewer",
+      "runtime": "rvbbit.adaptive-theme.v1",
+      "live": true,
+      "fallback": "calliope-editorial-dark"
+    },
+    "fonts": {
+      "stylesheet": "/theme/superior-fonts.css",
+      "display": "Superior Serif",
+      "body": "Superior",
+      "mono": "Superior Mono"
+    },
+    "palette": {
+      "background": "#0b1218",
+      "surface": "#111d25",
+      "surface_alt": "#172731",
+      "text": "#edf2f4",
+      "muted": "#9aa8ae",
+      "accent": "#68c7b2",
+      "accent_alt": "#f5b446",
+      "positive": "#67c587",
+      "warning": "#e8b85d",
+      "danger": "#e17868",
+      "border": "rgba(237,242,244,.15)"
+    },
+    "typography": {
+      "display": "\"Superior Serif\", Georgia, serif",
+      "body": "\"Superior\", ui-sans-serif, sans-serif",
+      "mono": "\"Superior Mono\", ui-monospace, monospace"
+    },
+    "shape": {
+      "radius": "2px",
+      "border_width": "1px"
+    },
+    "effects": {
+      "shadow": "0 20px 64px rgba(0,0,0,.32)",
+      "glass": "Use glass for coherent reading regions over wallpaper, and opaque theme panels where data contrast needs them. Avoid nested glass cards.",
+      "texture": "Hairline rules, restrained grid rhythm, and no decorative noise.",
+      "surface_mode": "glass"
+    },
+    "charts": {
+      "series": [
+        "#68c7b2",
+        "#f5b446",
+        "#78a9db",
+        "#cc88d8",
+        "#85b95f",
+        "#df7d6b"
+      ],
+      "grid": "rgba(237,242,244,.12)",
+      "positive": "#67c587",
+      "negative": "#e17868"
+    },
+    "layout": {
+      "density": "compact",
+      "gutter": "clamp(12px, 1.4vw, 22px)",
+      "max_width": "1800px",
+      "grid": "12 columns",
+      "preferred_compositions": [
+        "8/4 feature and evidence rail",
+        "7/5 comparison spread",
+        "small-multiple field",
+        "compact table with annotated lead chart"
+      ]
+    },
+    "adaptive": {
+      "updates": "css-variables-only",
+      "variables": [
+        "--artifact-bg",
+        "--artifact-panel",
+        "--artifact-panel-raised",
+        "--artifact-panel-soft",
+        "--artifact-text",
+        "--artifact-muted",
+        "--artifact-faint",
+        "--artifact-border",
+        "--artifact-border-hot",
+        "--artifact-accent",
+        "--artifact-accent-alt",
+        "--artifact-positive",
+        "--artifact-warning",
+        "--artifact-danger",
+        "--artifact-chart-1",
+        "--artifact-chart-2",
+        "--artifact-chart-3",
+        "--artifact-chart-4",
+        "--artifact-chart-5",
+        "--artifact-chart-6",
+        "--artifact-glass-bg",
+        "--artifact-glass-border",
+        "--artifact-shadow",
+        "--artifact-backdrop-blur",
+        "--artifact-font-display",
+        "--artifact-font-body",
+        "--artifact-font-mono",
+        "--artifact-wallpaper",
+        "--artifact-wallpaper-opacity"
+      ]
+    }
+  },
+  "version": 4
+}

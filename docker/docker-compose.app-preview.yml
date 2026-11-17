@@ -1,0 +1,9 @@
+# Layer onto the Calliope server deployment when the isolated UI worker is enabled.
+# The worker receives only resolved preview data, never warehouse credentials.
+services:
+  calliope:
+    environment:
+      CALLIOPE_UI_STUDIO_URL: http://ui-studio:18456
+      CALLIOPE_UI_STUDIO_TOKEN_FILE: /run/secrets/studio-token
+    volumes:
+      - ${UI_STUDIO_ROOT:?set private UI worker directory}/token:/run/secrets/studio-token:ro

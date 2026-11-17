@@ -1,0 +1,1766 @@
+# rvbbit Warehouse MCP — Phase 0 prototype
+
+A governed, semantic, time-travel data interface for Claude (Cowork & Code).
+
+Standalone for now (foldable into `rvbbit-mcp-gateway` later). **Phase 0 uses one
+read-only connection** — per-user role scoping is Phase 1.
+
+## Tools
+| tool | what | backing |
+|---|---|---|
+| `search_data(query, limit?, schema?)` | semantic search → ranked Business Context, metrics/cubes, tables/cols; physical hits include **live samples + per-column stats + freshness/drift** | Business Context + `data_search` + `pg_stats` + `accel_freshness` |
+| `business_context_for_question(question)` | inspect the promoted matched/ambient context packet automatically supplied to ordinary Calliope chats | Value Systems + usage evidence + Change Graph freshness |
+| `business_context_status(domain?)` | modeled-vs-observed structural freshness, steward work, and latest Change Graph state | `business_context_domains` + topology workflow ledger |
+| `refresh_business_context(domain, force?)` | cheap observe; queue durable semantic excavation only on drift unless forced | Business Context steward |
+| `business_context_changes(domain?, since?, limit?)` | business-level version diffs without retained source SQL | `business_context_changes` |
+| `search_business_context(query, limit?, statuses?)` | search interpreted Value Systems, business metrics, and validated contributors | `business_context` KG projection |
+| `get_business_value_system(handle)` | formulas, relationships, dimensions, lineage, governance state, and reconciliation proof for one Value System | Value Graph + promotion receipts |
+| `business_metric_change(name, dimension, prior_*, current_*, limit?)` | attribute a promoted metric's movement through one validated contributor | compact promoted cube |
+| `describe_table(table)` | columns + samples + per-column stats + freshness | information_schema + `pg_stats` + `accel_freshness` |
+| `list_metrics(category?, search?)` / `get_metric(name)` | the blessed metric catalog | `metric_defs` |
+| `metric(name, params?, as_of?, def_as_of?)` | a governed scalar number (bitemporal) | `rvbbit.metric_scalar()` |
+| `cube_pivot(cube, rows?, cols?, measures?)` | direct grouped table or crosstab; accepts multiple dimensions and aggregated numeric values without requiring a metric definition | validated, read-only `cubes.<name>` aggregation |
+| `validate_sql(sql, as_of?)` | plan, **don't execute** (self-correct loop) | `route_explain` |
+| `run_sql(sql, as_of?, limit?, default_view='table', timeout_ms?)` | **read-only** execute (validate → safe_select gate → run); `timeout_ms` overrides the 30s default for one call (1s–10m), and `default_view='chart'` is an explicit presentation intent | engine |
+
+`as_of` (data-time) flows in as the engine's `-- rvbbit: as_of <ts>` directive; the
+read-only guard rejects anything that isn't a `safe_select`.
+
+## What's exposed — databases & schemas
+The warehouse and rvbbit's own internals live in **one database, different schemas**
+(the Temporal Mirror syncs external sources into dest schemas right next to the
+`rvbbit.*` catalog). So scoping is by **schema**, not database: `search_data` and
+`describe_table` always hide `rvbbit` / `pg_*` / `information_schema`, surfacing only
+the data schemas. Set `WAREHOUSE_SCHEMAS` (CSV) to restrict to an explicit allowlist
+(e.g. `mirror_sales,mirror_ops,analytics`). To expose data that lives in a *separate*
+database, mirror it in (Temporal Mirror) — then it's covered, time-travel and all.
+The hard backstop is still the DB role: don't grant `warehouse_reader` SELECT on the
+`rvbbit` schema and the internals are unreadable even via `run_sql`.
+
+## Run on the uber stack (Docker)
+The image ships in the release set (`ghcr.io/<ns>/rvbbit-warehouse-mcp`) and is wired
+into `docker-compose.uber.yml` behind an **opt-in `warehouse` profile** — so a plain
+`make release-uber-up` / `docker compose up -d` does **not** start it (by design: it's
+an internet-facing endpoint). Bring it up explicitly:
+```bash
+export WAREHOUSE_MCP_KEY="$(openssl rand -hex 24)"   # required — endpoint won't start without it
+make warehouse-up RELEASE_VERSION=<the version you pushed>   # pulls the image, starts MCP + tunnel
+make warehouse-url                                          # the public https://<…>.trycloudflare.com URL
+make warehouse-down                                         # stop just these two
+```
+Equivalently, raw compose: `… --profile warehouse up -d` (the `--profile` flag is the
+thing that's easy to forget — without it the two services are silently skipped).
+
+## Run standalone (no Docker)
+```bash
+pip install -r requirements.txt
+export WAREHOUSE_DSN="host=... port=5432 dbname=... user=warehouse_reader password=..."
+
+# remote (Cowork + Code): streamable-HTTP, single shared key
+export WAREHOUSE_MCP_KEY="$(openssl rand -hex 24)"   # share this with users
+python server.py --http        # serves http://0.0.0.0:8765/mcp  (/health is open)
+
+python server.py --selftest    # exercise every tool against the warehouse
+python server.py               # stdio (local Claude Code only)
+```
+
+### Business Topology workflow worker
+
+Warehouse MCP also owns the standing executor for durable Business Topology
+excavations. PostgreSQL owns the job, lease, progress, and final status; this
+process owns only the resumable private work artifacts and bounded model calls.
+It starts automatically in both HTTP and stdio modes once migration `0285` is
+installed. On an older database it waits quietly and begins polling after the
+database is upgraded.
+
+```bash
+# Defaults shown; the Docker image stores this under the existing /app/data volume.
+export WAREHOUSE_BUSINESS_TOPOLOGY_WORKER=1
+# Optional: use a private executor role when WAREHOUSE_DSN is read-only.
+export WAREHOUSE_BUSINESS_TOPOLOGY_DSN='postgresql://topology_worker:...@postgres/rvbbit'
+export WAREHOUSE_BUSINESS_TOPOLOGY_DIR=/app/data/business-topology
+export WAREHOUSE_BUSINESS_TOPOLOGY_POLL_SECONDS=2
+export WAREHOUSE_BUSINESS_TOPOLOGY_LEASE_SECONDS=300
+# Source-motif assembly defaults to canonical clover. Point judgment at a
+# stronger route without changing the cheap/high-volume public model contract.
+export WAREHOUSE_BUSINESS_TOPOLOGY_JUDGMENT_BACKEND=clover_llm
+export WAREHOUSE_BUSINESS_TOPOLOGY_JUDGMENT_MODEL=calliope
+# Optional scale guards for local overlap evidence. Large corpora skip the
+# all-population scan and probe only semantically nominated pairs in batches.
+export WAREHOUSE_BUSINESS_TOPOLOGY_GLOBAL_OVERLAP_POPULATIONS=512
+export WAREHOUSE_BUSINESS_TOPOLOGY_OVERLAP_PROBE_BATCH_SIZE=100
+```
+
+The optional executor DSN is important when the public Warehouse MCP connection
+uses `warehouse_reader`: a complete excavation needs caller-readable access to
+its source relations plus permission to lease/update workflow rows, resolve the
+registered Hutch backend, and stage proposal bundles. Keep that credential
+appliance-internal; it is never exposed through the MCP endpoint or DataRabbit.
+
+For a source checkout, run from this repository so the shared
+`bench/business_topology` package is available. The release image embeds that
+package and needs no extra sidecar. Start a complete run with:
+
+```sql
+SELECT rvbbit.business_topology_start_workflow();
+```
+
+A no-scope start rotates through one business schema at a time and selects at
+most 24 least-recently visited relations. Explicit `p_schemas` or `p_relations`
+retain their caller-supplied limit. Private overlap evidence is useful but
+non-authoritative: timeout-isolated partial/skipped status is recorded in the
+run progress and `overlap-audit.private.json`, while semantic evidence and the
+rest of the workflow continue.
+
+Value modeling reports its current schema, domain index, request/repair state,
+latency, model version, and dedicated attempt count in workflow progress. The
+general `llm_attempts` counter includes both primary excavation and this final
+phase.
+
+See [`docs/BUSINESS_TOPOLOGY.md`](../../docs/BUSINESS_TOPOLOGY.md) for scoped
+starts, status inspection, cancellation, and the proposal-only safety boundary.
+
+### Make it remotely reachable (no open ports, no exposed Postgres)
+Run `--http` **next to the warehouse** (DB over localhost) and expose only the MCP
+endpoint via a tunnel:
+```bash
+cloudflared tunnel --url http://localhost:8765      # → https://<random>.trycloudflare.com
+# (or a named Cloudflare Tunnel / Tailscale for a stable URL)
+```
+
+## Two auth modes
+The server picks the mode from `WAREHOUSE_PUBLIC_URL`:
+
+**OAuth (recommended — Claude Desktop/Cowork's native connector).** A self-contained
+OAuth 2.1 AS (`auth.py`): the SDK mounts `/authorize`/`/token`/`/register` + the
+`.well-known` metadata and verifies PKCE; we supply the `/login` page (a shared
+`WAREHOUSE_LOGIN_PASSWORD` + optional `WAREHOUSE_ALLOWED_EMAILS`) and HS256 JWTs. Users
+just **paste the URL → log in → Allow** — no header to configure. Needs a **stable
+HTTPS URL** (OAuth redirects), so terminate TLS at a proxy.
+```bash
+export WAREHOUSE_PUBLIC_URL="https://dwmcp.example.com"   # your stable domain
+export WAREHOUSE_LOGIN_PASSWORD="$(openssl rand -hex 16)" # the shared login password
+export WAREHOUSE_JWT_SECRET="$(openssl rand -hex 32)"     # MUST differ from WAREHOUSE_MCP_KEY
+export WAREHOUSE_ALLOWED_EMAILS="a@co.com,b@co.com"       # optional allowlist
+python server.py --http     # serves :8765; behind your proxy at WAREHOUSE_PUBLIC_URL
+```
+> **Security:** `WAREHOUSE_JWT_SECRET` must be independent of `WAREHOUSE_MCP_KEY` — that
+> key is handed to users, and reusing it to sign would let any holder forge a token for
+> any email. The server **refuses to start** if they match or if either secret/password
+> is missing. Login is rate-limited (per-IP lockout + serialized checks).
+
+**Shared key (Claude Code / scripts).** No `WAREHOUSE_PUBLIC_URL`; gate on a static
+bearer. Still accepted in OAuth mode too, so Code keeps working alongside the UI flow.
+Because a shared bearer contains no user identity, its activity caller defaults to
+`static-key`. Set `WAREHOUSE_MCP_STATIC_CALLER` to the legacy service email/name when
+one shared integration should retain its old attribution. The audit `client_id` remains
+`static-key`, and a verified OAuth token's email always takes precedence over this fallback.
+
+**First-party Hermes delegation.** Give Hermes its own bearer instead of reusing the
+legacy/script key:
+
+```bash
+export WAREHOUSE_HERMES_MCP_KEY="$(openssl rand -hex 32)"
+export WAREHOUSE_HERMES_MCP_CALLER="calliope@example.com" # service actor, not the human
+```
+
+An access token presented with this key has `client_id=hermes-service`. Only that
+principal can turn Hermes' bounded Google Chat sender envelope, or an opaque Calliope
+API session that Warehouse resolves against its own signed session ledger, into an
+application authorization `subject`. Chat senders must also pass this Warehouse's
+`WAREHOUSE_ALLOWED_EMAILS` and Workspace-domain audience; an adapter-verified external
+sender is still not automatically a company user. A legacy `WAREHOUSE_MCP_KEY` holder may still
+produce backwards-compatible attribution, but never a delegated authorization subject.
+Direct OAuth remains authoritative and ignores any forwarded envelope. This is an
+application-layer identity decision only: it does not issue the user's Google token,
+run `SET ROLE`, or change warehouse grants.
+
+### Google Sign-In (optional, recommended)
+Adds a **Sign in with Google** button to the login page. We stay the OAuth *server*
+for Claude and additionally become an OAuth *client* to Google; both paths converge on
+one place (`_finish_login`), so a Google-verified address reaches the access token's
+`sub` — and therefore `mcp_activity.caller` — exactly like a typed one. It gates the
+MCP endpoint **and** everything served behind the same session (`/`, `/d/<slug>`,
+`/apps/<slug>`).
+
+This is an identity upgrade, not just convenience: with a shared password the email is
+*self-asserted*, so any password-holder can claim any name in your audit log. Google's
+`email_verified` claim ends that.
+
+```bash
+export WAREHOUSE_GOOGLE_CLIENT_ID="....apps.googleusercontent.com"
+export WAREHOUSE_GOOGLE_CLIENT_SECRET="..."
+export WAREHOUSE_GOOGLE_HD="acme.com"    # restrict to one Workspace domain
+# export WAREHOUSE_GOOGLE_ONLY=1         # later: retire the shared password
+```
+In the Google Cloud console create an **OAuth client ID → Web application** and register
+the redirect URI **exactly**: `<WAREHOUSE_PUBLIC_URL>/auth/google/callback`. (That's a
+*web* client — not a service-account JSON, which is a different credential with no human
+sign-in. It needs a stable origin, so the ephemeral `warehouse-tunnel-up` quick-tunnel
+URL can't be used with Google.)
+
+> **Restricting to one domain — read this.** Passing `hd=` on the authorization request
+> is only an account-chooser *hint*; a user can edit it out of the URL, so it is **not**
+> a security boundary. The gate is the signed **`hd` claim** on the returned ID token,
+> which `WAREHOUSE_GOOGLE_HD` verifies server-side. It's strictly stronger than matching
+> the email's suffix — a consumer Google account cannot present an `hd` at all.
+> `WAREHOUSE_ALLOWED_EMAILS` still applies on top (exact addresses or `@domain`).
+> The server **refuses to start** with Google enabled and *neither* `WAREHOUSE_GOOGLE_HD`
+> nor `WAREHOUSE_ALLOWED_EMAILS` set — that combination would let any Google account on
+> earth sign in.
+
+The shared password keeps working alongside it (existing users are unaffected) until you
+set `WAREHOUSE_GOOGLE_ONLY=1`, which stops `POST /login` from accepting a password at all
+— not merely hiding the form. ID tokens are verified, never just decoded: RS256 against
+Google's JWKS, audience, issuer, expiry, and a server-planted single-use `nonce`.
+
+When Google Sign-In and Calliope are both enabled, Personal Briefs also expose an
+optional **Connect Calendar** control. It uses a separate incremental consent grant for
+`calendar.events.owned.readonly`; adding Calendar never silently broadens the sign-in
+scope. The same registered callback URI is reused, so no second redirect URI is needed.
+The returned Google account must exactly match the signed-in Warehouse identity.
+Calliope syncs a bounded window from that user's primary calendar, stores only normalized
+event fields, and keeps them in an owner-keyed private overlay rather than shared Brain or
+Hermes memory. Google access tokens are never stored. The offline refresh token is Fernet
+encrypted with `WAREHOUSE_GOOGLE_TOKEN_KEY` when set, or a key derived from
+`WAREHOUSE_JWT_SECRET`; private events are reduced to title `Private event` plus timing
+before storage. Disconnect revokes the grant best-effort and deletes the local cache.
+On installations without Google Sign-In, the Calendar control, config flag, consent
+route, and Calendar API routes are absent/invisible.
+
+Query surfaces also expose a contextual **Sheet** action. Its first use requests a
+separate incremental Google Workspace grant with only `drive.file`; sign-in and
+Calendar consent still do not imply file access. Calliope can create and update files
+it created for that user, but cannot enumerate the rest of their Drive. The same action
+resumes automatically after consent, exports the exact frozen result shown on the Stage,
+freezes and formats the header, and saves an owner-scoped receipt and link.
+
+With Google Picker configured, the Stage also exposes **Bring in Sheet**. Picker lets the
+user explicitly choose one workbook without granting Calliope broad Drive listing access.
+Calliope then shows its grid tabs and a bounded row preview; the user can choose an A1
+range and whether the first row contains field names. Confirming the import re-reads that
+selection, freezes up to 1,000 rows / 50,000 cells in the private notebook, and records workbook, tab,
+range, source link, owner, and content hash. It is deliberately a snapshot rather than a
+silent sync. The active grid has an explicit **Refresh** action: an unchanged check advances
+its freshness timestamp without adding another turn, while changed content supersedes the active
+receipt and creates a linked immutable Stage revision that is selected automatically. Selecting
+that Stage grid attaches its exact workbook, tab, range, schema, and a bounded row preview to
+the current turn. Calliope can page through the rest of that owner-checked immutable snapshot
+with `calliope_sheet_snapshot`; it does not silently re-read the live Google file. For analysis,
+`calliope_sheet_query` exposes that exact selected snapshot inside one governed read-only statement
+as a typed `selected_sheet` relation. Calliope can join it to ordinary warehouse tables, aggregate
+it, and place the result back on the Stage without creating a persistent database object. Imported
+headers receive stable SQL-safe aliases (`sql_name`), and every result retains the source surface,
+snapshot hash/time, original workbook/tab/range, query, and resolved warehouse relations as lineage.
+If the user explicitly asks for current/latest/live values, `read_mode=live` performs one bounded
+Google API read for that query and records both the saved and observed hashes; it never mutates the
+Stage snapshot. Snapshot mode remains the default, and there is no background polling.
+
+**Bring in Doc** uses the same Picker grant for Google Docs. Calliope re-reads the selected
+document on confirmation, extracts its current tab-aware text representation, and indexes
+up to 250,000 characters as a normal Brain document. A deterministic private role is granted
+only to the authenticated uploader, so Brain search, Trails, `brain_get_doc`, and future
+Personal Briefs can use it for that owner without placing its prose in company-visible
+knowledge. Re-importing the same file refreshes that owner's indexed copy and appends a
+linked receipt on the Stage. The active receipt exposes two deliberately explicit lifecycle
+actions: **Refresh** checks the live Doc and creates a new linked revision only when its
+extracted content changed; **Forget** removes the indexed body, chunks, ACL attachment, and
+document KG node while leaving the original Google Drive file untouched. Earlier Stage
+receipts remain as lineage but cannot be mistaken for current Brain context. There is no
+silent background synchronization in this slice, and sharing or promoting private documents
+is intentionally deferred to the broader permissions pass.
+
+Enable the **Google Picker API** plus the surface APIs used by the installation: **Google
+Sheets API** for Sheet import/export and **Google Docs API** for private Doc import. Create a
+browser API key, restrict its HTTP referrers to the exact public Warehouse origin, restrict
+its API access to Google Picker, and set:
+
+```bash
+export WAREHOUSE_GOOGLE_PICKER_API_KEY="..."       # public browser key; origin-restrict it
+# Optional: GCP project number. Normally derived from the numeric OAuth client-ID prefix.
+export WAREHOUSE_GOOGLE_PICKER_APP_ID="123456789012"
+```
+
+The Picker key is intentionally sent to the authenticated browser and therefore is not a
+secret; its referrer and API restrictions are the security boundary. Short-lived Google
+OAuth access tokens are returned only by an authenticated, non-cacheable POST and are
+never persisted by Calliope or put in browser storage.
+
+The MCP tool `export_to_google_sheets` uses the same connection and receipt ledger while
+running its SQL through the normal governed read-only path. Enable the **Google Sheets
+API** in the OAuth client's Google Cloud project; exports need no Picker key or service
+account. Refresh tokens use the same configured encryption secret as Calendar, with a
+purpose-separated encryption context.
+
+### Burrow + Google: one door, Postgres still decides
+With `WAREHOUSE_AUTH=pg`, Google proves **who** you are and Postgres still decides **what**
+you may touch. A verified identity is resolved to a role by `rvbbit.resolve_identity()`
+(migration 0221), in this order:
+
+1. an enabled `rvbbit.identity_map` row (`identity` → `role_name`) — the DBA's escape hatch;
+2. **the email IS a role** — Azure Entra and Cloud SQL IAM both name database roles after the
+   principal, so `CREATE ROLE "ryan@acme.com" LOGIN` needs no mapping at all;
+3. nothing matches → **`rvbbit_guest`**.
+
+That third case is a state neither system expresses alone: *OAuth says yes, the database says
+it can't place this user.* It isn't an error — it's someone who needs provisioning. They get
+the artifact index's **access-pending** page (no artifacts, no titles, no DataRabbit link — an
+unmapped session would fail every query it made), and they're recorded in
+**`rvbbit.identity_pending`** so there's a queue to work from:
+
+```sql
+SELECT * FROM rvbbit.identity_pending;                 -- who's waiting (role_now_exists = ready)
+SELECT rvbbit.burrow_enroll('ryan@acme.com');          -- once their role exists
+INSERT INTO rvbbit.identity_map(identity, role_name)   -- or map to a differently-named role
+     VALUES ('ryan@acme.com', 'analyst_ryan');
+```
+
+`rvbbit_guest` is created `NOLOGIN` **with no grants at all** — it cannot be connected as, and
+it can read nothing. (`NOLOGIN` costs nothing: `SET ROLE` into a NOLOGIN role works, and guest
+is only ever reached that way.) To give it a real read-only tier, that's a deliberate act:
+`SELECT rvbbit.burrow_grant_guest('analytics');`
+
+> Identities longer than **63 bytes** can't be role names — Postgres truncates identifiers at
+> that length with only a `NOTICE`, so two long addresses sharing a prefix would silently
+> collide into one account. Resolution refuses them; they need an explicit `identity_map` row.
+
+**Non-Burrow installs are untouched by all of this.** `session_subject()` returns before any
+resolution when `WAREHOUSE_AUTH` isn't `pg`, and 0221's only footprint on such a box is one
+inert row in `pg_authid`.
+
+`GET /auth/config` reports `{mode, google, password}` so a sibling-rendered login page
+(`WAREHOUSE_LOGIN_UI=lens`) draws the right buttons without duplicating this config.
+
+### nginx (terminate TLS, forward all paths to `127.0.0.1:8765`)
+```nginx
+server {
+  listen 443 ssl;
+  server_name dwmcp.example.com;
+  # ssl_certificate ... (e.g. certbot)
+  location / {                       # /mcp, /authorize, /token, /register, /.well-known/*, /login
+    proxy_pass http://127.0.0.1:8765;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;     # the server rate-limits per this IP
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;             # streamable-HTTP / SSE
+    proxy_read_timeout 3600s;
+  }
+}
+```
+
+> **Connector gotcha:** in the "Add custom connector" dialog, leave **OAuth Client ID**
+> and **OAuth Client Secret** EMPTY — those are for pre-registered clients and bypass
+> auto-registration. If you put your email there you'll get "Client ID not found." Your
+> email + password go on the *login page* that appears after, not in the dialog.
+
+## Activity log (audit + usage-learning)
+Every tool call is recorded to **`rvbbit.mcp_activity`** (auto-created on startup):
+`caller` (the backwards-compatible attributed user), `client_id`, `actor` (the
+credential principal), `subject` (the human application request may authorize as),
+`auth_mode`, `delegated`, `channel`, `client_app`,
+`session_ref`, sanitized `provenance`, `tool`, `args` (incl. the SQL/search query),
+`ok`/`error`, `objects` (schema.tables touched), `rows`, `engine`, `elapsed_ms`, `as_of`,
+and `result_summary`. `channel` distinguishes `google_chat`, `web`, `direct_mcp`,
+`automation`, and explicitly ambiguous legacy traffic. `client_app` further identifies
+Calliope/Gallery or the MCP handshake/OAuth registration's self-declared software name
+(for example Codex or Claude Code); it is useful provenance, not an authorization claim.
+For a direct OAuth request, actor and subject are the same person. For Calliope or Google
+Chat through the dedicated Hermes credential, actor is the Calliope service and subject
+is the verified human. Legacy shared-key forwarding can still populate `caller` for old
+reports while leaving `subject` null, making the security distinction queryable.
+DataRabbit's **MCP Incoming** surface deliberately shows distinct people separately from
+MCP request volume: one dashboard open or Calliope turn can fan out into many logged SQL
+and tool requests. Historical rows and generic shared-key clients that cannot be resolved
+remain in **Other** instead of being guessed into a first-party surface.
+
+Three rollup views ship with it: `rvbbit.mcp_activity_summary` (per tool/caller),
+`rvbbit.mcp_activity_channel_summary` (per channel/client/tool), and
+`rvbbit.mcp_popular_objects` (most-touched tables — the seed for "the catalog learns from
+usage"). Existing rows remain readable as `legacy_unknown` in the channel rollup. It's in
+the `rvbbit` schema, so it's hidden from `search_data`. Logging is best-effort; with a
+read-only data role, `GRANT INSERT ON rvbbit.mcp_activity` (and the table's privileges) so
+writes succeed.
+
+## Application Teams
+
+Calliope's Library → **Teams** contains a focused flat Team directory backed by
+`rvbbit.application_principals`, `rvbbit.teams`, and `rvbbit.team_members`. A person enters
+the candidate directory only when Warehouse has a trusted application authorization
+`subject`; a service actor, rejected sender, or legacy attribution never becomes a Team
+candidate. Observation itself grants no access.
+
+Computer browser sessions use the requesting person's identity for access, with
+device provenance kept in `via=computer` and the Computer run ID. They never supply
+human names or avatars to the People directory. Service startup and migration 0467
+clear the exact legacy `Callie’s Computer` display name on affected profiles;
+Floor then uses the person's email until a human sign-in supplies their name again.
+
+The protected **Admins** Team is created automatically and is the only capability that
+permits `team_create` or `team_update`. Admins can edit every Team, including Admins
+membership, but Admins cannot be renamed, archived, or left empty. Team changes are
+revision-checked, idempotent, and recorded in the append-only `rvbbit.team_events` ledger
+with both credential actor and authorized human subject.
+
+The protected **Everyone** Team is the organization-wide wildcard. It stores no
+`team_members` rows: membership is evaluated at request time against Warehouse's verified
+application `subject`, so a newly signed-in user matches immediately. Anonymous requests,
+service identities, rejected senders, and legacy attribution-only callers never match it.
+Everyone cannot be renamed, archived, deleted, or manually populated. Its stable
+`system_key='everyone'` is the grant target for artifacts visible to all authenticated
+users.
+
+Bootstrap the first administrator from operator-controlled configuration:
+
+```bash
+export WAREHOUSE_TEAM_BOOTSTRAP_ADMINS="admin@example.com"
+```
+
+The value is a comma-separated list and is a one-way, idempotent enrollment path. After an
+administrator adds durable replacements through Calliope, remove the environment value
+before removing that bootstrap member; otherwise the next service restart will restore it.
+
+For the hosted first boot, set `WAREHOUSE_TEAM_BOOTSTRAP_ADMINS` and
+`WAREHOUSE_ALLOWED_EMAILS` to the same one exact address, then open
+`/calliope/setup`. The setup notebook reports whether that session was verified by Google or
+Postgres, constrained by the exact one-email bootstrap, or is still on the weaker shared-
+password path. It then runs managed-service preflight, reviews the durable company profile,
+guides the first dlt mirror, requires a human-verified local query result, and records final
+launch approval. Google Workspace delegation, documents, and MCP services remain optional
+projects after launch.
+
+## Artifact access and lifecycle
+
+Newly published artifacts are private to their verified human owner. Existing artifacts
+receive a one-time **Everyone** grant during migration so upgrades preserve their prior
+visibility. An owner can use the Gallery card's **Access** action, or the
+`artifact_access_get` / `artifact_access_update` MCP tools, to replace the exact viewer list
+with any combination of active Teams and observed people. The owner is always implicit and
+cannot accidentally remove themselves. Adding Everyone requires explicit confirmation.
+Grants govern current and historical versions, thumbnails, Gallery discovery, Calliope
+evidence and Trail references, semantic Home replay, and mutating artifact tools. Unauthorized
+and archived routes return the same not-found response rather than disclosing metadata.
+
+The owner manages sharing and lifecycle, and so does any member of the **Admins** Team, for
+every artifact including private ones: Admins can open an artifact by its link, change its
+content (always naming the version they edited, as people in a shared chat do), change its
+sharing, archive or restore it, and give it a new owner. Every Admin action is recorded with
+`acting_as: admin` in the artifact's access history; Gallery and other lists still show an Admin
+only what is shared with them. **Change owner** (Gallery **Access**, or `artifact_transfer_owner`)
+moves an artifact to an observed person; the owner may hand on their own, an Admin must give a
+reason, and the previous owner keeps view access. When someone leaves, an Admin can move all of
+their artifacts at once with `artifact_transfer_all` (a dry run lists them first). **Archive** is reversible and takes the
+artifact out of normal discovery and viewing without deleting versions, grants, lineage,
+events, or pins. The owner can select **Archived** in Gallery and restore it with its prior
+viewer list intact. `artifact_archive` and `artifact_restore` expose the same flow to Calliope.
+Access writes use optimistic revisions and append actor, authorized human, before/after, and
+reason records to `rvbbit.artifact_access_events`. There is intentionally no hard-delete UI.
+
+### Connect Claude
+- **Claude Desktop / Cowork (OAuth):** Settings → Connectors → **Add custom connector** →
+  URL `https://dwmcp.example.com/mcp` → it opens the login page → enter email + the shared
+  password → **Allow**. No header.
+- **Claude Code (either mode):** `claude mcp add --transport http rvbbit-warehouse <url>/mcp --header "Authorization: Bearer $WAREHOUSE_MCP_KEY"`
+
+## The landing page (`/`)
+`GET /` is this server's own index of every published artifact — thumbnail, kind,
+description, dependency counts, search and kind filters — behind the same session
+cookie that already gates `/d/<slug>`, so a cold link bounces through `/login` and
+comes back. It's for the install shape where nobody opens DataRabbit at all: people
+talk to the warehouse through Claude, artifacts get published here, and without an
+index "find last week's dashboard" means scrolling a transcript.
+
+Also served at **`/gallery`** — on a warehouse-only box `/` is free and you get it at
+the root; behind the unified origin (`docker/origin/Caddyfile`) DataRabbit owns `/`,
+so the ingress routes `/gallery` here instead. Same page either way.
+
+It lists the active `rvbbit.live_apps` each signed-in person may view, plus the owner's
+archived recovery view (DataRabbit *plates* live in `rvbbit.plates` and never appear).
+Cards open in a new tab: the index is somewhere you come back to. Routes only exist in
+OAuth mode (same as `/d/<slug>`).
+
+The adjacent **Metrics** view is explicit opt-in and stays out of artifact search by
+default. It reads governed definitions plus already-materialized
+`rvbbit.metric_observations`; browsing never evaluates every metric. Cards show the
+latest value and bounded trend, while **Metric Lens** exposes the inspectable timeline,
+definition versions, parameters, source freshness, and dependent artifacts. Metric
+handles include canonical JSON parameters, so two slices of the same definition remain
+distinct everywhere they are followed, pinned, or discussed.
+
+The Floor's **Core metrics** bar requests `ticks=24`: each chart uses the latest
+24 materialized readings (or all available if fewer), ordered by observation time
+and evenly spaced. Repeated business dates remain separate ticks, so young metrics
+show refresh-to-refresh changes without a calendar cutoff. The delta compares the
+first and last readings in that tail. Gallery and Metric Lens retain their time
+windows. The metrics endpoint accepts `ticks` from 2 to 120.
+
+**Thumbnails.** Captures are stored on disk under
+`$WAREHOUSE_LIVE_APP_CAPTURE_DIR/thumbs/<kind>/<slug>.jpg` (compose points that at the
+durable volume) and are **never regenerated per visit** — a warm request is a ~7ms
+file read. Three things keep a cold gallery from looking broken:
+- **Warming happens at page render**, not at image request. The browser only fetches
+  thumbnails for cards it decides to load, so leaving generation to `/thumbs` meant an
+  artifact below the fold never started rendering until somebody scrolled to it.
+- **The page retries** a missing shot with backoff (5 tries), so a cold gallery fills
+  in while you watch instead of after a manual refresh.
+- **`ETag` + `304`**, so a reload revalidates for ~0 bytes instead of re-transferring
+  every image.
+
+Captures are JPEG at 800×500/q72 (~28KB each, down from ~190KB PNGs). The URL keeps its
+`.png` spelling because lens's `rv-shot` proxy hardcodes it — the `content-type` header
+is what the browser reads, and the proxy forwards ours. Pre-existing `.png` captures are
+still served until the artifact is republished. The `capture_live_app` MCP tool is
+unaffected and still produces full-resolution lossless PNGs.
+
+## Warehouse appearance
+The palette icon in every first-party Warehouse header opens the shared image-theme
+picker. It is available before authentication too, so a saved room follows the browser
+across the login page, artifact hub, access-pending page, and Calliope. The bundled
+library is a self-contained, web-sized copy of DataRabbit's Lens wallpaper set: 74
+thumbnail/full WebP pairs rather than a runtime dependency on the Lens checkout.
+
+Color selection uses the same pipeline as DataRabbit: `node-vibrant` role swatches are
+normalized into an image palette, then paired dark/light derivations generate interface,
+accent, semantic, and chart tokens around the image's dominant hue. The sun/moon control
+beside the palette icon switches the active derivation and saves that choice in the browser;
+it applies before first paint and follows the user across every first-party Warehouse page.
+Library selections
+store their stable source reference, palette, and generated tokens in `localStorage`.
+Uploaded images store the actual Blob in IndexedDB and the compact palette/tokens in
+`localStorage`, so colors can restore during `<head>` and the image follows immediately
+after browser storage opens. A selected theme can use either its wallpaper or a
+user-selected solid background color; switching to solid keeps the derived interface
+and chart palette intact. Calliope uses a darkened scene behind dark mode and a warm paper
+wash behind light mode so its translucent notebook panes remain legible without losing the scene.
+**Use default** deletes both records and exposes the page's existing hand-tuned colors
+and randomized background again.
+
+The boundary is deliberate: first-party chrome and native system objects (including
+Calliope query charts) inherit the generated tokens. Ordinary published HTML/JavaScript
+apps, dashboards, and decks do not load the appearance bundle, and Calliope artifact
+iframes remain separate CSS trees, so authored artifacts keep their own visual identity.
+The built-in **Adaptive Calliope** Design Profile is the explicit opt-in exception. Its
+artifact manifest asks a small, allowlisted runtime for the viewer snapshot: direct pages
+read the same browser-local state, while sandboxed Stage frames request it through the
+parent's validated `postMessage` bridge. Uploaded wallpaper blobs stay in IndexedDB and
+never enter artifact HTML. Theme changes update open adaptive artifacts live; captures,
+thumbnails, and exports use the profile's deterministic editorial fallback. The uber-origin
+Caddy route proxies `/theme/*` to the Warehouse service.
+
+## Calliope (optional Hermes-backed notebook)
+Set both `WAREHOUSE_HERMES_URL` and `WAREHOUSE_HERMES_API_KEY` to add **Calliope** to
+the gallery as a floating workspace portal. If either is blank, no Calliope launcher
+or route is registered.
+
+The gallery keeps its instant, browser-local artifact filter. Once a query has at least
+two characters it also offers an explicit semantic escalation: clicking it (or pressing
+Enter in the filter) resolves company evidence, creates a fresh email-owned Hermes and
+Calliope session, saves the result as the first evidence bundle, and then opens that
+bundle in the full Calliope workspace. The search is sent in the authenticated POST body,
+not placed in the URL, and never becomes a synthetic agent chat turn.
+
+Each gallery card also has an explicit **Ask** action. It always creates a fresh notebook
+and pins the card's exact published artifact version to the stage; the immutable version
+URL is used for rendering even if the gallery alias advances later. **Pin** remains a
+separate action for adding the artifact to the user's Semantic Home.
+
+Named business-object Home pins open that exact stored dashboard/app version at
+`/d/<slug>/versions/<n>` or `/apps/<slug>/versions/<n>`; they never fall through to a
+newer live-app runner. A scalar pin can also be **Promoted to metric**. Warehouse
+rehydrates and executes the immutable semantic definition under the mapped user, freezes
+its resolved context, carries its meaning/formula/unit/display/source metadata into an
+append-versioned `metric_defs` row, materializes the first observation, and replaces the
+source pin with the resulting governed metric. The browser can edit only the catalog name
+and description—not the SQL or provenance—and an unrelated existing metric name is never
+overwritten.
+
+Governed metrics use the same three-intent split. **Brief me** quietly contributes recent
+durable observations to that user's Personal Brief without creating an alert. **Pin**
+tracks the latest observation on Semantic Home. **Ask Calliope** freezes either the
+current observation or a selected Metric Lens range onto a fresh Stage, preserving the
+observation ids, definition version, parameters, and lineage while the conversation
+continues.
+
+Calliope is a three-column business-user surface: the signed-in user's private session
+rail, a newest-first living artifact record, and chat. Hermes owns the agent run and uses
+its current/default profile and shared company memory; the warehouse stores only the
+email-owned UI index, mirrored turn prose, image attachments, and immutable projections
+of MCP results. Queries, KPI timelines, dashboards, apps, and downloadable documents
+appear as stage surfaces linked back to their source message.
+Successful governed SQL calls are projected and durably inserted as soon as each call
+completes, so the Stage accumulates the analysis while Hermes continues working. The
+preceding committed working update is retained on that query surface as its exploration
+intent. The authoritative end-of-run transcript reconciles against the same tool-call and
+lineage key without creating a duplicate. Generic tool results never use this progressive
+path because they may contain credentials, files, or unbounded payloads.
+Ordinary query results are table-only on the Stage—even when they contain numeric columns.
+Calliope must deliberately request `default_view='chart'` for a chart-shaped query before
+the Chart view exists; identifiers and incidental numeric fields never trigger visualization.
+Explicit chart queries retain Table and SQL as inspectable companion views.
+Visual-validation captures
+are retained as exact-version companions to their live artifact rather than duplicated
+as a second Stage card. The artifact's **Markup** action reuses that companion—or renders
+one on demand—so pen, arrow, box, and optional selected-element targets annotate the same
+pinned version. Selecting a surface adds it to chat context; selecting it again clears
+that context. The chat edge is draggable (and keyboard adjustable) within
+viewport-derived bounds. Updating a published artifact creates a new exact-version
+surface linked to the older one. Visual builds get a bounded
+capture-and-review continuation: Calliope receives the real screenshot as vision input
+before finishing. Any standalone image surface can also be opened in the pen/arrow/box markup
+editor; the flattened annotation is sent with the next message while its separately
+stored overlay becomes a toggleable, lineage-linked stage surface.
+
+A new notebook may be created without a title. After its first substantive completed
+turn, Warehouse calls the receipted `rvbbit.summarize` operator over a bounded transcript
+and replaces only the provisional title; an explicit human rename always wins. Hermes
+terminal usage is mirrored into the RVBBIT receipt and semantic cost ledgers with the
+signed caller. Explicit upstream charges are settled, known model rates are estimated,
+and subscription/OAuth or otherwise unreported runs are honestly recorded as
+`0.00 / uncosted` rather than pretending they were free.
+
+The stage header also contains a company evidence resolver. One query federates the
+caller's ACL-filtered Document Brain, published artifact metadata and enriched semantic
+objects, and the warehouse semantic catalog. Results are saved as a newest-first evidence
+bundle in the notebook rather than pasted into chat. Published artifact matches reuse compact
+gallery thumbnails. Users explicitly select any combination
+of documents, dashboards, dashboard values, tables, columns, cubes, or metrics and then
+ask Calliope with that context. With no individual selection, **Ask Calliope** attaches the
+whole search as one compact index containing its query, corpus counts, and bounded result
+gists/provenance handles—not the full documents. The browser sends only opaque handles;
+Warehouse rehydrates the selected records or search set from the authenticated session
+before giving bounded evidence to Hermes. Evidence searches are durable scratchpad history
+but are not Hermes chat turns, while the selected evidence is recorded on the eventual chat turn for later
+resumption. A failed corpus is shown as unavailable without discarding results from the
+other resolvers. No additional environment variables are required.
+
+**Personal Briefs** are the user/time-scoped front door to that same evidence system.
+The **Brief** control in both the gallery rail and Calliope opens one private notebook per
+OAuth email and local calendar day. Its first surface is resolved deterministically—no
+LLM call—from ACL-visible Brain sources, the user's Work Inbox and semantic watches,
+their private Semantic Home pins, recent private Calliope notebooks, and recently authored
+artifacts. Whole-artifact Home pins follow latest while named business-object pins retain
+their exact versioned handle. Explicit refreshes
+append timestamped snapshots to the same lineage; simply reopening today's Brief reuses
+the latest snapshot. Each refresh compares stable observation state with the immediately
+preceding snapshot: new and materially changed facts are explicit, while unchanged generic
+activity is not mislabeled as “changed.” Sections distinguish the user's pinned focus,
+work that needs attention, upcoming events, exact changes, moved watch values, resumable
+work, and possible identity matches. Source facts are labeled **observed**,
+confirmed/candidate identity joins are
+**resolved**, and agent **interpretation** only begins after the user attaches selected
+items or the compact whole-Brief index and chooses Ask Calliope. Card actions attach the
+exact item and prepare a reviewable investigation/preparation/resumption prompt; they never
+auto-send or mutate a source. “That's me,” “Relevant,” and “Not mine” corrections are
+private and durable; they never rewrite source documents or split the shared
+Hermes/Hindsight company memory.
+
+Each daily Brief also has an optional append-only **Daily notes** thread. The
+CodeMirror editor supports Obsidian-style `[[…]]` completion against ACL-visible
+Brain objects projected as people, places, things, projects, and tickets. Choosing
+an object records an explicit private `mentions` edge to its canonical KG node;
+ordinary prose creates no inferred edge. Note bodies stay out of the shared Brain
+graph and shared Hermes memory. Instead, the owner-keyed graph overlay and recent
+prior notes feed later Personal Briefs under **From your notes**, labeled **You
+noted** so user context is never presented as independently observed fact.
+
+An optionally connected Google Calendar follows the same private-overlay contract.
+Upcoming and recently completed events enter Briefs as directly **observed** Calendar
+facts; normalized attendee, organizer, and location fields produce owner-keyed
+person/place edges for later personal context. Exact email, display-name, and location
+matches may point at canonical Brain objects only when those objects are backed by a
+document visible to the signed-in user. The event remains private: no Calendar prose or
+edge is written into the organization graph, fuzzy identity matches are not attempted,
+and every **Trail** hop rechecks both the Calendar owner and Brain ACL. A resolved event
+trail can surface its canonical people/places and semantically relevant company documents,
+which gives **Prepare** grounded history without presenting a private Calendar fact as a
+company assertion. Brief refreshes sync Calendar first when the local cache is stale,
+while a Google API outage leaves the last private cache and every other Brief resolver
+intact.
+
+Brain resolution is sampled fairly per visible source before applying the overall bound,
+so a high-volume fresh corpus cannot starve another source. System-learning records remain
+outside the personal resolver rather than pretending to be person-addressed work; they are
+better suited to a separate operator-oriented Brief. Coverage distinguishes resolvers
+checked, contributing sources, available records, person mapping, and records omitted from
+the visible bounded snapshot.
+
+Providers can project arbitrary source JSON into this observed layer with an optional
+`observation_map` on `rvbbit.brain_doc_providers`, or a source-specific override at
+`rvbbit.brain_sources.config.observation_map`. The deliberately small JSON-path subset
+supports fields such as `status`, `due_at`, `starts_at`, `url`, `assignee_emails`,
+`assignee_names`, `participants`, `authors`, and `viewer_scope`. This keeps Linear,
+calendar, meeting, ticket, and future connector names out of Calliope itself. Sources
+already synchronized under the bundled Linear and Fireflies providers receive matching
+defaults, including Fireflies attendee objects, participant-email strings, organizer,
+meeting time, and meeting link fields. Sources
+without a usable person projection remain visible in Brief coverage as **not
+person-mapped**, which gives a future setup wizard a concrete recommendation instead of
+silently pretending the integration is personalized. No additional environment
+variables are required.
+
+The header's **Design Profiles** library turns uploaded reference images, a frozen
+URL viewport/extraction, an existing selected capture, and optional written direction
+into a reusable dashboard style contract. Profiles are company-visible and creator-
+editable. Markdown remains directly editable; every save creates an immutable version.
+A profile may be pinned to the notebook or only the next turn, and selecting an older
+artifact carries its exact pinned profile forward. Calliope injects that version into
+the Hermes authoring and screenshot-review prompts; the reference assets and compiled
+profile never become runtime CSS for unrelated custom artifacts.
+
+Every install also seeds the immutable, system-owned **Adaptive Calliope** profile. It
+combines a compact 12-column editorial composition, self-hosted Superior Serif display
+type, Superior body type, Superior Mono metadata, explicit KPI/table/chart defaults, responsive rules,
+and strong avoid rules for generic card walls. Structure and information-design behavior
+stay consistent, while each viewer's light/dark palette, chart series, wallpaper, and glass
+materials resolve at render time. Theme delivery updates presentation variables only and
+never invalidates dashboard data or reruns SQL. Users may duplicate the profile to make a
+static or customized variant, but cannot revise or archive the shipped original.
+
+The adjacent **Instruments** library turns a repeated workflow into a small interface
+that people can reuse without learning prompts. Calliope co-designs a bounded form
+(`text`, `textarea`, `number`, `select`, `boolean`, and `date`) plus a transparent prompt
+contract, then saves it through `draft_calliope_instrument`. Agent-created revisions are
+immutable private drafts: only the human creator can publish one privately or advance
+the company-visible publication pointer. A newer private draft is not exposed to company
+readers until that explicit approval. Running an Instrument validates its inputs and
+opens a fresh email-owned notebook with the exact Instrument version, choices, and form
+values frozen as evidence; revising one starts a separate evidence-backed conversation.
+The interface never executes Instrument-authored HTML, JavaScript, or SQL directly, and
+the resulting Calliope run still uses the signed-in person's normal governed tools and
+warehouse permissions. No additional environment variables are required.
+
+The adjacent **Workflows** library is the headless counterpart to Instruments. A readable,
+versioned graph has one manual or schedule trigger, up to eight governed context nodes
+(`artifact`, `semantic_object`, `evidence`, `knowledge`, or `instruction`), one agent goal
+with decision rules, and stage, Work Inbox, or artifact outputs. It deliberately does not
+store arbitrary SQL, JavaScript, shell, or low-level tool DAGs: Hermes chooses concrete
+governed tools at run time. Agent-authored revisions remain private until the owner moves
+the publication pointer. Every invocation creates a fresh notebook, freezes the approved
+graph and resolved context, and requires a paired begin/finish lifecycle call; completion
+adds durable result surfaces and a deduplicated Work Inbox result or blocker. These fresh
+execution notebooks join Instrument executions under the **Runs** tab in the session rail.
+The compact **Chats**, **Briefs**, **Runs**, and **Actions** tabs keep generated notebooks
+out of the ordinary conversation list while Work Inbox remains continuously visible. The
+browser remembers the active tab, the last notebook in each tab, and the last notebook
+overall; a valid `?session=` deep link always takes precedence over remembered state.
+
+**New** opens a native starter-based builder and creates a private draft without invoking
+an LLM. **Design one with Calliope** is the separate conversational path for people who
+want the agent to co-design the graph. This distinction remains visible in the builder so
+a missing model provider cannot prevent someone from authoring a Workflow.
+
+**Run now** opens that notebook and auto-submits only the Workflow launch instruction;
+ordinary prepared Calliope handoffs remain review-before-send. If the streamed agent turn
+ends without the required finish call—including provider/authentication failure—the
+warehouse fails the run closed, commits a visible result surface, and publishes an unread
+Work Inbox blocker instead of leaving the Workflow permanently running.
+
+Before Run now or schedule enablement, **Test readiness** resolves the exact frozen
+contexts and checks Hermes model/configuration health plus declared requirements such as
+personal context, project/ticket sources, MCP servers, Brain providers, or installed
+capabilities. The check is side-effect free: it creates no session, run, Inbox item, model
+call, or schedule change. Explicit missing requirements block execution; advisory
+requirements inferred from older graphs remain warnings that require acknowledgement.
+The graph, approval, automation, readiness, and latest-run states stay visible together in
+one lifecycle strip.
+
+The frozen launch contract also exposes an identity-scoped personal-context capability
+when a goal needs the owner's latest Daily Brief, private notes, or Work Inbox. The opaque
+run ID resolves ownership server-side; the agent cannot provide or enumerate an email
+address, and the bounded result remains subject to the same owner checks as the UI.
+
+Each run keeps a bounded, user-visible diagnostic timeline of tool start, completion, and
+failure events, plus any explicitly reported action/outcome steps from a scheduled agent.
+The UI groups those events under four readable phases—prepare, gather governed context,
+analyze and decide, and commit the result—while leaving the exact technical events
+expandable underneath. The timeline redacts credential-shaped text and never stores hidden
+reasoning, raw tool arguments, or raw tool results. **Revise Workflow from this run** opens
+a fresh revision notebook with the exact graph plus a bounded outcome snapshot (status,
+summary, structured details, phase summaries, artifact refs, and source notebook pointer),
+never a transcript, prompt, or raw tool payload. The Workflow rail also includes a
+lightweight Hermes operations summary for visible cron jobs and queue health; prompts,
+delivery targets, and provider credentials are deliberately excluded.
+
+Published schedule graphs require a second explicit **Enable schedule** action. The
+schedule pins that approved version and runs through Hermes cron using the Hermes
+installation's timezone and configured cron/default model provider. Drafting or revising
+never silently advances the live schedule. The Workflow library mirrors Hermes job state,
+including provider failures that occur before a Calliope run can begin, so unattended work
+cannot fail invisibly. Pausing, resuming, running now, disabling, unpublishing, or archiving
+also updates or removes the corresponding Hermes job. No additional environment variables
+are required beyond the normal Calliope/Hermes setup.
+
+Personal scheduled work uses the lighter **Assigned to Callie** surface inside Work Inbox.
+It is intentionally different from a Workflow: a person describes an outcome and a time or
+cadence in an ordinary notebook. `schedule_calliope_work_order` saves and activates it;
+the scheduling request and any clarification answers are sufficient authorization.
+`draft_calliope_work_order` is reserved for explicit proposals. Existing assignments can
+be activated, paused, resumed or cancelled in chat with `manage_calliope_work_order` or
+from the Floor controls. Stable request keys prevent retries from creating duplicate jobs.
+Recurring clock schedules accept an IANA timezone such as `America/New_York`; the native
+Hermes schedule stores that zone and handles daylight saving without duplicate UTC checks.
+The durable work order—not the Hermes cron record—is the
+source of truth. Hermes only wakes it; each occurrence validates the exact job and definition
+binding, snapshots the approved instruction and inert context, and creates a fresh private
+run notebook. Assignment runs collect under one collapsible group in **Runs**, so repeated
+checks do not crowd ordinary Chats.
+
+Every result remains inspectable in its run notebook. Work Inbox is the attention layer, not
+the job database: its default `attention` policy delivers failures, blockers, requested
+attention, and meaningful changes while suppressing healthy unchanged checks. `always`,
+`failure`, and `never` policies are also explicit. Headless assignments default to
+`read_only`, which includes producing requested private dashboards, PDFs and report files;
+`propose_changes` may recommend an external/organizational mutation but still cannot perform one without
+a human. Overlapping occurrences are skipped. If Hermes reaches a terminal execution state
+without the required finish receipt, Calliope fails the saved run closed and publishes a
+diagnostic handoff instead of leaving it permanently active.
+
+For accurate per-user MCP attribution, the trusted Warehouse MCP entry in Hermes should use
+`forward_session_identity: true`. Cron provenance forwards only the opaque Hermes session id,
+never an asserted human email; Warehouse joins that session or managed job back to its own
+user-owned work-order ledger. The tables deliberately retain broader assignee, trigger, and
+execution primitives so future human todos, reminders, and Workflow-backed assignments can
+share this lifecycle without turning the first version into a generic project-management UI.
+
+The header's **Library** control is an outcome-oriented front door to the SQL-first
+administration and capability catalog. People can search for goals such as “use Linear in
+my Brief” instead of knowing an MCP server, Brain provider, or catalog capability by name.
+Each result exposes what it unlocks, its current requirements, and one of two paths:
+guided actions seed a fresh Calliope notebook with a structured contract, while typed
+actions use a bounded native form. An authenticated Admins Team member applies and verifies
+a typed appliance change in one submit; the durable redacted plan is retained as its audit
+receipt rather than presented as a separate approval gate. Receipts record apply, probe,
+verify, redacted inputs, and rollback guidance, and can
+be reopened from both the Library and the Calliope stage. Guided notebooks are collected
+under the **Actions** tab in the session rail. Grouping is derived from their durable
+Library handoff surface, so ordinary conversations that merely use an action remain under
+**Chats**.
+
+Workflow readiness links missing declared requirements directly to matching Library
+actions. A successful repair returns to the blocked Workflow and reruns its side-effect-free
+readiness check. Ordinary organization actions retain the trusted-appliance boundary.
+Company-wide mirror controls and MCP credential changes are narrower: they are generated
+only for protected Admins Team members and recheck that membership at execution
+time, without introducing per-source or per-connector roles.
+
+MCP credentials never enter a Calliope prompt. Secret fields are password controls whose
+values are sent only with the direct native execution request, immediately cleared in the browser,
+and forwarded to the MCP gateway's secret route. The gateway writes canonical encrypted
+credential envelopes to PostgreSQL when migration 0286 and the independent RVBBIT
+credential wrapping key are available; its older encrypted file is a migration fallback.
+Existing saved secret references may be shown, but values are never returned. Set the same
+`RVBBIT_GATEWAY_TOKEN` on PostgreSQL, Warehouse, Warren, and the MCP gateway in deployed
+environments; `MCP_GATEWAY_URL` can override endpoint discovery when needed. An absent
+required credential or an unavailable gateway fails the action closed before activation.
+Registered MCP servers also receive an admin-only credential action for named add/rotation
+and revocation. Its receipt freezes the current canonical version and status; the gateway locks
+and compares that revision before writing so a stale request cannot overwrite a newer
+change. Rotation actively probes the server after cache eviction. The value remains absent
+from the receipt, model tool call, action run, Stage surface, and error text.
+Revocation retains a versioned row with no ciphertext, which prevents a legacy
+same-named process-environment fallback from silently becoming active after restart.
+
+Database mirror jobs appear in Library inventory as local dlt control-plane objects. Their
+admin-only actions can run now, retry the exact latest failed receipt, pause future runs,
+resume, or change cadence. Every action freezes the observed job and latest-run revision,
+uses the existing dlt queue, and verifies the resulting local job/run receipt. Neither
+Hermes nor a direct assistant connection contacts the production source database.
+
+An authenticated Admins Team member can also ask Calliope to perform appliance-local DBA
+work through `administer_local_sql` when no narrower typed action exists. Ordinary analysis
+continues to use read-only `run_sql`. One `SELECT`/`WITH`-shaped administration statement
+runs directly on the writable local connection, which intentionally includes RVBBIT table
+functions that update settings, catalogs, operators, or acceleration metadata. Explicit
+DDL/DML/CALL/DO/GRANT/REVOKE first creates a durable receipt containing the exact SQL and
+SHA-256 hash; Calliope must show it and wait for explicit approval before executing that
+receipt. The Stage card and Library receipt both expose the complete frozen statement and
+an **Approve & continue** control. Native approval submits the reviewed hash, rechecks the
+owner, Admins Team membership, originating session, pending state, statement, and hash,
+executes only that receipt, and starts a continuation turn so Calliope can verify the result
+and resume the waiting work. The lane rejects multiple statements, credential-shaped literals,
+host filesystem access, instance roles/databases, foreign servers, and dblink. Remote source
+databases remain exclusive to the dlt mirror controller.
+
+The Library's **Connect a custom MCP server** action exposes the same generic RVBBIT
+connection path for servers that are not in `capability_catalog`. It supports streamable
+HTTP (no authentication or one Bearer token) and stdio executables that run on the MCP
+gateway host/container. Stdio arguments are an explicit array rather than a shell command;
+non-secret environment values stay in the registration while `${NAME}` values resolve from
+the gateway's canonical-backed in-memory cache. Apply registers the reviewed transport, calls
+`refresh_mcp_server` to introspect live tools and resources, generates both per-tool typed
+functions such as `server_name.tool_name(...)` and optional RVBBIT operators, then runs an
+active probe and records the resulting counts. The universal fallback remains
+`rvbbit.mcp_call(server, tool, args_jsonb)`. Wrapper generation refuses reserved names or
+an unrelated existing SQL schema so its recreate-on-drift behavior cannot erase another
+application surface. Older SSE and interactive OAuth transports are not implied by the
+form; those require a stdio bridge or a future gateway transport.
+
+Cube schema surfaces are also direct interactive analysis tables. Add one or more
+dimensions to Rows and one or more numeric aggregations to Values; this produces a
+normal grouped table with named columns. Columns is optional—adding dimensions there
+turns the same view into a cross-tab. Every shelf change recalculates automatically,
+without asking Hermes or requiring a governed metric. The backend validates every
+field against the materialized cube, quotes identifiers, and rejects results above
+the configured cell cap.
+
+The header's **Dreams** control opens Calliope's bounded company-reflection loop. Once
+per company-local day, a background worker compares the incremental activity window with
+a rolling 90-day horizon. Separate no-tools Hermes observer passes rotate several lenses
+across notebook intent, MCP usage, governed objects, artifacts, document/KG shapes,
+metric history, structured work, sync/run health, and available capabilities. Private
+Calendar and Daily Note overlays contribute only k-anonymous rhythm counts (three or more
+owners), never titles, prose, attendees, labels, or identities. The editor may retain up
+to twelve evidence-linked candidates but promotes only three; runners-up remain quietly
+inspectable under **In the wings**. Small ideas become inspectable native prototypes,
+larger or externally mutating ideas remain project plans, and uncertain ideas become
+explicit questions. Similar ideas version and deepen one durable Dream rather than
+stacking copies. Raw conversation text is used only inside the bounded observer call and
+is not stored in the Dream tables or receipts.
+
+The Evidence Lab sits between observation and ideation. Hermes may propose a small set
+of falsifiable SQL or Clover experiments, but it never receives a general tool loop.
+Warehouse admits only parsed, single-statement SELECTs over recently observed schema
+targets, runs data extraction in a read-only transaction with row/time limits, and invokes
+only a small allowlist of Clover operators itself. Raw Clover inputs are ephemeral; Dreams
+retain compact aggregate receipts under **What Calliope tested**. The worker discovers
+operators from the running database rather than assuming a catalog entry is installed,
+and equivalent tests may reuse a receipt for 24 hours. Set
+`WAREHOUSE_CALLIOPE_DREAM_EVIDENCE_LAB=0` to turn this phase off. Deployments may also set
+`WAREHOUSE_CALLIOPE_DREAM_SQL_ROLE` to an existing least-privilege read role; the
+application-level target and query guards remain active either way.
+
+Dream feedback is personal until someone adopts or explores an idea. **Sleep on it** and
+**Not useful** hide a Dream only for that viewer. **Explore with Calliope** creates a normal
+user-owned notebook, pins the versioned Dream and its de-identified evidence on the Stage,
+and prepares a review-first continuation prompt; it never schedules, publishes, or mutates
+an external system by itself. **Dream deeper** deliberately revisits a rolling 30 days
+against the 90-day horizon and cannot consume the nightly incremental cursor; it refuses
+overlapping cycles. Failed and stale nightly cycles remain visible and can be retried safely.
+
+The chat composer and private Daily Notes editor expose **Dictate** only when a
+server-side speech provider is configured and the browser supports microphone capture.
+With OpenAI Realtime enabled, a provisional transcript appears while the user speaks;
+stopping the microphone finalizes it and inserts only the final text at the captured
+cursor. Dictation remains deliberately review-first: it never sends a chat turn or
+appends a note automatically. Warehouse authenticates the user, adds the bounded
+transcription configuration, and exchanges the browser's WebRTC offer without exposing
+the provider key. The live audio then flows directly between the browser and the
+provider. Recognition hints are bounded to configured organization terms plus current
+notebook titles, identity names, and recent private linked-object labels already visible
+to that user. A simultaneous browser recording supplies an automatic file-transcription
+fallback if live setup, connectivity, or finalization fails. Warehouse validates that
+fallback audio and does not persist it.
+
+**Conversational answers** are an independent, opt-in account preference in the shared
+**Appearance** dialog. They use Hermes to turn each newly completed answer into a shorter,
+personality-shaped presentation without requiring ElevenLabs or producing audio. The
+complete assistant answer remains canonical and is available from the small **Full answer**
+control. Disabling the preference restores the complete answer directly in the conversation.
+
+**Hutch speech** is the default for new installs, using an operator-managed
+OpenRouter model. `WAREHOUSE_CALLIOPE_TTS_PROVIDER` defaults to `hutch`; Calliope uses the
+server's `RVBBIT_CLOVER_KEY` (or `WAREHOUSE_CALLIOPE_TTS_HUTCH_KEY`) and
+`WAREHOUSE_CALLIOPE_TTS_HUTCH_BASE_URL` (default `http://clover:8090/v1`).
+`WAREHOUSE_CALLIOPE_TTS_HUTCH_MODEL` defaults to `calliope-voice`.
+The OpenRouter key belongs in Hutch, never in browser configuration.
+
+Hutch's `speech` entry owns the upstream model and default voice. The initial profile
+uses `fish-audio/s2.1-pro-free:free` and voice
+`40c20f2514ff4869a09ffcc840127f66` (Callie v2; v1 was `145ff4d7b1c74ab4abebf90e759f240c`), with 44.1 kHz mono signed 16-bit PCM.
+Fast and Expressive share that model; their presentation styles remain distinct.
+Fish audio has no character alignment through this endpoint, so playback keeps the
+transcript visible without estimated word highlighting. Existing timed ElevenLabs
+recordings can still replay. Speech profile changes invalidate new synthesis/reuse;
+completed historical caches retain their original audio. If a profile changes between
+rendering and synthesis, Replay prepares a new render. Voice selection remains
+operator-managed for now.
+
+**Tuning (operator iteration, hidden later):** the complete-response dialog carries a
+*Tuning* section: the tagged take verbatim (bracket cues highlighted), the voice in use,
+model, profile revision, rewrite and first-audio latency, and the last six takes with
+Play buttons. *Voice id* (empty = Hutch's default voice) re-speaks the same words in
+another voice without a rewrite; *Delivery direction* is folded into the rewrite as an
+explicit operator instruction (stronger than the personality text, which is treated as
+style colour) and *Regenerate take* writes a new take with it. Both values persist in the
+browser and ride along on ordinary renders. Hutch accepts a custom voice only when its
+speech entry sets `allow_voice_override: true` (voices must match `voice_pattern`,
+default a 32-hex Fish voice id). Set `VOICE_TUNING_UI = false` in `calliope.js` to hide it.
+
+For rollback, set `WAREHOUSE_CALLIOPE_TTS_PROVIDER=elevenlabs` and retain the existing
+ElevenLabs server credentials. The legacy defaults and behavior below apply to that
+provider. Changing a compatible Hutch model/voice requires updating its speech config
+and restarting Hutch; Calliope resolves the profile on each new speech render.
+This release supports mono s16le PCM profiles; compressed-only providers need an
+additional streaming decoder. No automatic paid fallback is enabled.
+
+**Read aloud** is a separate, optional preference in the same dialog. **Off** is the default.
+**Fast** synthesizes the factual presentation with ElevenLabs Flash and no performance tags.
+**Expressive** lets the user's saved response personality materially shape wording, cadence,
+punctuation, and delivery before speech synthesis. Expressive mode uses the separate
+emotion-tagging pass described below. Read aloud can be enabled with or without Conversational answers; when both are enabled,
+they share one derived presentation rather than performing two rewrites.
+An additional **Speak working updates** preference speaks only stable, user-visible
+progress messages that Hermes completes before beginning tool work. Raw token deltas
+still appear immediately in the active Calliope chat bubble but are never spoken;
+tool calls remain in the separate terminal activity surface. Progress updates are
+deduplicated, briefly debounced, rewritten through Hermes' Background Tasks model using the current conversation
+and the preceding spoken updates, and queued sequentially without interrupting the
+agent turn. They are ephemeral: Warehouse owner-checks the active turn but writes no
+progress script, audio, or receipt. When the final answer arrives, unsent updates are
+dropped, currently playing progress finishes, and the canonical final spoken response
+continues through the normal durable voice path.
+The semantic rewrite sends Calliope's presentation prompt to Hermes' narrow authenticated
+`/v1/auxiliary/tts-rewrite` endpoint. That endpoint performs a one-shot model completion through
+the provider and model selected under **Models & agents → Background tasks**; it does not create
+an agent, session, tool catalog, memory context, SOUL prompt, or skill context. A direct
+`auxiliary.tts_audio_tags` override remains more specific, and automatic Hermes routing is used
+when no Background Tasks model is selected. It never uses the short-form
+`rvbbit.clover_llm_apply` operator or `rvbbit.summarize`.
+Expressive speech then makes a **second model call solely for emotion/delivery tags**.
+`WAREHOUSE_CALLIOPE_TTS_TAG_MODEL` defaults to `calliope-luna` and can be set to
+`calliope-sol` independently of the spoken-text writer. It uses the server's Clover
+credentials and receives the finished spoken text, personality, and delivery direction.
+The tagged response goes straight to synthesis; there is no keyword-based emotion
+selection, tag-count requirement, or word-comparison rejection. Fast and conversational
+modes skip this pass. An unavailable tagging service leaves the spoken take usable.
+Final voice receipts include `emotion_tags` with the requested/resolved model and timing;
+metadata-only token usage is recorded centrally as `tts.emotion_tags` under Text to speech.
+Server media receipts use `CALLIOPE_MEDIA_LEDGER_DIR=/app/data/media-ledger` on its
+writable volume. The cost importer tails both that directory and the Hermes ledger;
+the shared Hermes filesystem remains read-only to the server.
+The preparation window reserves time for both tagging and first audio. Switching the
+configured tag model invalidates automatic expressive takes while saved takes remain replayable.
+
+For conversational continuity, the rewrite receives the current user message plus at most
+three preceding chat turns as ordinary user/assistant messages. Earlier Calliope turns use
+their saved conversational presentation when one exists and otherwise their complete canonical
+answer; tool calls, artifacts, and receipt payloads are excluded from this presentation-only
+context.
+When the registered `hindsight_default` memory service is ready, conversational and expressive
+presentations also use one private Hindsight bank per authenticated user. The bank id is an
+opaque HMAC rather than an email address. Recall is bounded to six fragments and enters only the
+one-shot presentation rewriter as explicitly untrusted style/rapport data: it cannot supply facts,
+instructions, numbers, or authority for the answer. It is never injected into Hermes' canonical
+agent turn, notebook context, tool loop, dossiers, working updates, or prompts—the base model has
+no presentation-memory bridge.
+
+After a successful non-fallback rewrite, Warehouse queues only that turn's user message and final
+rewritten presentation for retention. The first exchange seeds the bank immediately; subsequent
+exchanges submit in asynchronous groups of four by default. A small owner-scoped PostgreSQL ledger
+survives transient Hindsight failures and records delivery state, not a second copy of either
+message; the prose remains in `calliope_turns` and is read only when a batch is submitted. Recall
+or retention failure never blocks the answer. Presentation receipts keep count, timing, status,
+and a hash for diagnostics, but never the bank id or recalled text.
+Warehouse sends no `max_tokens` value. Concision is semantic guidance, not a word, sentence,
+character, source, or expression-tag cutoff: Warehouse preserves the complete model rewrite,
+and if Hermes reports a length stop or cannot produce one, uses the complete canonical answer
+rather than accepting partial output. The spoken writer prepares cue-free words; expressive mode adds delivery in the separate
+model call. The tagged response is passed through to synthesis.
+The full assistant answer remains canonical and unchanged in the turn record. A trailing
+paragraph explicitly labelled `Source:` or `Sources:` is excluded from the conversational
+presentation and retained beneath it as an on-screen source receipt. Catalog
+relations named there open Calliope's permission-aware Follow the Trail viewer, so the
+provenance remains inspectable without being compressed. The latest derived script and
+non-secret render metadata live under that turn's `presentation` response receipt for
+reload-safe display, replay, and debugging; the reader also accepts the legacy `voice`
+receipt key. The four explicit response preferences—Conversational answers, Read aloud mode, response
+personality, and Speak working updates—live in the private, owner-scoped
+`rvbbit.calliope_response_preferences` row and synchronize through the authenticated
+`/api/calliope/response-preferences` endpoint. An owner-keyed browser cache supplies an
+instant first paint and offline continuity, but the server row is authoritative across
+browsers and devices. The pre-upgrade unscoped browser cache is discarded after successful
+hydration because it cannot prove which signed-in person authored its personality text.
+Warehouse sends the personality transiently as style direction and retains only its hash in
+the turn receipt. The configured personality text itself is never inferred into a dossier,
+Hindsight memory, or base-model prompt; Hindsight learns only from the resulting user/rewrite
+exchange described above.
+Provider credentials remain server-side. With the direct ElevenLabs provider, the timed
+ElevenLabs stream supplies per-character alignment alongside PCM, so the browser decorates
+each word as it is spoken; a cadence estimate is used only when alignment is absent. Audio
+begins playing while the HTTP response is still arriving, completed audio and its timing
+manifest are cached in the owner-gated Calliope store, and starting another turn, changing
+notebooks, switching voice off, or pressing Stop interrupts playback.
+
+```bash
+export WAREHOUSE_HERMES_URL="http://127.0.0.1:8642"
+export WAREHOUSE_HERMES_API_KEY="..."       # Hermes API_SERVER_KEY
+# Optional: one shared company memory scope, never an email-derived scope
+export WAREHOUSE_HERMES_MEMORY_KEY="company"
+# Optional presentation-only Hindsight continuity; enabled by default when a salt exists.
+# Keep the dedicated salt stable across JWT/API-key rotation to preserve each user's bank.
+export WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY="1"
+export WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_SALT="$(openssl rand -hex 32)"
+export WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_SERVICE="hindsight_default"
+export WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_RECALL_LIMIT="6"
+export WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_RETAIN_EVERY="4"
+export WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_TIMEOUT_SECONDS="8"
+export WAREHOUSE_CALLIOPE_DIR="/var/lib/warehouse/calliope"
+# Optional, trusted networks only: permit URL references on private/local hosts
+export WAREHOUSE_CALLIOPE_STYLE_ALLOW_PRIVATE_URLS="false"
+# Optional but required for browser downloads created by external Hermes:
+export WAREHOUSE_CALLIOPE_EXPORT_ROOTS="/var/lib/hermes/exports"
+export WAREHOUSE_CALLIOPE_MAX_EXPORT_BYTES="134217728" # 128 MiB; ceiling 512 MiB
+# Optional company Dream schedule; enabled with Calliope by default
+export WAREHOUSE_CALLIOPE_DREAMS="1"                  # set 0 to disable
+export WAREHOUSE_CALLIOPE_DREAM_EVIDENCE_LAB="1"      # bounded SQL/Clover tests
+export WAREHOUSE_CALLIOPE_DREAM_TIMEZONE="America/New_York"
+export WAREHOUSE_CALLIOPE_DREAM_HOUR="3"              # local hour, 0-23
+export WAREHOUSE_CALLIOPE_DREAM_HERMES_TIMEOUT_SECONDS="420" # bounded 240-900
+# Private notebook rail synopses; debounce resets whenever the thread changes
+export WAREHOUSE_CALLIOPE_SESSION_SYNOPSES="1"          # set 0 to disable
+export WAREHOUSE_CALLIOPE_SYNOPSIS_DEBOUNCE_SECONDS="90"
+# Dictation provider/model: Models & providers → Dictation (Hermes owns credentials)
+# Optional literal recognition hints and expected language codes for live dictation
+export WAREHOUSE_CALLIOPE_STT_KEYWORDS="RVBBIT,Calliope,Linear,ENG-42"
+export WAREHOUSE_CALLIOPE_STT_LANGUAGES="en"
+export WAREHOUSE_CALLIOPE_MAX_AUDIO_SECONDS="600"
+# Optional spoken responses; both values are required to expose the feature
+export ELEVENLABS_API_KEY="..."
+export ELEVENLABS_VOICE_ID="..."
+# Optional adapters/defaults shown here for explicit deployment control
+export WAREHOUSE_CALLIOPE_TTS_FAST_MODEL="eleven_flash_v2_5"
+export WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_MODEL="eleven_v3"
+export WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_STABILITY="0.3" # lower is more emotionally variable
+export WAREHOUSE_CALLIOPE_TTS_SAMPLE_RATE="24000"
+export WAREHOUSE_CALLIOPE_TTS_PREPARE_TIMEOUT_SECONDS="120"
+```
+
+The hosted stack shares Hermes' durable `/opt/data` volume with Warehouse at the
+same absolute path, writable only from Hermes and read-only from Warehouse.
+Dashboard builders write a complete HTML file there, run
+`calliope-web-check <path>` (pinned Prettier, ESLint, and HTML
+Validate), and call `upload_artifact(source_path=<path>)` once. Warehouse
+confines the read to the configured roots, accepts only UTF-8 HTML, records the
+byte count and SHA-256 digest, and returns the usual short-lived artifact handle.
+Inline and append uploads remain available for MCP clients without a shared
+filesystem, but hosted Calliope does not need to serialize or reassemble chunks.
+
+For the uber Compose stack with Hermes running directly on the Docker host,
+use `WAREHOUSE_HERMES_URL=http://host.docker.internal:8642`; the service
+includes the Linux `host-gateway` mapping. A Hermes container on the same
+Compose network can use its service name instead. Compose also mounts
+`WAREHOUSE_CALLIOPE_EXPORT_DIR` (default `/tmp/rvbbit-hermes-exports`) read-only
+at the same absolute path inside Warehouse and advertises it to Calliope's agent
+instructions. Hermes must be able to write that directory; a containerized Hermes
+needs the same bind mount. Warehouse accepts only a bounded document/data extension
+allowlist beneath configured roots, rejects sensitive config/credential paths, hashes
+and copies valid files into `WAREHOUSE_CALLIOPE_DIR`, and serves them through
+email-owner-gated download URLs. The originating host path is never sent to the browser.
+
+Configure the Hermes default profile's `mcp_servers` entry to use this warehouse's
+`/mcp` URL and the server-side `WAREHOUSE_HERMES_MCP_KEY`. Calliope does not create or select a
+Hermes profile. Set `forward_session_identity: true` only on this trusted first-party
+Warehouse entry. Hermes then forwards bounded platform/session provenance for Google
+Chat, Calliope's API-server sessions, and cron runs. Google Chat additionally carries the
+adapter-verified sender email; API and cron envelopes carry no asserted human identity.
+Warehouse resolves Calliope session IDs against its own tables, which lets it label web
+chat and scheduled Workflows while retaining the trusted local owner. Publication tools
+also resolve that local owner before persisting a new dashboard or app, so the shared
+Hermes service credential never becomes the artifact owner. Post-turn reconciliation and
+startup backfill repair artifacts produced by older Hermes clients, including deployments
+that name the shared principal with `WAREHOUSE_MCP_STATIC_CALLER`. Keep the flag on
+the individual Warehouse MCP entry—not under `platforms.google_chat`, where it is ignored
+so provenance cannot accidentally be forwarded to every configured MCP server:
+
+```yaml
+mcp_servers:
+  Datamarket:
+    url: https://warehouse.example.com/mcp
+    headers:
+      Authorization: Bearer ${WAREHOUSE_HERMES_MCP_KEY}
+    forward_session_identity: true
+```
+
+### Hermes update compatibility
+
+The current upstream Hermes client does not yet implement RVBBIT's opted-in
+identity envelope. The config key above is therefore inert unless the compatibility
+patch shipped in this repository is present in the Hermes checkout. `hermes update`
+may replace locally modified core files, so check and reapply the patch after every
+Hermes update:
+
+```bash
+HERMES_AGENT_ROOT="${HERMES_HOME:-$HOME/.hermes}/hermes-agent"
+RVBBIT_SQL_ROOT=/path/to/rvbbit-sql
+cd "$HERMES_AGENT_ROOT"
+
+# A successful reverse check means the patch is already installed.
+if git apply --reverse --check \
+  "$RVBBIT_SQL_ROOT/services/calliope/hermes-forward-session-identity.patch"; then
+  echo "RVBBIT Hermes identity forwarding is already installed"
+else
+  git apply --check \
+    "$RVBBIT_SQL_ROOT/services/calliope/hermes-forward-session-identity.patch"
+  git apply \
+    "$RVBBIT_SQL_ROOT/services/calliope/hermes-forward-session-identity.patch"
+fi
+
+scripts/run_tests.sh tests/tools/test_mcp_session_identity.py -q
+systemctl --user restart hermes-gateway
+```
+
+If the forward check fails after an upstream refactor, do not force-apply the patch.
+Rebase its two integration points in `tools/mcp_tool.py`: capture the gateway
+ContextVars before crossing to the MCP event loop, then send the bounded envelope as
+MCP request `_meta`. Warehouse should subsequently record a Google Chat call with the
+shared Calliope principal as `actor`, the sender email as `subject`,
+`auth_mode=google_chat_delegation`, `delegated=true`, `channel=google_chat`, and a
+non-empty `session_ref`.
+
+Google Chat's working marker is separately configurable in upstream Hermes and does
+not require a source edit. Keep this beside the other platform settings so it survives
+updates:
+
+```yaml
+platforms:
+  google_chat:
+    typing_status_text: "Calliope is thinking…"
+```
+
+If Hermes uses a terminal-side MCP helper to parse a large result, that helper must
+also send the metadata envelope. Calling `server.session.call_tool(...)` directly
+bypasses the native handler and records the shared service principal instead of the
+Google Chat sender. Install the supplied helper rather than maintaining an ad-hoc copy:
+
+```bash
+install -m 0755 \
+  "$RVBBIT_SQL_ROOT/services/calliope/hermes-dmcp.py" \
+  "$HOME/dmcp.py"
+```
+
+The helper reads the session ContextVars bridged into its subprocess environment and
+uses the same `_forwarded_session_metadata` / `_call_tool_with_metadata` path as native
+Hermes. Outside a recognized Hermes session it sends no human identity and remains a
+normal service call.
+
+Forwarded metadata is not a tool argument or PG role. It becomes an application-layer
+human subject only when paired with the dedicated `hermes-service` credential; with the
+legacy shared key it remains attribution-only. A direct
+shared-key client that declares a specific MCP `clientInfo` is labeled from that handshake;
+an old generic client and an old Hermes connection without this flag remain deliberately
+`unknown` rather than being guessed. Enable that same profile's API server and pin its
+advertised model to the real provider-routable model ID:
+
+```bash
+hermes config set platforms.api_server.enabled true
+hermes config set platforms.api_server.extra.host 127.0.0.1
+hermes config set platforms.api_server.extra.port 8642
+hermes config set platforms.api_server.extra.model_name openai/gpt-5.6-sol
+hermes config set platforms.api_server.extra.key "$WAREHOUSE_HERMES_API_KEY"
+hermes gateway run --accept-hooks
+```
+
+The explicit model avoids the default API alias (`hermes-agent`) being sent to a
+provider that does not recognize it. Browser users never receive either secret.
+
+## Dashboards (artifacts that live + work outside Claude)
+**Start from `dashboard_template`** — the proven boilerplate (see [`DASHBOARD_TEMPLATE.md`](DASHBOARD_TEMPLATE.md)).
+
+For an explicit, non-default visualization experiment, `tanstack_chart_template` returns a
+complete framework-free dashboard using the pinned TanStack Charts 0.16.2 SVG runtime. Its
+`mountRvbbitChart()` adapter adds exact mark/query/row metadata and semantic bindings while
+leaving the surrounding artifact as unconstrained HTML/CSS/JS. Existing Chart.js artifacts and
+the ordinary template are unchanged. Publish the returned HTML and manifest with
+`create_live_app`, then run `capture_live_app` to validate it.
+Optional Table Core 9.2.4 and Virtual Core 3.17.10 browser bundles are also available;
+see [`charts/README.md`](charts/README.md) for script paths and globals.
+Its dual-mode data bridge means the *same* artifact runs live in **two places, no login**:
+- **In a Cowork artifact** — `window.cowork.callMcpTool('mcp__<id>__run_sql', {sql})`, authed by
+  the connector OAuth the user already granted (the sandbox blocks `fetch`, so this is the path).
+- **Hosted** — `publish_dashboard(name, html, …)` stores it versioned in `rvbbit.dashboards`,
+  serves it at `<WAREHOUSE_PUBLIC_URL>/d/<slug>` behind the login cookie, and injects
+  `rvbbitQuery()` (→ `/api/d/<slug>/q`, read-only on the mirror, logged to `mcp_activity`).
+
+Both bridge forms default to 1,000 rows. Detail grids may explicitly request more with
+`rvbbitQuery(sql, {limit: 2500})` or `callMcpTool(tool, {sql, limit: 2500})`; the request is
+still bounded by `WAREHOUSE_ARTIFACT_ROW_CAP` (10,000 by default). Live rendering,
+screenshots, PDF rendering, and semantic capture honor the same limit contract, and receipts
+record both the requested and applied values.
+
+**A page's queries queue.** The injected wrapper runs at most four of a page's queries at a
+time (a waiting query has not started its statement timeout), so a page that asks for
+eighteen parts at once no longer competes with itself. A query that timed out or hit a
+transient server failure is tried once more after the page's other queries
+(`{retry: false}` opts one out). A page sets one statement timeout for all of its queries
+with `window.RVBBIT_DASHBOARD.query = {timeout_ms: 90000, concurrency: 4}` (or the same under
+`manifest.query`; 1,000–180,000 ms, 1–8 lanes); a single call still wins with
+`rvbbitQuery(sql, {timeout_ms})`. The default stays `WAREHOUSE_STMT_TIMEOUT_MS` (30 s). The
+queue wraps both transports: the direct `/d/<slug>` page and the Stage's sandboxed embed,
+whose bridge now carries `timeout_ms` through. `window.RVBBIT_DASHBOARD.queryQueue` reports
+`running`, `waiting`, `lanes` and `stats`.
+
+A query that cannot finish is an answer, not a crash: `/api/d/<slug>/q` returns
+`QUERY_TIMEOUT` (504, naming the limit and how to raise it), `QUERY_UNAVAILABLE` (503) or
+`QUERY_FAILED` (500) as JSON and records the failure in `mcp_activity`. Before this a
+statement timeout was an unlogged bare 500, so the activity log showed no dashboard timeouts
+at all. The template's `composePayload(parts, {timeout_ms})` also forwards `timeout_ms` and
+`cache` now; it used to drop both on the hosted path.
+
+Key rule: one **flat** query per data concern in the `composePayload` parts map — the framework
+batches them into **one** `run_sql_multi` round trip (each bridge call has ~1.5s overhead), but
+each query stays flat on the wire: routable by the accelerated engines, visible to the catalog,
+and individually promotable. Never hand-write a `json_build_object` payload query, and never
+bake data in — that's a 'dead tree'.
+
+### Versioned semantic maps
+
+Every published HTML dashboard is queued for a **non-blocking semantic compiler pass**.
+Publication succeeds immediately; a background worker renders that immutable version,
+captures its live read-only queries and visible value-bearing DOM, and calls
+`rvbbit.artifact_semantic_enrich(...)`. The agent proposes meanings and replay SQL, but its
+output is only a candidate: Warehouse replaces model-supplied selectors with selectors from
+the captured DOM, validates each query as a safe `SELECT`, executes it, and accepts an object
+only when its replayed value matches the rendered value. A bad candidate is rejected on its
+own without rejecting the artifact or other good candidates.
+
+The verified result is stored in `rvbbit.artifact_semantic_enrichments`, keyed to the exact
+artifact id + version. It is merged into the manifest when that version is served; the
+original authored manifest is never rewritten. The Artifact Lens polls while compilation is
+pending, so newly verified objects appear without republishing or reloading the dashboard.
+
+This map is deliberately lighter than a governed metric layer: each business-significant
+number says what it means, where it appears in the DOM, which dashboard filter values
+produced it, and the exact read-only SQL that independently recreates it. The evaluator may
+use arbitrary SQL and may repeat a client-side aggregation in SQL; it does not require a cube
+or metric object.
+
+People who build dashboards rarely declare metrics, so this pass is where a definition
+first exists. Each object therefore keeps **what is measured** apart from **the slice it is
+taken over**:
+
+- `meaning.measure` names what is counted with no slice words ("enrolled students", not
+  "Fall 2026 enrolled students"), and reuses a name another artifact already uses when it is
+  the same thing. Reusing a name is a claim of sameness that can be checked by running both
+  definitions over one slice.
+- `meaning.conditions` lists the standing rules that are part of the definition (excluded
+  record states, what qualifies). `meaning.asked_as` keeps the builder's own words for it.
+- Every slice is a declared parameter with a `dimension` (`time`, `cohort`, `place`,
+  `segment`, `entity`, `other`). A slice the artifact fixes and offers no control for is
+  still a parameter, marked `fixed: true` with the artifact's value as its default, so the
+  replayed value is unchanged and another slice can be substituted later.
+
+Beside the rendered page the compiler reads a bounded `business_context`: the chat turns
+that built or changed the artifact, the team's agreed terms, Meaning notes on the tables it
+reads, and the measure and slice names already in use. Slice names get the same treatment as
+measure names, because two values compare over the same slice only when both call it the same
+thing: the compiler reuses a name from `known_slices`, a fixed period is always `start_date`
+and `end_date`, and a period that moves with today stays relative in the SQL with its length
+as `window_days` (never frozen into the dates it covers on the day of analysis). All of it is treated as untrusted background.
+
+**Callouts are values; tables and charts are grids.** The compiler never describes a chart
+or table one cell at a time. Each page candidate gets a role: a number that stands alone is
+a `callout` and may become a value in `objects`; a table cell, a chart mark, or a member of a
+run of look-alike elements under one heading is a `grid_member`. Each table, chart or
+repeated run becomes one entry in `semantic_map.grids`: a query that returns the whole grid
+(`evaluator.shape: "table"`), its columns marked `dimension` or `measure` with measure names,
+a grain, the same declared slices, and an `anchor` naming the page evidence it recreates. The
+publisher rejects a value made from a grid member, discards three or more values that share a
+measure and differ only by a slice setting, and keeps a grid only when its result reproduces
+at least 80% of the anchor's rendered numbers (all of them when there are fewer than five),
+compared to the precision the page shows. Grids are not bound to page elements, so the Lens
+explains callouts; a grid is explained by its own block.
+
+**Values and grids as building blocks.** Because every analysed value carries its own definition, the
+arrangement library lists them as a persistent **From dashboards** section, searched with the
+library's filter box: `GET /api/calliope/values?q=` returns the values of every artifact the
+viewer may open, values and grids alike (label, measures, slices, source dashboard; never the
+SQL). The section is grouped by source dashboard, closed until opened and all open while
+the filter narrows it. A grid places as a query-sized block and reads back as rows. Only values that
+name their measure are listed, so analyses from before the measure/slice split stay out
+until their dashboard is republished and recompiled. Dragging one onto
+an arrangement places a `value` block that names the artifact and the value, nothing is
+copied or imported. `POST /api/calliope/values/read` recomputes each block **for whoever is
+looking**, and only if they can open the source dashboard (otherwise the block says so and
+shows no number). The query runs exactly as that dashboard's own queries do: under the
+viewer's Postgres role where sign-in maps people to roles (`WAREHOUSE_AUTH=pg`), and under
+the service's shared identity otherwise, so opening the dashboard is the access rule. A block follows its dashboard as it is republished, is
+found again by measure and label if a recompile renames it, and can be moved to another
+slice from its bar (`params` on the cell override the dashboard's own). Grouping values that
+measure the same thing across dashboards is deliberately left for later.
+
+Builders normally do not need to create this map. They can optionally add a precise authored
+`manifest.semantic_map` and runtime bindings for important or unusual values; authored ids
+and DOM bindings always win, while the compiler fills uncovered values. For a manual binding,
+use a stable selector and bind the raw value plus live context after every render:
+
+Use a stable selector and bind the raw value plus live context after every render:
+
+```js
+bindBusinessObject(
+  'regional_revenue',
+  '#regional-revenue',
+  payload.kpi.revenue,
+  { region: selectedRegion }
+);
+```
+
+The matching authored manifest object declares `meaning`, `parameters`, `bindings`, and an
+`evaluator` whose scalar result is exposed as `value`. Authored evaluators are normalized,
+validated, and executed before committing the version. If optional authored semantic
+metadata is malformed or cannot replay, Warehouse quarantines that map, returns a
+`SEMANTIC_MAP_QUARANTINED` warning, and still publishes the artifact; on update it retains a
+previous valid authored map when possible. Generated evaluators use the same contract, but
+are attached asynchronously after deterministic replay verification. The hosted runtime
+resolves the DOM binding from that effective version; the Artifact Lens presents meaning and
+filter context first, recreates the value from warehouse data, and keeps SQL collapsed as
+technical evidence. Older or not-yet-enriched artifacts still use best-effort query-trace
+inference.
+
+The v1 contract is intentionally value-shaped (`scalar`, `cell`, or `status`, with one
+result row). Whole charts and tables stay normal dashboard UI; their individual visible
+values use repeated parameterized bindings. This keeps recreation deterministic instead
+of smuggling a second analytics framework into the manifest.
+
+One definition may bind many rendered elements. Call `bindBusinessObject` once per
+table cell, SVG mark, or chart label with that element's raw value and dimension context;
+the runtime keeps context per DOM element. This maps every visible member of a repeated
+series without manufacturing a separate manifest object for every region, customer, or date.
+
+The dependency crawler indexes verified definitions as `semantic` edges (separate from the
+dashboard's data-fetch `query` edges), resolves their source tables, and reports the current
+version's semantic-object count in the gallery. Lens replays are tagged separately from
+dashboard runtime queries so inspecting a value does not rewrite the artifact's dependency map.
+
+`semantic_enrichment_status(slug, version?)` reports queue, coverage, and verification
+status. `enrich_live_app(slug, version?, force?)` queues or requeues an existing HTML
+artifact, which is useful for backfilling versions published before the compiler existed.
+
+Tools: `dashboard_template` / `publish_dashboard` / `update_dashboard` / `list_dashboards` /
+`get_dashboard`. Tables auto-create on startup (no migration).
+
+**Phase 1 — catalog-linked inspection.** `dashboard_crawl(slug)` extracts each dashboard's
+data dependencies — parses literal `rvbbitQuery(...)` calls, **SQL-shaped string literals
+anywhere in the artifact** (catches SQL Claude assigns to a variable and passes as
+`client(sql)`; `EXPLAIN` validates them so junk like `"select … from the menu"` is dropped),
+reconciles the queries it actually ran (from `mcp_activity`), and an OpenRouter LLM fallback
+(`OPENROUTER_API_KEY`) — then resolves every query to its tables via `EXPLAIN` (catches
+plain heap tables, not just rvbbit-managed). Stored in `rvbbit.dashboard_deps` (a derived,
+regenerable index; re-run on publish/update). `get_dashboard` returns the `sources` (the
+lens "open base SQL" list); `dashboard_dependents(object)` is impact analysis ("what breaks
+if I change this table"); views `rvbbit.dashboard_sources` / `rvbbit.dashboard_dependents`.
+No `rvbbitQuery`/metric found ⇒ flagged `materialized` (a "dead tree" — nudge against).
+
+## Config (env)
+`WAREHOUSE_DSN` · `RVBBIT_CATALOG_GRAPH` (default `db_catalog`) ·
+`WAREHOUSE_SCHEMAS` (CSV allowlist; default = all but rvbbit/pg_*) ·
+`WAREHOUSE_ROW_CAP` (1000) · `WAREHOUSE_ARTIFACT_ROW_CAP` (10000) ·
+`WAREHOUSE_STMT_TIMEOUT_MS` (30000) ·
+`WAREHOUSE_CUBE_PIVOT_CELL_CAP` (2500) ·
+`WAREHOUSE_MCP_HOST` (0.0.0.0) · `WAREHOUSE_MCP_PORT` (8765) ·
+`WAREHOUSE_MCP_ALLOWED_HOSTS` (optional CSV additions to the protected HTTP Host
+allowlist; loopback and the packaged `warehouse-mcp` service names are built in)
+**OAuth mode:** `WAREHOUSE_PUBLIC_URL` (enables it) · `WAREHOUSE_LOGIN_PASSWORD` (req) ·
+`WAREHOUSE_JWT_SECRET` (req, ≠ MCP_KEY) · `WAREHOUSE_ALLOWED_EMAILS` (opt) ·
+`WAREHOUSE_ACCESS_TTL` (3600) · `WAREHOUSE_REFRESH_TTL` (30d) ·
+`WAREHOUSE_STATE_FILE` (persist registered clients + refresh tokens across restarts —
+put it on a volume, else a restart strands connectors with "client_id not found").
+**Google Sign-In / Calendar / Workspace:** `WAREHOUSE_GOOGLE_CLIENT_ID` +
+`WAREHOUSE_GOOGLE_CLIENT_SECRET` · `WAREHOUSE_GOOGLE_HD` and/or
+`WAREHOUSE_ALLOWED_EMAILS` (audience gate) · `WAREHOUSE_GOOGLE_ONLY` (optional) ·
+`WAREHOUSE_GOOGLE_TOKEN_KEY` (optional dedicated Google grant-token encryption secret;
+otherwise derives from `WAREHOUSE_JWT_SECRET`) · `WAREHOUSE_GOOGLE_PICKER_API_KEY`
+(optional origin-restricted browser key enabling Sheet and Google Doc import) ·
+`WAREHOUSE_GOOGLE_PICKER_APP_ID` (optional GCP project number; normally derived from the
+OAuth client ID).
+**Calliope:** `WAREHOUSE_HERMES_URL` + `WAREHOUSE_HERMES_API_KEY` (both required) ·
+`WAREHOUSE_HERMES_MEMORY_KEY` (optional shared company scope) ·
+`WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY` (`1` by default; private presentation-rewriter
+continuity only, never base-agent context) ·
+`WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_SALT` (recommended stable dedicated HMAC salt;
+falls back to `WAREHOUSE_JWT_SECRET`, then `WAREHOUSE_HERMES_API_KEY`) ·
+`WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_SERVICE` (`hindsight_default`) ·
+`WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_RECALL_LIMIT` (6 default, bounded 1–12) ·
+`WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_RETAIN_EVERY` (4 default, bounded 1–20; the
+first successful presentation always seeds immediately) ·
+`WAREHOUSE_CALLIOPE_PRESENTATION_MEMORY_TIMEOUT_SECONDS` (8 default, bounded 2–30) ·
+`WAREHOUSE_CALLIOPE_DIR` (attachment storage) ·
+`WAREHOUSE_CALLIOPE_MAX_IMAGE_BYTES` (8 MiB default) ·
+`WAREHOUSE_CALLIOPE_STYLE_ALLOW_PRIVATE_URLS` (false by default; trusted-network
+opt-in for private/local Design Profile URL references) ·
+`WAREHOUSE_CALLIOPE_EXPORT_ROOTS` (OS-path-separated allowed Hermes output roots) ·
+`WAREHOUSE_CALLIOPE_MAX_EXPORT_BYTES` (128 MiB default, 512 MiB ceiling; in uber
+Compose set the single shared host path with `WAREHOUSE_CALLIOPE_EXPORT_DIR`) ·
+`WAREHOUSE_BRAIN_IMPORT_ROOTS` (OS-path-separated server-local roots allowed for
+explicit folder ingestion; hosted defaults include `/opt/data/workspace`, `/opt/data/outputs` and `/app/data/brain-imports`; filesystem root is always rejected) ·
+`WAREHOUSE_CALLIOPE_DREAMS` (`1` by default) ·
+`WAREHOUSE_CALLIOPE_DREAM_EVIDENCE_LAB` (`1` by default) ·
+`WAREHOUSE_CALLIOPE_DREAM_SQL_ROLE` (optional least-privilege PostgreSQL role) ·
+`WAREHOUSE_CALLIOPE_DREAM_TIMEZONE` (`TZ`, then `UTC`, by default) ·
+`WAREHOUSE_CALLIOPE_DREAM_HOUR` (3, local time) ·
+`WAREHOUSE_CALLIOPE_DREAM_HERMES_TIMEOUT_SECONDS` (420; bounded to 240–900) ·
+`WAREHOUSE_CALLIOPE_DREAM_TICK_SECONDS` (900; worker wake interval) ·
+`WAREHOUSE_CALLIOPE_OBSERVATION_RANKING` (`1` by default; cached Clover-assisted
+company and personal observation ranking) ·
+`WAREHOUSE_CALLIOPE_OBSERVATION_RANKING_SECONDS` (3600; bounded to 300–86400) ·
+`WAREHOUSE_CALLIOPE_SESSION_SYNOPSES` (`1` by default) ·
+`WAREHOUSE_CALLIOPE_SYNOPSIS_DEBOUNCE_SECONDS` (90; bounded to 30–900) ·
+`WAREHOUSE_CALLIOPE_SYNOPSIS_MAX_ATTEMPTS` (3) ·
+`WAREHOUSE_CALLIOPE_STT_KEYWORDS` (optional comma-separated literal hints) ·
+`WAREHOUSE_CALLIOPE_STT_LANGUAGES` (optional comma-separated expected language codes) ·
+`WAREHOUSE_CALLIOPE_MAX_AUDIO_BYTES` (12 MiB default,
+25 MiB ceiling) · `WAREHOUSE_CALLIOPE_MAX_AUDIO_SECONDS` (600 default, 600 ceiling) ·
+`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID` (both required for spoken responses;
+dedicated overrides are `WAREHOUSE_CALLIOPE_TTS_KEY` and
+`WAREHOUSE_CALLIOPE_TTS_VOICE_ID`) · `WAREHOUSE_CALLIOPE_TTS_BASE_URL` ·
+`WAREHOUSE_CALLIOPE_TTS_FAST_MODEL` (`eleven_flash_v2_5`) ·
+`WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_MODEL` (`eleven_v3`) ·
+`WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_STABILITY` (0.3 default; clamped to 0–1) ·
+`WAREHOUSE_CALLIOPE_TTS_SAMPLE_RATE` (24000; supported PCM rates only) ·
+`WAREHOUSE_CALLIOPE_TTS_PREPARE_TIMEOUT_SECONDS` (120 default, 300 ceiling; one
+rewrite-to-first-audio budget, with up to 30 seconds reserved for audio startup) ·
+`WAREHOUSE_CALLIOPE_TTS_MAX_AUDIO_BYTES` (16 MiB default, 64 MiB ceiling).
+**Artifact semantic compiler:** `WAREHOUSE_SEMANTIC_ENRICHMENT` (default `1`; set `0` to
+disable queueing and the worker) · `WAREHOUSE_SEMANTIC_ENRICH_MODEL` (default
+`calliope`) · `WAREHOUSE_SEMANTIC_ENRICH_MAX_ATTEMPTS` (default `3`) ·
+`WAREHOUSE_SEMANTIC_ENRICH_RENDER_WAIT_MS` (default `3000`) ·
+`WAREHOUSE_SEMANTIC_ENRICH_SOURCE_CHARS` (default `180000`). The database process—not
+Warehouse MCP—executes the agent operator, so its configured backend must have the matching
+provider key. The default `calliope` route is served by the managed `clover_llm` backend
+using `RVBBIT_CLOVER_KEY`. Managed route ids beginning with `calliope` or `clover` pass
+through to Hutch (for example `calliope-low`); all other upstream model ids remain disallowed.
+**Artifact catalog enrichment:** `WAREHOUSE_ARTIFACT_CATALOG_ENRICHMENT` (`1` by
+default; deterministic dashboard-link extraction and legacy crawl backfill still run when
+classification is disabled) · `WAREHOUSE_ARTIFACT_CATALOG_MAX_ATTEMPTS` (3). Areas come
+from the controlled `rvbbit.artifact_areas` vocabulary; automatic classification never
+creates free-form categories, and `set_artifact_area` provides a durable manual override.
+**Shared-key mode:** `WAREHOUSE_MCP_KEY` (bearer; unset = auth OFF, dev only) ·
+`WAREHOUSE_MCP_STATIC_CALLER` (optional legacy caller label/email; auth `client_id`
+stays `static-key`, default caller is `static-key`) · `WAREHOUSE_HERMES_MCP_KEY`
+(distinct first-party Hermes bearer; required for delegated application identity) ·
+`WAREHOUSE_HERMES_MCP_CALLER` (service actor label; defaults to the static caller).
+
+## Deferred to Phase 1+
+Application subjects are now explicit and auditable, but database-enforced per-user
+identity → scoped role (tools run as the *caller's* PG scope), PII masking in
+samples, `ask` (compose text-to-SQL), per-role cost caps, receipts table,
+`define_metric`/`get_connection` (promote + scoped runtime DSN).
+
+
+### Streaming dictation
+
+Chat, private notes, and the Floor intake overlay share `/calliope/dictation.js`.
+Partial text stays in a preview until the user stops; the result is inserted into
+the draft for review. Pausing never sends a chat turn. A recorded-audio fallback
+runs if the WebRTC stream cannot connect or finalize. Audio is not retained.
+
+Chat dictation uses the composer’s writing surface, with an inline listening timer
+and Finish/Discard controls. Finish inserts into the existing draft without sending;
+Discard preserves it. **Alt + Shift + D** starts/finishes chat dictation when the
+composer is available; the Dictate and Finish tooltips advertise it. It never sends
+the draft or interrupts dictation in a private note. The recording default is ten minutes, with a countdown in the
+last 30 seconds. Explicit `WAREHOUSE_CALLIOPE_MAX_AUDIO_SECONDS` settings still win
+and must be updated separately on installations that pinned the old 120-second limit.
+
+Models & providers has an independent **Dictation** row: OpenAI API or Off, with
+`gpt-live-transcribe` for streaming and `gpt-transcribe` for recorded fallback.
+**Save dictation** changes only speech settings, with a revision check. It does
+not apply staged agent choices or restart Hermes. The compact settings document
+lives at `$HERMES_HOME/calliope-speech.json`; it contains no credentials and is
+separate from agent config revisions. Without that document, OpenAI is selected
+and dictation is available only when Hermes can resolve its OpenAI API key.
+
+The authenticated supervisor endpoints `/v1/speech`, `/v1/speech/realtime`, and
+`/v1/speech/transcriptions` use Hermes's native `resolve_openai_audio_api_key`
+resolver (voice key override, profile environment, or `openai-api` auth pool).
+The selected profile is the appliance's default Hermes profile. Codex OAuth is
+not an audio API credential. Provider credentials never go to Calliope's browser;
+only the SDP answer does. ElevenLabs read-aloud settings remain independent.
+
+Rollout requires **both calliope-server and the Hermes supervisor image**; no SQL
+migration is needed. The old Calliope-side `WAREHOUSE_CALLIOPE_STT_KEY`, provider,
+base URL, and model variables are retired. If a deployment kept its speech key
+only in calliope-server, connect that OpenAI API credential through Hermes before
+switching over. An older/unavailable supervisor disables dictation with an
+unavailable status; it does not silently reuse the legacy key. Browser checks
+use mocked audio/provider responses; verify a real microphone after deployment.
+
+### HTML authoring and Playbook references
+
+New chats start without a Design Profile. Users may explicitly pin one; existing
+notebooks retain their chosen profiles. Floor and chat composers offer a Playbook
+picker that inserts a normal versioned object reference. The picker lists owned
+and shared Playbooks (including clearly labeled private drafts); submission
+rechecks access to the selected version. Selecting a reference neither starts a
+turn nor approves a draft or Procedure.
+
+Dashboard authoring mode is paused. All new turns, specialist rounds, templates,
+and publications use HTML, including work resumed in old Dashboard threads.
+Startup normalizes session preferences and snapshots new turns as HTML; historical
+turn snapshots are preserved. Stale clients requesting Dashboard are normalized
+to HTML. Existing widget runtimes remain served so published pages can still run
+and be revised without a forced rewrite.
+
+#### Legacy Dashboard widget runtime
+
+Hosted Dashboard templates use `/charts/rvbbit-dashboard-1.0.1.js` (`window.rvbbitDashboard`) with the pinned Charts 0.16.2, Table Core 9.2.4, and Virtual Core 3.17.10 assets. External Cowork templates are unchanged. All four helpers accept `el` (selector or element) and a stable `id`, and return `{update(options), destroy()}`:
+
+- `kpi({el,id,label,value,note,format?})` renders a value and context.
+- `table({el,id,rows,columns,sort?,page?,filter?,metadata?,viewportHeight?})` uses columns `{key,label,format?}`. Formats are `number`, `currency` (USD), `percent`, or a function returning plain text. `sort` is `[{id:columnKey,desc:false}]` or `false`; `page` is a page size or `{size}`. Search/filtering and sorting operate on loaded rows. Pass bridge `truncated`/`applied_limit` in `metadata`. Above 200 loaded rows, an explicit `viewportHeight` enables virtualization; without it, rows retain natural height. Virtual cells expose full values in titles.
+- `chart({el,id,data,type,x,y,color?,series?,query?,height?})` supports bar, line, area and scatter. `x`, `y`, `series`, and `color` name data fields; numeric color uses a resolved palette range. `query` names its Lens query binding. Multiple bar series are grouped side by side. Unsupported chart types and malformed options produce a visible error; HTML remains available.
+- `filter({el,id,field,value,choices,onChange})` emits the chosen value to the page. Choices are strings or `{value,label}`. The template owns SQL predicates, refresh generations and stale-result suppression; widgets never execute SQL.
+
+Widgets accept `state` (`ready`, `loading`, `stale`, `error`) and `error` text. The template retains old content during refresh and ignores superseded responses. Theme changes recolor charts while retaining selected Lens targets. The retired mode no longer enforces helper or widget-engine restrictions. Capture still checks query completion and rendering. Publication remains live-before-capture: builders must repair failed checks before reporting completion. These checks guide building; they are not a JavaScript security sandbox.
+
+The legacy template and runtime remain on disk for compatibility; new template requests return the ordinary HTML scaffold. Runtimes 1.0.0 and 1.0.1 remain served for existing immutable pages.
+
+For `capture_live_app`, omit `path` unless specifying an output `.png`/`.jpg` filename; it is not an app URL. Capture responses include a version-specific `verification` verdict and require separate visual inspection. Re-capture after the final edit, even if an earlier version passed.
+
+The focused `test_dashboard_mode.py` suite exercises the real vendored runtimes in Chromium, the capture harness, and HTML mode normalization in an isolated temporary PostgreSQL instance. It does not launch paid builder sessions or modify production data.
+
+HTML publication checks inline JavaScript syntax without running the artifact.
+`INVALID_JAVASCRIPT` leaves the current version untouched; fix the candidate
+before capturing it. This uses Node bundled with Playwright and also handles ES
+modules without resolving imports. `HTML_PREFLIGHT_UNAVAILABLE` identifies a
+compiler/timeout failure separately from invalid source.
+
+For concurrent builders, `get_live_app(..., part="source")` returns exact HTML
+with its version. Pass that as `expected_version` to `update_live_app`; a stale
+candidate returns `VERSION_CONFLICT` under the publication lock. Re-read and
+reconcile the latest source before retrying. Dashboard compatibility tools
+support the same check; legacy callers may omit it.
+
+### Visual Intent
+
+The chat composer and expanded image/page viewer open an independent image-edit workspace. It uses the existing markup canvas, exact-version page captures (with an explicit fresh-capture action), and a thumbnail history of editable branches. Closing the editor does not cancel generation. Drafts live in the session-owned `rvbbit.calliope_visual_intents` table; they do not become Stage surfaces until **Save to Stage**. Saving is idempotent per image and records the original capture, page version, instruction lineage, model and usage. Saved images are labelled visual references, not live screenshots. They do not inherit the source turn's Design Profile.
+
+Image editing calls the configured OpenRouter image model directly, passing the clean current image plus its marked-up copy when present. An OpenRouter model ID configured through the `hermes` image lane uses the server's `OPENROUTER_API_KEY` with that same model; it never launches an agent loop. Other image-provider lanes currently return an explicit configuration message. Provider responses are limited to validated PNG/JPEG/WebP images (8 MB, 25 megapixels); two edits per owner may run concurrently. Interrupted jobs become retryable after ten minutes, without automatic paid retries. Provider usage is retained on each draft.
+
+Save does not submit a message, change the selected surface, or rebuild a page. Explicitly selecting a saved Visual Intent for a later message includes its pixels in that turn's normal image attachments and specialist handoffs, subject to the existing attachment limits. Draft images remain private to the notebook owner; saved Stage media follows the notebook's existing viewing rules. Image edit history survives page reloads; unsent instructions and editable strokes are kept while opening and closing the editor in the same page.
+
+### Team roster
+
+`/team` lists Calliope and all active configured specialists using the same
+profile identities as the conversation picker. Portrait tiles open member
+details with specialties, recent visible work, and a new-conversation link for
+that agent. No hiring or package management is included.
+
+`GET /api/calliope/team` reports a rolling 30-day window of conversation turns
+and specialist assignments as separate counts (not model API requests). Activity
+respects notebook visibility; unlinked assignments are visible only to their
+owner. Activity failures leave the roster usable and show unavailable counts.
+Member details also show the ten most-used tools from mirrored assistant tool calls
+in viewer-visible notebooks and assignments over the same 30 days. Counts deduplicate
+call IDs within each profile/session and exclude result messages. `tool_call` and
+`todo` (including namespaced forms) are excluded before ranking and totals; mirror lag is
+noted in the UI. Tool analytics can fail independently of the roster and activity.
+No monetary usage is returned. TEAM assets are included in browser cache versioning
+and the origin proxy routes.
+
+Portrait accents are stored in Hermes identity YAML as `avatar_color` (`#RRGGBB`),
+with `avatar_day_color` / `avatar_night_color` for alternate portraits.
+`avatar_color_cache` records each image's SHA-256, extraction algorithm, and hex;
+changing an image invalidates its cached swatch. TEAM consumes these profile colors
+for signatures, badges, and specialty tags. Profile edits are reflected live.
+For existing or newly generated portraits, run `PYTHONPATH=/app python
+/app/backfill-agent-avatar-colors.py` inside calliope-server to preview the backfill,
+then add `--apply` to save through Hermes' revisioned, compare-and-swap identity API.
+Use `--profile <key>` to limit the operation. Missing portrait files are left alone.
+
+Agent identity YAML also has a canonical optional `voice_id`. Calliope's shipping
+profile assigns her default voice; `null` on specialists inherits Calliope's voice.
+Direct notebook speech (answers and progress) resolves the owning specialist's
+profile on the server; explicit voice tuning overrides take precedence. Providers
+that do not support overrides retain their configured voice. Existing audio takes
+keep their recorded voice until prepared again. TEAM's **Test voice** plays a short,
+authenticated PCM stream through the expressive rewrite pipeline without creating a chat turn.
+The preview plays through Web Audio, like chat speech, and stops when its modal
+closes. It uses no blob URLs or HTML media player and requires no CSP exception.
+
+`voice_preview_text` in each Hermes identity YAML is the editable introduction used
+by TEAM's voice test (up to 800 characters). Missing text falls back to a short
+greeting. Shipping introductions describe each agent's role and use FishAudio S2
+square-bracket cues from the [emotion guide](https://docs.fish.audio/developer-guide/core-features/emotions).
+The introduction provides the factual source for the expressive preview rewrite.
+
+Speech personas are private, per user and agent. TEAM's **Voice & personality**
+editor auditions drafts with **Test voice** and persists them with **Save persona**.
+Calliope continues to use `calliope_response_preferences.response_personality`;
+specialists use the additive `calliope_agent_speech_personas` table keyed by
+`(owner_email, agent_key)`, created during normal server initialization. Each profile ships a canonical `speech_persona` (at most 600 characters). Missing
+or empty user settings inherit that profile default; nonempty private text overrides it.
+The editor displays the effective text and **Use profile default** clears the override,
+allowing future profile changes to apply. Defaults are resolved through the profile-hash
+metadata cache. Specialists never inherit Calliope's persona. The tabbed editor keeps
+the modal dimensions stable during editing, saving, and playback.
+Direct specialist replies and working updates resolve the saved persona on the
+server. Global reading-mode and working-update preferences remain unchanged.
+
+Presentation-memory bank IDs retain the existing Calliope derivation. Specialist
+banks derive from the same private user identity plus the agent key; recall caches
+and retention queues use those distinct bank IDs. Canonical answer memory is
+unchanged. Voice auditions recall presentation memory and use the same rewrite
+and cue pipeline as chat, but never retain rehearsal scripts. No historical
+presentation memories are copied between agents.
+
+Main-chat voice tuning is scoped to the selected agent. The legacy browser tuning key
+remains Calliope-only; specialists use an agent-suffixed key. Render requests carry
+`tuning_agent_key`, and the server accepts specialist voice/delivery overrides only
+when that key matches the authorized notebook agent. Older unscoped requests use
+the specialist profile voice and persona. Rewrite closing instructions are agent-neutral.
+
+### Fork from here
+
+Hovering a finished message in a chat shows **Fork from here** (it stays hidden otherwise, so
+the transcript carries no extra per-message button). Forking makes a new chat owned by the
+person who forked, private to them, holding the original up to and including that message:
+its turns with their authors, Stage pieces and sketch, and Callie's own history up to that
+moment (Hermes copies its transcript, compacted history included, with
+`POST /api/sessions/{id}/fork` and Calliope's `until_ts` / `keep_source` / `replacements`
+options; the original session stays open). Artifacts the chat made are republished at the
+version they had then, under new slugs (`regional-orders` becomes `regional-orders-f1`), owned
+by the forker and homed in the fork, with their earlier versions and dependencies; the copied
+history names the new slugs. Artifacts the chat only changed are listed in the fork's note, not
+copied. Each turn in a fork carries a short note naming its copies, and an edit from a fork to
+an original it has a copy of is refused with `ARTIFACT_FORK_HAS_COPY`, even for the original's
+owner, so a fork never overwrites the chat it came from. Anyone who can see a chat can fork it;
+a message still being answered cannot be forked from. Forking needs a Hermes image with the
+fork overlay (`calliope_session_fork` in `/v1/capabilities`); without it the request is refused
+rather than falling back to stock Hermes, which would copy everything and end the original.
+
+### Stage references and visual feedback
+
+Calliope `run_sql` and `run_sql_multi` receipts now include durable `surface_id`
+references (`stage_refs` for batches) before returning. `list_stage_surfaces`
+recovers IDs by title within the active chat, including specialist results.
+Live and final projection reconcile using the same server-minted execution key.
+
+`publish_chart`, `update_chart`, `publish_board`, and `update_board` return
+`visual_review` and rendered images to the caller. The private headless renderer
+uses the actual Stage components and viewer-scoped chart SQL; it never takes the
+shared Desktop or navigates a chat. Tall boards include an overview and bounded
+readable strips. Inspect `status`, `errors`, `clipped`, and `unsupported_members`;
+render readiness does not establish analytical correctness. Hermes exposes MCP
+images as `MEDIA` paths: use `vision_analyze` to inspect those, without republishing
+them. Automatic reviews are capped at three chart revisions and three board
+revisions per originating agent and turn. Set `defer_visual_review=true` on charts
+being assembled into a board to review the composition once. An explicit
+`capture_stage_surface` handles an additional necessary check. Capture failures
+never undo a successful publication. These private review images do not become
+extra Stage cards. Query tables are saved receipts; chart data remains live.
+
+Pinned dashboard evidence embeds its exact artifact version inside the existing
+preview container, retaining the metadata and related evidence. The thumbnail
+remains a loading fallback; offscreen embeds use the normal Stage unload policy.
+
+### Reviewed email and recipient context
+
+Callie can prepare email batches on the Stage with paging, editing, holds,
+frozen attachments, and individual or batch sending from the exact reviewed
+revision. Replies return to the originating work. Business contact context
+persists across chats and explicitly linked channels; it includes sourced notes
+and actual correspondence without exposing private user dossiers.
+
+See [Reviewed email](../../docs/REVIEWED_EMAIL.md) for the tool flow, secure
+mailbox connection, transport behavior, current scope, and verification steps.
+The first connection uses IMAP/SMTP app passwords through the Hermes supervisor;
+it does not enable Hermes's automatic email responder.
+
+### SMS linked to login users
+
+Twilio SMS/MMS uses existing Calliope identities and normal Floor conversations.
+Admins connect the number through `sms.connect`, then explicitly link approved
+phones to existing logins through `sms.user`. Replies are automatic to that same
+phone; email drafts keep their native send approval. Hermes provides the Twilio
+adapter while Calliope owns identity and durable conversation delivery.
+See [SMS setup and operations](../../docs/SMS.md) for the public webhook, photo
+support, transport status, revocation and verification.

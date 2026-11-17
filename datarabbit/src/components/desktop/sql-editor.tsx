@@ -1,0 +1,200 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useRef } from "react"
+import CodeMirror, { type Extension, type ReactCodeMirrorRef } from "@uiw/react-codemirror"
+import { sql, PostgreSQL, type SQLNamespace } from "@codemirror/lang-sql"
+import { json as jsonLang } from "@codemirror/lang-json"
+import type { CompletionSource } from "@codemirror/autocomplete"
+import { Prec } from "@codemirror/state"
+import { EditorView, keymap, tooltips } from "@codemirror/view"
+import { rvbbitLensCodeMirrorTheme } from "@/lib/desktop/codemirror-theme"
+import { blockReferenceExtensions, type BlockReferenceMap } from "@/lib/desktop/sql-block-refs"
+import { sqlScrubberExtensions } from "@/lib/desktop/sql-scrubbers"
+import { postgresDollarPlpgsqlExtension } from "@/lib/desktop/sql-dollar-plpgsql"
+import { semanticOperatorExtensions } from "@/lib/desktop/sql-semantic-operators"
+import type { SemanticOpMeta } from "@/lib/desktop/types"
+import { hasParamDragPayload } from "@/lib/desktop/param-drag"
+import { hasColumnDragPayload } from "@/lib/desktop/column-drag"
+import { hasBlockDragPayload } from "@/lib/desktop/block-drag"
+
+/** The app's internal chip drags (param / column / block) carry a text/plain
+ *  fallback that CodeMirror's default drop would paste into the SQL. The window's
+ *  own drop zone already handles these, so the editor must ignore them. */
+function isInternalChipDrag(dt: DataTransfer | null): boolean {
+  return hasParamDragPayload(dt) || hasColumnDragPayload(dt) || hasBlockDragPayload(dt)
+}
+
+interface SqlEditorProps {
+  value: string
+  onChange: (next: string) => void
+  onRun?: () => void
+  onExplain?: () => void
+  onFormat?: () => void
+  placeholder?: string
+  /** Debounced re-run for literal-scrub drags. When provided it's used instead
+   *  of onRun so hosts can run "quietly" (e.g. without flipping to the results
+   *  tab, which would unmount this editor mid-drag). */
+  onScrubRun?: () => void
+  height?: string | number
+  readOnly?: boolean
+  /** Focus the editor on mount. Default true; pass false for inline read-only
+   *  previews that must not steal focus from (or scroll away) the host form. */
+  autoFocus?: boolean
+  fontSize?: number
+  /** "plain" drops SQL syntax highlighting + autocomplete + line numbers — for
+   *  the natural-language "Ask" mode where the content is a question, not SQL.
+   *  "json" swaps the SQL grammar for JSON highlighting (e.g. action arg bodies). */
+  language?: "sql" | "json" | "plain"
+  /** Soft-wrap long lines instead of scrolling horizontally — for read-only
+   *  previews where a long line would otherwise widen the container. */
+  wrap?: boolean
+  /** Drop the line-number gutter + active-line highlight — for single-line
+   *  expression/field use where the chrome would be noise. */
+  compact?: boolean
+  /** Live schema (pg schema → table → columns) for table/column autocomplete.
+   *  Built from the connection's SchemaSnapshot; omit for keyword-only. */
+  schema?: SQLNamespace
+  /** Schema whose tables complete unqualified (the Postgres search_path head). */
+  defaultSchema?: string
+  /** Extra autocomplete sources merged with lang-sql's (e.g. rvbbit functions). */
+  completionSources?: readonly CompletionSource[]
+  /** Cross-block `{name}` references → info, for highlighting + hover tooltips
+   *  showing the referenced block's SQL. Omit to disable reference decoration. */
+  blockReferences?: BlockReferenceMap
+  /** Active connection's rvbbit semantic operator catalog, for highlighting
+   *  and explaining `rvbbit.<operator>(...)` calls in SQL. */
+  semanticOperators?: SemanticOpMeta[]
+}
+
+export function SqlEditor({
+  value,
+  onChange,
+  onRun,
+  onExplain,
+  onFormat,
+  placeholder,
+  onScrubRun,
+  height = "100%",
+  readOnly,
+  autoFocus = true,
+  fontSize = 13,
+  language = "sql",
+  wrap = false,
+  compact = false,
+  schema,
+  defaultSchema,
+  completionSources,
+  blockReferences,
+  semanticOperators,
+}: SqlEditorProps) {
+  const ref = useRef<ReactCodeMirrorRef | null>(null)
+  const plain = language === "plain"
+  const isJson = language === "json"
+
+  // Scrub-drags fire a change per step; only the settled value should hit the
+  // database (same 350ms contract as the time-travel scrubber). Refs keep the
+  // callback stable so the extensions memo doesn't rebuild mid-drag.
+  const scrubRunTargetRef = useRef(onScrubRun ?? onRun)
+  useEffect(() => {
+    scrubRunTargetRef.current = onScrubRun ?? onRun
+  }, [onScrubRun, onRun])
+  const scrubRunDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onScrub = useCallback(() => {
+    if (scrubRunDebounceRef.current) clearTimeout(scrubRunDebounceRef.current)
+    scrubRunDebounceRef.current = setTimeout(() => {
+      scrubRunTargetRef.current?.()
+    }, 350)
+  }, [])
+
+  const extensions: Extension[] = useMemo(() => {
+    const exts: Extension[] = []
+    // Swallow internal chip drags so CodeMirror's default drop doesn't paste the
+    // chip's text/plain fallback (e.g. "param.<key>") into the SQL. Returning
+    // true preventDefaults + stops CM here; we deliberately do NOT stopPropagation,
+    // so the window's onDrop still fires and subscribes/merges.
+    exts.push(
+      EditorView.domEventHandlers({
+        dragover: (event) => isInternalChipDrag(event.dataTransfer),
+        drop: (event) => {
+          if (!isInternalChipDrag(event.dataTransfer)) return false
+          event.preventDefault()
+          return true
+        },
+      }),
+    )
+    if (plain) {
+      exts.push(EditorView.lineWrapping) // wrap long NL questions instead of scrolling
+    } else if (isJson) {
+      exts.push(jsonLang()) // JSON grammar → the theme's highlightStyle colors it
+    } else {
+      // schema-aware completion when a SQLNamespace is supplied (tables + columns
+      // with type hints); falls back to keyword-only completion otherwise.
+      const lang = sql({ dialect: PostgreSQL, upperCaseKeywords: false, schema, defaultSchema })
+      exts.push(lang)
+      exts.push(postgresDollarPlpgsqlExtension)
+      // merge any extra sources (e.g. rvbbit semantic functions) into the SQL
+      // language's completion — they run alongside the schema/keyword sources.
+      for (const source of completionSources ?? []) {
+        exts.push(lang.language.data.of({ autocomplete: source }))
+      }
+      // highlight cross-block {name} references + hover-to-see their SQL.
+      if (blockReferences) exts.push(blockReferenceExtensions(blockReferences))
+      // highlight semantic operator calls + hover-to-see their workflow.
+      if (semanticOperators?.length) exts.push(...semanticOperatorExtensions(semanticOperators))
+      // drag-to-scrub numeric/date literals; each step re-runs (debounced) so
+      // the results chase the drag. Editable SQL editors only.
+      if (!readOnly) exts.push(...sqlScrubberExtensions({ onScrub: onRun ? onScrub : undefined }))
+      // Render tooltips (hover cards + the completion popup) into <body> so the
+      // editor's overflow-hidden chrome (rail, window body) can't clip them. CM
+      // copies the editor's theme classes onto the external container, so the
+      // themed styling is preserved.
+      if (typeof document !== "undefined") {
+        exts.push(tooltips({ position: "fixed", parent: document.body }))
+      }
+    }
+    if (wrap && !plain) exts.push(EditorView.lineWrapping)
+    // Win over CodeMirror's default Mod-Enter (insertBlankLine).
+    exts.push(Prec.highest(keymap.of([
+      ...(onRun ? [{key:"Mod-Enter",run:()=>{onRun();return true}}] : []),
+      ...(onExplain ? [{key:"Mod-Shift-Enter",run:()=>{onExplain();return true}}] : []),
+      ...(onFormat ? [{key:"Alt-Shift-f",run:()=>{onFormat();return true}}] : []),
+    ])))
+    return exts
+  }, [onRun, onExplain, onFormat, onScrub, readOnly, plain, isJson, wrap, schema, defaultSchema, completionSources, blockReferences, semanticOperators])
+
+  // Auto-focus on first mount (skipped for read-only previews).
+  useEffect(() => {
+    if (autoFocus && ref.current?.view) {
+      ref.current.view.focus()
+    }
+  }, [autoFocus])
+
+  return (
+    <div className="h-full w-full overflow-hidden" style={{ fontSize }}>
+      <CodeMirror
+        ref={ref}
+        value={value}
+        height={typeof height === "number" ? `${height}px` : height}
+        // @uiw applies height="100%" only to .cm-editor/.cm-scroller, never to
+        // its own root wrapper div — so without an explicit height here that
+        // div is auto-sized and .cm-editor's 100% collapses to content height
+        // (text overflows + gets clipped, no scrollbar). Fill the parent so the
+        // scroller actually has a bounded box to scroll within.
+        className="h-full w-full"
+        theme="none"
+        readOnly={readOnly}
+        placeholder={placeholder}
+        extensions={[...extensions, ...rvbbitLensCodeMirrorTheme]}
+        onChange={onChange}
+        basicSetup={{
+          highlightActiveLine: !plain && !compact,
+          lineNumbers: !plain && !compact,
+          foldGutter: false,
+          dropCursor: true,
+          autocompletion: !plain && !isJson,
+          searchKeymap: true,
+        }}
+      />
+    </div>
+  )
+}

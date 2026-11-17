@@ -1,0 +1,130 @@
+api_version: rvbbit.capability/v1
+kind: hf_backend
+name: bge_reranker_v2_m3
+title: BGE Reranker v2 M3
+description: Cross-encoder relevance scoring for query/document pairs.
+license: mit
+tags: [rerank, retrieval, relevance, gpu, row]
+source:
+  provider: huggingface
+  model: BAAI/bge-reranker-v2-m3
+  url: https://huggingface.co/BAAI/bge-reranker-v2-m3
+runtime:
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+backend:
+  name: rerank_bge_m3
+  transport: rvbbit
+  batch_size: 16
+  max_concurrent: 4
+  timeout_ms: 120000
+  description: BGE reranker v2 M3 pair relevance scorer.
+operators:
+  - name: rerank_score
+    description: Score how relevant text is to a query using BGE reranker v2 M3.
+    arg_names: [query, text]
+    arg_types: [text, text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      query: "{{ inputs.query }}"
+      text: "{{ inputs.text }}"
+  - name: rerank_row
+    description: Score how relevant a JSONB row is to a query using BGE reranker v2 M3.
+    arg_names: [query, row]
+    arg_types: [text, jsonb]
+    return_type: jsonb
+    parser: json
+    inputs:
+      query: "{{ inputs.query }}"
+      text: "{{ inputs.row }}"
+  - name: about
+    description: Relevance score in [0,1] of text to a topic, backed by the BGE reranker.
+    arg_names: [text, topic]
+    arg_types: [text, text]
+    return_type: float8
+    parser: score_0_1
+    infix_symbol: "~~%"
+    infix_word: ABOUT
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_bge_m3
+        inputs:
+          query: "{{ inputs.topic }}"
+          text: "{{ inputs.text }}"
+      - name: score
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.rerank.output }}"
+          path: score
+          default: 0
+  - name: semantic_score
+    description: Score how relevant text is to a semantic criterion.
+    arg_names: [text, criterion]
+    arg_types: [text, text]
+    return_type: float8
+    parser: score_0_1
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_bge_m3
+        inputs:
+          query: "{{ inputs.criterion }}"
+          text: "{{ inputs.text }}"
+      - name: score
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.rerank.output }}"
+          path: score
+          default: 0
+  - name: means
+    description: True when text semantically matches a criterion using the BGE reranker.
+    arg_names: [text, criterion]
+    arg_types: [text, text]
+    return_type: bool
+    parser: yes_no
+    infix_symbol: "~~?"
+    infix_word: MEANS
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_bge_m3
+        inputs:
+          query: "{{ inputs.criterion }}"
+          text: "{{ inputs.text }}"
+      - name: threshold
+        kind: code
+        fn: number_gte
+        inputs:
+          value: "{{ steps.rerank.output.score }}"
+          threshold: "{{ opts.threshold }}"
+  - name: semantic_matches
+    description: True when text semantically matches a criterion using the BGE reranker.
+    arg_names: [text, criterion]
+    arg_types: [text, text]
+    return_type: bool
+    parser: yes_no
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_bge_m3
+        inputs:
+          query: "{{ inputs.criterion }}"
+          text: "{{ inputs.text }}"
+      - name: threshold
+        kind: code
+        fn: number_gte
+        inputs:
+          value: "{{ steps.rerank.output.score }}"
+          threshold: "{{ opts.threshold }}"
+smoke:
+  inputs:
+    - query: refund request
+      text: customer says they were charged twice and wants money back
+      topic: refund request
+      criterion: refund request
+      row: '{"ticket":"charged twice","requested_action":"refund","customer_tone":"angry"}'

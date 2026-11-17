@@ -1,0 +1,60 @@
+/* Shared first-party page shell. Uses the same theme, rail and control scale as Gallery. */
+html:has(> body.workspace-page) {scrollbar-width:thin;scrollbar-color:var(--block-border,#45404e) transparent}
+.workspace-page {
+  --page:var(--background,#101018); --panel:var(--secondary-background,#191823);
+  --ink:var(--foreground,#eee8df); --muted:var(--chrome-text,#aaa5b3);
+  --accent:var(--main,var(--rvbbit-accent,#68c7b2)); --line:var(--block-border,#45404e);
+  --font:var(--font-superior-sans,Arial,sans-serif); --mono:var(--font-superior-mono,monospace);
+  --workspace-gutter:max(20px,4vw); --workspace-rail-height:56px;
+  --workspace-surface:color-mix(in srgb,var(--page) 90%,transparent);
+  margin:0; color:var(--ink); font:var(--rvbbit-type-body,14px)/1.5 var(--font);
+  background:transparent; min-height:100dvh;
+}
+.workspace-page * {box-sizing:border-box}
+.workspace-page [hidden] {display:none!important}
+.workspace-page :is(h1,h2,h3,p) {margin:0}
+.workspace-page a {color:inherit;text-decoration:none}
+.workspace-page :is(button,input,textarea,select) {font:inherit;color:inherit;min-width:0}
+.workspace-page :is(button,a,input,select) {touch-action:manipulation}
+.workspace-page :is(button,input,textarea,select) {border:1px solid var(--line);border-radius:4px;background:var(--workspace-surface)}
+.workspace-page :is(button,select) {min-height:34px;padding:6px 11px}
+.workspace-page button {cursor:pointer}
+.workspace-page button:hover {border-color:var(--accent);color:var(--accent)}
+.workspace-page button:disabled {opacity:.5;cursor:default}
+.workspace-page :is(input,textarea) {padding:8px 11px;min-height:34px}
+.workspace-page :is(input,textarea)::placeholder {color:var(--muted);opacity:.85}
+.workspace-page :is(button,a,input,textarea,select,summary):focus-visible {outline:2px solid var(--accent);outline-offset:3px}
+.workspace-page :is(input,textarea):focus {border-color:var(--accent)}
+.workspace-page .primary {background:var(--accent);color:var(--main-foreground,var(--page));border-color:var(--accent);font-weight:650}
+.workspace-page .primary:hover {filter:brightness(1.08);color:var(--main-foreground,var(--page))}
+.workspace-page .quiet {color:var(--muted);font-size:var(--rvbbit-type-small,12px)}
+.workspace-page .eyebrow {font:11px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.workspace-page .page-heading {display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 24px}
+.workspace-page .page-heading h1 {font:500 clamp(28px,2.6vw,42px)/1.15 var(--font);letter-spacing:-.035em;margin:8px 0 10px}
+.workspace-page .page-heading h1 em {font-family:var(--font-superior-serif,Georgia,serif);font-weight:400}
+.workspace-page .subheading {color:var(--muted);line-height:1.6;max-width:75ch}
+.workspace-page .text-link {color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.workspace-page .icon-button {display:inline-flex;align-items:center;justify-content:center;width:34px;padding:7px;flex:none}
+.workspace-page .icon-button svg {width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.5}
+.workspace-page :is(main,aside,section,div,pre,dialog) {scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.workspace-rail {position:relative;z-index:30;height:var(--workspace-rail-height);display:flex;align-items:center;gap:24px;padding:0 var(--workspace-gutter);border-bottom:1px solid var(--line);background:color-mix(in oklch,var(--page) 85%,transparent);backdrop-filter:blur(18px) saturate(1.16)}
+.workspace-rail>.calliope-brand {flex:none;transform:translateY(3px)}
+.workspace-nav {display:flex;align-items:center;gap:4px;height:100%;min-width:0}
+.workspace-nav a {position:relative;display:flex;align-items:center;height:100%;padding:1px 12px 0;color:var(--muted);font:650 var(--rvbbit-type-body,14px)/1 var(--mono);letter-spacing:.07em;text-transform:uppercase}
+.workspace-nav a::after {content:"";position:absolute;right:12px;bottom:0;left:12px;height:2px;background:var(--accent);transform:scaleX(0)}
+.workspace-nav a:hover,.workspace-nav a[aria-current=page] {color:var(--ink)}
+.workspace-nav a[aria-current=page]::after {transform:scaleX(1)}
+.workspace-account {margin-left:auto;display:flex;align-items:center;gap:10px;font:var(--rvbbit-type-small,12px)/1 var(--mono);letter-spacing:.1em;color:var(--muted);flex:none}
+.workspace-page .workspace-rail button {border-radius:var(--warehouse-control-radius,999px)}
+.workspace-page .workspace-rail .warehouse-account-trigger {padding:5px 6px 5px 10px}
+.workspace-page .workspace-rail .warehouse-account-action {border:0;background:transparent}
+@media(max-width:1100px) {.workspace-rail{gap:12px}.workspace-nav a{padding-inline:7px}.workspace-account .warehouse-account-email{display:none}}
+@media(max-width:760px) {
+  .workspace-page{--workspace-rail-height:96px}
+  .workspace-rail{display:grid;grid-template-columns:1fr auto;grid-template-rows:55px 40px;gap:0 12px}
+  .workspace-account{grid-column:2;grid-row:1}
+  .workspace-nav{grid-column:1/-1;grid-row:2;overflow-x:auto;gap:6px;scrollbar-width:none}
+  .workspace-nav a{font-size:11px;flex:none;padding-inline:10px}
+  .workspace-page .page-heading{padding:22px 0 20px;gap:12px;align-items:flex-start}
+  .workspace-page .page-heading>.primary{white-space:nowrap;margin-top:28px}
+}

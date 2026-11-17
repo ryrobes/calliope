@@ -1,0 +1,19 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/agent/transports/chat_completions.py b/agent/transports/chat_completions.py
+index 8f3ae66..b9ecd57 100644
+--- a/agent/transports/chat_completions.py
++++ b/agent/transports/chat_completions.py
+@@ -405,6 +405,13 @@ def _sanitize_message(
+     # ``name`` is schema-valid on user/assistant messages, so the removal is
+     # role-qualified: only tool results carry it illegally (strict providers
+     # reject with "contains item with unknown key name").
++    # Calliope: this strip also covers tool results whose ``name`` / ``tool_name``
++    # no longer match their originating assistant tool call. Hermes's ``tool_call``
++    # wrapper expands an MCP call before execution and records the expanded tool
++    # (e.g. ``mcp__Warehouse__run_sql``) as the result's identity, while the wire
++    # call was ``tool_call``; Gemini rejected that mismatch. With no ``name`` on the
++    # wire the provider resolves the result by ``tool_call_id``, and Hermes's stored
++    # display identity is untouched because this is a projection, not a rewrite.
+     if msg.get("role") == "tool" and "name" in msg:
+         strip_keys.append("name")
+     out_msg = {k: v for k, v in msg.items() if k not in strip_keys}

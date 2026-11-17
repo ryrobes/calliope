@@ -1,0 +1,19 @@
+{
+  "name": "calliope-files-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@svar-ui/react-filemanager": "2.6.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@svar-ui/react-core": "2.6.0"
+  },
+  "devDependencies": {
+    "vite": "7.3.1",
+    "@vitejs/plugin-react": "4.7.0"
+  }
+}

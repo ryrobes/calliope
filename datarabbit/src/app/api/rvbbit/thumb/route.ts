@@ -1,0 +1,53 @@
+import { NextRequest, NextResponse } from "next/server"
+import { artifactInternalBase } from "@/lib/server/plates"
+
+// Artifact thumbnail proxy (the Hub, docs/HUB_PLAN.md). rv-shot islands
+// point here with a kind+slug handle; we fetch the PNG from warehouse-mcp's
+// capture store server-side so the browser never needs the warehouse origin
+// for images and a missing capture is a clean 404 (the island shows its
+// monogram tile). Same validation as the island: handles, never URLs.
+const SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/i
+const KINDS = new Set(["app", "dashboard"])
+
+export async function GET(req: NextRequest) {
+  const kind = (req.nextUrl.searchParams.get("kind") ?? "app").toLowerCase()
+  const slug = req.nextUrl.searchParams.get("slug") ?? ""
+  if (!KINDS.has(kind) || !SLUG.test(slug)) {
+    return NextResponse.json({ ok: false, error: "bad artifact handle" }, { status: 400 })
+  }
+  const base = artifactInternalBase()
+  if (!base) {
+    return NextResponse.json({ ok: false, error: "RVBBIT_APP_BASE is not configured" }, { status: 404 })
+  }
+  try {
+    // Artifact thumbnails now carry the same per-human viewer grants as the
+    // artifact. Forward only Warehouse's signed session cookie; the upstream
+    // validates it and never trusts an identity header from this proxy. Keep
+    // the service key for compatibility with older Warehouse releases.
+    const key = process.env.WAREHOUSE_MCP_KEY ?? ""
+    const warehouseSession = req.cookies.get("wh_session")?.value ?? ""
+    const headers = new Headers()
+    if (key) headers.set("authorization", `Bearer ${key}`)
+    if (warehouseSession) headers.set("cookie", `wh_session=${warehouseSession}`)
+    // no-store: the warehouse self-heals missing/stale captures on each
+    // request, so a data-cached 404 here would pin the monogram for the
+    // cache window and defeat the lazy regeneration. Browsers still get
+    // max-age on 200s below.
+    const upstream = await fetch(`${base}/thumbs/${kind}/${slug}.png`, {
+      headers,
+      cache: "no-store",
+    })
+    if (!upstream.ok || !upstream.body) {
+      return NextResponse.json({ ok: false }, { status: 404 })
+    }
+    return new NextResponse(upstream.body, {
+      headers: {
+        "content-type": upstream.headers.get("content-type") ?? "image/png",
+        "cache-control": "private, max-age=60",
+        vary: "Cookie",
+      },
+    })
+  } catch {
+    return NextResponse.json({ ok: false }, { status: 404 })
+  }
+}

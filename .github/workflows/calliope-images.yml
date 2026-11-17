@@ -1,0 +1,181 @@
+name: Publish Calliope images
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Calliope product version (defaults to VERSION)
+        required: false
+        type: string
+      verify_service:
+        description: Optional single service to build and verify without publishing (e.g. desktop)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.release.outputs.matrix }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML pytest pglast==7.20 'psycopg[binary]' python-dotenv
+      - run: docker pull postgres:16
+      - run: docker pull caddy:2-alpine
+      - run: docker pull python:3.12-alpine
+      - name: Validate release contract
+        id: release
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          VERIFY_SERVICE: ${{ inputs.verify_service }}
+          CALLIOPE_SHIPPING_POSTGRES_TEST_IMAGE: postgres:16
+        run: |
+          version="${REQUESTED_VERSION:-$(cat VERSION)}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="${GITHUB_REF_NAME#v}"; fi
+          [[ "$version" == "$(cat VERSION)" ]] || { echo 'Release version mismatch' >&2; exit 2; }
+          python3 scripts/release/shipping.py check
+          python3 -m pytest -q tests/test_schema_release.py tests/test_shipping_bundle.py tests/test_postgres_tls.py tests/test_reconcile_hermes_config.py tests/test_reconcile_hermes_specialists.py
+          PYTHONPATH=services/calliope python3 -m pytest -q docker/desktop/test_calliope_desktop.py docker/desktop/test_computer_runtime.py docker/desktop/test_computer_capture.py tests/test_computer_use_release.py
+          python3 scripts/release/test-origin.py --report /tmp/calliope-origin-check.json
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          matrix="$(python3 scripts/release/shipping.py matrix)"
+          if [[ -n "$VERIFY_SERVICE" ]]; then
+            matrix="$(python3 -c 'import json,sys; m=json.loads(sys.argv[1]); s=sys.argv[2]; assert s in m["service"], "Unknown release service"; print(json.dumps({"service":[s]}))' "$matrix" "$VERIFY_SERVICE")"
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish ${{ matrix.service }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reclaim hosted-runner build space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache /usr/share/swift
+          df -h /
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML
+      - uses: docker/setup-buildx-action@v3
+        id: release_builder
+        with:
+          driver-opts: memory=4g
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push versioned images
+        env:
+          CALLIOPE_VERSION: ${{ needs.prepare.outputs.version }}
+          CALLIOPE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+          CALLIOPE_SERVICE: ${{ matrix.service }}
+          VERIFY_SERVICE: ${{ inputs.verify_service }}
+          CALLIOPE_BUILD_BUILDER: ${{ (matrix.service == 'hermes' || matrix.service == 'desktop') && steps.release_builder.outputs.name || '' }}
+          CALLIOPE_RELEASE_STOP_BUILDER: '1'
+          CALLIOPE_DESKTOP_TEST_MEMORY: 4g
+        run: |
+          if [[ "$CALLIOPE_SERVICE" == hermes || "$CALLIOPE_SERVICE" == desktop ]]; then
+            (while sleep 30; do free -m; df -h /; docker stats --no-stream --format '{{.Name}} CPU={{.CPUPerc}} RAM={{.MemUsage}}'; done) &
+            monitor=$!
+            trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          fi
+          args=(--service "$CALLIOPE_SERVICE")
+          if [[ -z "$VERIFY_SERVICE" ]]; then args+=(--push); fi
+          scripts/release/build-calliope.sh "${args[@]}"
+          if [[ -n "$VERIFY_SERVICE" && "$CALLIOPE_SERVICE" == desktop ]]; then
+            python3 scripts/desktop/test-fresh-install.py --image "$CALLIOPE_REGISTRY/calliope-desktop:$CALLIOPE_VERSION" --report /tmp/calliope-desktop-fresh-install.json
+          fi
+      - name: Save desktop verification and failure diagnostics
+        if: always() && matrix.service == 'desktop'
+        uses: actions/upload-artifact@v4
+        with:
+          name: calliope-desktop-check-${{ needs.prepare.outputs.version }}
+          path: |
+            /tmp/calliope-desktop-fresh-install.json
+            /tmp/calliope-desktop-fresh-install.failure.json
+          if-no-files-found: ignore
+      - name: Save schema image verification
+        if: matrix.service == 'postgres'
+        uses: actions/upload-artifact@v4
+        with:
+          name: calliope-schema-${{ needs.prepare.outputs.version }}
+          path: /tmp/calliope-schema-image-test.json
+          if-no-files-found: error
+
+  bundle:
+    needs: [prepare, publish]
+    if: ${{ !inputs.verify_service }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: calliope-schema-${{ needs.prepare.outputs.version }}
+          path: /tmp/schema-proof
+      - name: Pin published images and check public visibility
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          python3 scripts/release/shipping.py bundle --lock-private --registry "$REGISTRY" --output "/tmp/calliope-$VERSION"
+          cp /tmp/schema-proof/calliope-schema-image-test.json "/tmp/calliope-$VERSION/schema-verification.json"
+          python3 -c 'import hashlib,json,pathlib,sys; p=pathlib.Path(sys.argv[1]); f=p/"checksums.json"; d=json.loads(f.read_text()); d["schema-verification.json"]=hashlib.sha256((p/"schema-verification.json").read_bytes()).hexdigest(); f.write_text(json.dumps(d,indent=2)+"\n")' "/tmp/calliope-$VERSION"
+          tar -C /tmp -czf "/tmp/calliope-$VERSION-linux-amd64.tar.gz" "calliope-$VERSION"
+          cd /tmp
+          sha256sum "calliope-$VERSION-linux-amd64.tar.gz" > "calliope-$VERSION-linux-amd64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calliope-${{ needs.prepare.outputs.version }}-linux-amd64
+          path: |
+            /tmp/calliope-${{ needs.prepare.outputs.version }}-linux-amd64.tar.gz
+            /tmp/calliope-${{ needs.prepare.outputs.version }}-linux-amd64.tar.gz.sha256
+          if-no-files-found: error
+      # install.sh downloads exactly these assets from the release of its tag.
+      - name: Publish the GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          assets=("/tmp/calliope-$VERSION-linux-amd64.tar.gz" "/tmp/calliope-$VERSION-linux-amd64.tar.gz.sha256" deploy/install.sh)
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" --clobber "${assets[@]}"
+          else
+            flags=()
+            [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
+            gh release create "v$VERSION" --verify-tag "${flags[@]}" --title "Calliope $VERSION" \
+              --notes "Install or upgrade: \`curl -fsSL https://usecalliope.com/install.sh | bash\`" "${assets[@]}"
+          fi

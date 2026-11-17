@@ -1,0 +1,744 @@
+//! openai_chat transport — the OpenAI chat-completions wire format.
+//!
+//! An LLM provider is just a backend with a chat transport. This one wire
+//! format covers OpenRouter AND every OpenAI-compatible endpoint: a local
+//! vLLM or Ollama, OpenAI itself, Together, Groq, Fireworks. Register any
+//! of them with `rvbbit.register_backend(..., 'openai_chat', ...)`.
+//!
+//! Each input is one chat request object — `{model, system, user,
+//! request_user, temperature, max_tokens}` — built by `providers::chat`. Chat completions
+//! has no batch API, so N inputs become N sequential calls here (the warm
+//! engine parallelizes across rows via the pool); `client_batches` is false.
+//! Semaphores cap both per-backend and total openai_chat fan-out so a bulk
+//! query cannot accidentally hammer an endpoint past its rate limit.
+
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use super::{http_client, SpecialistResponse, SpecialistSpec, Transport, Usage};
+use crate::providers::ProviderError;
+
+const OPENROUTER_APP_URL: &str = "https://rvbbit.ai";
+const OPENROUTER_APP_TITLE: &str = "RVBBIT";
+
+/// Resolve the model placed on the provider wire. Ordinary OpenAI-compatible
+/// backends remain caller-selectable. A managed backend instead owns one
+/// canonical service alias. Omitted/canonical/legacy-alias requests normalize
+/// to that value. A managed backend may also advertise a small explicit
+/// `model_allowlist` of other service-owned routes; those values pass through
+/// unchanged. Terminal-wildcard entries in `model_prefix_allowlist` permit a
+/// tightly scoped family of future service routes (for example `calliope*`)
+/// without opening arbitrary upstream model selection.
+pub(crate) fn resolve_chat_model(
+    spec: &SpecialistSpec,
+    requested: Option<&str>,
+) -> Result<String, ProviderError> {
+    let requested = requested.map(str::trim).filter(|value| !value.is_empty());
+    let backend_model = spec
+        .transport_opts
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let managed = spec
+        .transport_opts
+        .get("model_policy")
+        .and_then(Value::as_str)
+        == Some("managed");
+
+    if managed {
+        let canonical = backend_model.ok_or_else(|| {
+            ProviderError::Config(format!(
+                "managed chat backend '{}' has no canonical transport_opts.model",
+                spec.name
+            ))
+        })?;
+        if requested.is_none() || requested == Some(canonical) {
+            return Ok(canonical.to_string());
+        }
+        let requested = requested.unwrap_or_default();
+        let allowed = spec
+            .transport_opts
+            .get("model_allowlist")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .any(|model| model == requested);
+        if allowed {
+            return Ok(requested.to_string());
+        }
+        let allowed_prefix = spec
+            .transport_opts
+            .get("model_prefix_allowlist")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .filter_map(|pattern| pattern.trim().strip_suffix('*'))
+            .filter(|prefix| !prefix.is_empty())
+            .any(|prefix| requested.starts_with(prefix));
+        if allowed_prefix {
+            return Ok(requested.to_string());
+        }
+        let legacy_alias = spec
+            .transport_opts
+            .get("model_aliases")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .any(|alias| alias == requested);
+        if legacy_alias {
+            return Ok(canonical.to_string());
+        }
+        return Err(ProviderError::Config(format!(
+            "backend '{}' manages its model as '{}'; '{}' is not an allowed managed model route. Select a different provider to choose a model",
+            spec.name, canonical, requested
+        )));
+    }
+
+    requested
+        .or(backend_model)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            ProviderError::Config(
+                "chat request missing 'model' (and the backend has no default in transport_opts.model)".into(),
+            )
+        })
+}
+
+pub struct OpenAiChatTransport {
+    /// Cap on concurrent in-flight calls across all openai_chat providers
+    /// from this backend. Sized once from RVBBIT_PROVIDER_MAX_CONCURRENT.
+    semaphore: crate::flow::Semaphore,
+}
+
+impl OpenAiChatTransport {
+    pub fn new() -> Self {
+        Self {
+            semaphore: crate::flow::Semaphore::new(super::provider_max_concurrent()),
+        }
+    }
+
+    fn one_call(
+        &self,
+        spec: &SpecialistSpec,
+        input: &Value,
+    ) -> Result<(String, Usage), ProviderError> {
+        let model = resolve_chat_model(spec, input.get("model").and_then(Value::as_str))?;
+        let model = model.as_str();
+        let user = input.get("user").and_then(|v| v.as_str()).unwrap_or("");
+        let request_user = input
+            .get("request_user")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty());
+        let system = input
+            .get("system")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty());
+        let temperature = input.get("temperature").and_then(|v| v.as_f64());
+        let max_tokens = input
+            .get("max_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|n| n.max(16));
+        let enable_thinking = input.get("enable_thinking").and_then(Value::as_bool);
+        let chat_template = input.get("chat_template").and_then(Value::as_str);
+        let chat_template_instructions = input
+            .get("chat_template_instructions")
+            .and_then(Value::as_str);
+        let chat_template_kwargs = (enable_thinking.is_some()
+            || chat_template.is_some()
+            || chat_template_instructions.is_some())
+        .then_some(ChatTemplateKwargs {
+            enable_thinking,
+            template: chat_template,
+            instructions: chat_template_instructions,
+        });
+
+        let mut messages = Vec::with_capacity(2);
+        if let Some(s) = system {
+            messages.push(Msg {
+                role: "system",
+                content: s,
+            });
+        }
+        messages.push(Msg {
+            role: "user",
+            content: user,
+        });
+        let use_max_completion_tokens = spec
+            .transport_opts
+            .get("max_tokens_field")
+            .and_then(|v| v.as_str())
+            .map(|field| field == "max_completion_tokens")
+            .unwrap_or_else(|| spec.endpoint_url.contains("api.openai.com"));
+        let body = ChatBody {
+            model,
+            messages,
+            user: request_user,
+            temperature,
+            max_tokens: if use_max_completion_tokens {
+                None
+            } else {
+                max_tokens
+            },
+            max_completion_tokens: if use_max_completion_tokens {
+                max_tokens
+            } else {
+                None
+            },
+            chat_template_kwargs,
+        };
+
+        let mut req = http_client()
+            .post(&spec.endpoint_url)
+            .timeout(Duration::from_millis(spec.timeout_ms))
+            // OpenRouter uses these for app attribution; harmless elsewhere.
+            .header("HTTP-Referer", OPENROUTER_APP_URL)
+            .header("X-OpenRouter-Title", OPENROUTER_APP_TITLE)
+            .header("X-Title", OPENROUTER_APP_TITLE)
+            .json(&body);
+        if let Some(token) = spec.auth_token() {
+            req = req.bearer_auth(token);
+        }
+
+        // _backend_permit respects the catalog max_concurrent for this
+        // backend; _permit caps total openai_chat fan-out in this process.
+        let _backend_permit = super::acquire_backend_permit(spec);
+        let _permit = self.semaphore.acquire();
+        let resp = super::send_with_lane_retry(req, spec.timeout_ms)?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ProviderError::ApiStatus {
+                status: status.as_u16(),
+                body: resp.text().unwrap_or_default(),
+            });
+        }
+        let parsed: ChatResp = resp.json()?;
+        let response_id = parsed.id.clone();
+        let mut raw_usage = serde_json::to_value(&parsed.usage).ok();
+        let choice = parsed
+            .choices
+            .into_iter()
+            .next()
+            .ok_or_else(|| ProviderError::BadResponse("no choices".into()))?;
+        let finish_reason = choice.finish_reason;
+        if let Some(reason) = finish_reason.as_ref() {
+            if let Some(raw) = raw_usage
+                .get_or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+            {
+                raw.insert("finish_reason".to_string(), Value::String(reason.clone()));
+            }
+        }
+        let content = choice
+            .message
+            .content
+            .ok_or_else(|| ProviderError::BadResponse("no choices/content".into()))?;
+        Ok((
+            content,
+            Usage {
+                tokens_in: parsed.usage.prompt_tokens,
+                tokens_out: parsed.usage.completion_tokens,
+                cost_usd: parsed.usage.cost,
+                cost_source: parsed.usage.cost.map(|_| "inline".to_string()).or_else(|| {
+                    response_id
+                        .as_ref()
+                        .filter(|_| {
+                            spec.name == "openrouter" || spec.endpoint_url.contains("openrouter.ai")
+                        })
+                        .map(|_| "openrouter_generation".to_string())
+                }),
+                provider_generation_id: response_id,
+                finish_reason,
+                raw: raw_usage,
+                ..Default::default()
+            },
+        ))
+    }
+}
+
+fn tool_completion_budget(max_tokens: Option<u32>) -> u32 {
+    max_tokens.unwrap_or(4096).max(16)
+}
+
+impl Transport for OpenAiChatTransport {
+    fn name(&self) -> &'static str {
+        "openai_chat"
+    }
+
+    fn client_batches(&self) -> bool {
+        false
+    }
+
+    fn predict(
+        &self,
+        spec: &SpecialistSpec,
+        inputs: &[Value],
+    ) -> Result<SpecialistResponse, ProviderError> {
+        let t0 = std::time::Instant::now();
+        let mut outputs = Vec::with_capacity(inputs.len());
+        let mut usage = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            let (content, u) = self.one_call(spec, input)?;
+            outputs.push(Value::String(content));
+            usage.push(u);
+        }
+        Ok(SpecialistResponse {
+            outputs,
+            usage,
+            latency_ms: t0.elapsed().as_millis().min(i32::MAX as u128) as i32,
+        })
+    }
+
+    fn chat_with_tools(
+        &self,
+        spec: &SpecialistSpec,
+        model: &str,
+        messages: &[crate::providers::ChatMessage],
+        tools: &[crate::providers::ToolSpec],
+        max_tokens: Option<u32>,
+        request_user: Option<&str>,
+    ) -> Result<crate::providers::ChatToolsResponse, ProviderError> {
+        use crate::providers::{ChatToolsResponse, ToolCall};
+        let t0 = std::time::Instant::now();
+        let model = resolve_chat_model(spec, Some(model))?;
+
+        // Wire messages: a Value array so we can echo `tool_calls` verbatim and
+        // attach `tool_call_id` on tool-result turns without a struct per shape.
+        let wire_msgs: Vec<Value> = messages
+            .iter()
+            .map(|m| {
+                let mut o = serde_json::Map::new();
+                o.insert("role".into(), Value::String(m.role.clone()));
+                // role=assistant with tool_calls may carry null content; keep the key.
+                o.insert(
+                    "content".into(),
+                    m.content_parts.clone().unwrap_or_else(|| {
+                        m.content.clone().map(Value::String).unwrap_or(Value::Null)
+                    }),
+                );
+                if let Some(tc) = &m.tool_calls {
+                    o.insert("tool_calls".into(), tc.clone());
+                }
+                if let Some(id) = &m.tool_call_id {
+                    o.insert("tool_call_id".into(), Value::String(id.clone()));
+                }
+                Value::Object(o)
+            })
+            .collect();
+
+        let mut body = serde_json::json!({ "model": &model, "messages": wire_msgs });
+        if let Some(user) = request_user.filter(|value| !value.is_empty()) {
+            body["user"] = Value::String(user.to_string());
+        }
+        if !tools.is_empty() {
+            let wire_tools: Vec<Value> = tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.parameters,
+                        }
+                    })
+                })
+                .collect();
+            body["tools"] = Value::Array(wire_tools);
+        }
+        // Agent nodes inherit their operator/step completion budget. Keeping a
+        // transport-local constant here silently truncated large structured
+        // outputs (notably HTML app artifacts) even when the operator asked for
+        // substantially more headroom.
+        let use_mct = spec
+            .transport_opts
+            .get("max_tokens_field")
+            .and_then(|v| v.as_str())
+            .map(|field| field == "max_completion_tokens")
+            .unwrap_or_else(|| spec.endpoint_url.contains("api.openai.com"));
+        body[if use_mct {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        }] = serde_json::json!(tool_completion_budget(max_tokens));
+
+        let mut req = http_client()
+            .post(&spec.endpoint_url)
+            .timeout(Duration::from_millis(spec.timeout_ms))
+            .header("HTTP-Referer", OPENROUTER_APP_URL)
+            .header("X-OpenRouter-Title", OPENROUTER_APP_TITLE)
+            .header("X-Title", OPENROUTER_APP_TITLE)
+            .json(&body);
+        if let Some(token) = spec.auth_token() {
+            req = req.bearer_auth(token);
+        }
+
+        let _backend_permit = super::acquire_backend_permit(spec);
+        let _permit = self.semaphore.acquire();
+        let resp = super::send_with_lane_retry(req, spec.timeout_ms)?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ProviderError::ApiStatus {
+                status: status.as_u16(),
+                body: resp.text().unwrap_or_default(),
+            });
+        }
+        let parsed: Value = resp.json()?;
+
+        let gen_id = parsed
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let usage = parsed.get("usage").cloned();
+        let prompt_tokens = usage
+            .as_ref()
+            .and_then(|u| u.get("prompt_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let completion_tokens = usage
+            .as_ref()
+            .and_then(|u| u.get("completion_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let cost_usd = usage
+            .as_ref()
+            .and_then(|u| u.get("cost"))
+            .and_then(|v| v.as_f64());
+
+        let choice = parsed
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let finish_reason = choice
+            .get("finish_reason")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let msg = choice.get("message").cloned().unwrap_or(Value::Null);
+        let content = match msg.get("content") {
+            Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
+            Some(Value::Array(parts)) => {
+                let text = parts
+                    .iter()
+                    .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
+                    .filter_map(|part| part.get("text").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                (!text.is_empty()).then_some(text)
+            }
+            _ => None,
+        };
+        let mut images = msg
+            .get("images")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(parts) = msg.get("content").and_then(Value::as_array) {
+            images.extend(
+                parts
+                    .iter()
+                    .filter(|part| {
+                        matches!(
+                            part.get("type").and_then(Value::as_str),
+                            Some("image" | "image_url")
+                        )
+                    })
+                    .cloned(),
+            );
+        }
+        let raw_tool_calls = msg.get("tool_calls").filter(|v| !v.is_null()).cloned();
+        let tool_calls: Vec<ToolCall> = raw_tool_calls
+            .as_ref()
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|tc| {
+                        let id = tc.get("id").and_then(|v| v.as_str())?.to_string();
+                        let func = tc.get("function")?;
+                        let name = func.get("name").and_then(|v| v.as_str())?.to_string();
+                        let args_str = func
+                            .get("arguments")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("{}");
+                        let arguments = serde_json::from_str(args_str)
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        Some(ToolCall {
+                            id,
+                            name,
+                            arguments,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let cost_source = cost_usd.map(|_| "inline".to_string()).or_else(|| {
+            gen_id
+                .as_ref()
+                .filter(|_| {
+                    spec.name == "openrouter" || spec.endpoint_url.contains("openrouter.ai")
+                })
+                .map(|_| "openrouter_generation".to_string())
+        });
+
+        Ok(ChatToolsResponse {
+            content,
+            images,
+            tool_calls,
+            raw_tool_calls,
+            finish_reason,
+            model,
+            provider: spec.name.clone(),
+            prompt_tokens,
+            completion_tokens,
+            cost_usd,
+            cost_source,
+            provider_generation_id: gen_id,
+            raw_usage: usage,
+            latency_ms: t0.elapsed().as_millis().min(i32::MAX as u128) as i32,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct ChatBody<'a> {
+    model: &'a str,
+    messages: Vec<Msg<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_template_kwargs: Option<ChatTemplateKwargs<'a>>,
+}
+
+#[derive(Serialize)]
+struct ChatTemplateKwargs<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_thinking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct Msg<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(Deserialize)]
+struct ChatResp {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    choices: Vec<Choice>,
+    #[serde(default)]
+    usage: RespUsage,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    #[serde(default)]
+    finish_reason: Option<String>,
+    message: ChoiceMsg,
+}
+
+#[derive(Deserialize)]
+struct ChoiceMsg {
+    content: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Default)]
+struct RespUsage {
+    #[serde(default)]
+    prompt_tokens: i32,
+    #[serde(default)]
+    completion_tokens: i32,
+    /// OpenRouter returns actual settled cost here; other providers omit it
+    /// and cost is derived from rvbbit.model_rates downstream.
+    #[serde(default)]
+    cost: Option<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        resolve_chat_model, tool_completion_budget, ChatBody, ChatResp, ChatTemplateKwargs, Msg,
+    };
+    use crate::specialists::SpecialistSpec;
+
+    fn spec(transport_opts: serde_json::Value) -> SpecialistSpec {
+        SpecialistSpec {
+            name: "clover_llm".into(),
+            transport: "openai_chat".into(),
+            endpoint_url: "http://example.test/v1/chat/completions".into(),
+            batch_size: 1,
+            max_concurrent: 1,
+            timeout_ms: 1000,
+            auth_header_env: None,
+            resolved_token: None,
+            transport_opts,
+        }
+    }
+
+    #[test]
+    fn tool_chat_honors_operator_completion_budget() {
+        assert_eq!(tool_completion_budget(Some(32_768)), 32_768);
+        assert_eq!(tool_completion_budget(None), 4_096);
+        assert_eq!(tool_completion_budget(Some(1)), 16);
+    }
+
+    #[test]
+    fn captures_plain_chat_finish_reason() {
+        let parsed: ChatResp = serde_json::from_value(serde_json::json!({
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": "{\"partial\":"}
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20}
+        }))
+        .unwrap();
+        assert_eq!(parsed.choices[0].finish_reason.as_deref(), Some("length"));
+    }
+
+    #[test]
+    fn managed_model_normalizes_legacy_aliases_and_passes_allowed_routes() {
+        let spec = spec(serde_json::json!({
+            "model": "clover",
+            "model_policy": "managed",
+            "model_aliases": ["gemma4"],
+            "model_allowlist": ["clover", "calliope"],
+            "model_prefix_allowlist": ["clover*", "calliope*"]
+        }));
+
+        assert_eq!(resolve_chat_model(&spec, None).unwrap(), "clover");
+        assert_eq!(resolve_chat_model(&spec, Some("clover")).unwrap(), "clover");
+        assert_eq!(resolve_chat_model(&spec, Some("gemma4")).unwrap(), "clover");
+        assert_eq!(
+            resolve_chat_model(&spec, Some("calliope")).unwrap(),
+            "calliope"
+        );
+        assert_eq!(
+            resolve_chat_model(&spec, Some("calliope-low")).unwrap(),
+            "calliope-low"
+        );
+        assert_eq!(
+            resolve_chat_model(&spec, Some("calliope-medium")).unwrap(),
+            "calliope-medium"
+        );
+        assert_eq!(
+            resolve_chat_model(&spec, Some("clover-bulk-v2")).unwrap(),
+            "clover-bulk-v2"
+        );
+    }
+
+    #[test]
+    fn managed_model_rejects_arbitrary_overrides() {
+        let spec = spec(serde_json::json!({
+            "model": "clover",
+            "model_policy": "managed",
+            "model_aliases": ["gemma4"],
+            "model_prefix_allowlist": ["*", "clover*", "calliope*"]
+        }));
+
+        for model in ["openai/gpt-5.4", "xcalliope-low", "other-clover"] {
+            let error = resolve_chat_model(&spec, Some(model)).unwrap_err();
+            assert!(error.to_string().contains("Select a different provider"));
+        }
+    }
+
+    #[test]
+    fn ordinary_openai_backend_keeps_caller_model_selection() {
+        let spec = spec(serde_json::json!({"model": "default/model"}));
+        assert_eq!(
+            resolve_chat_model(&spec, Some("chosen/model")).unwrap(),
+            "chosen/model"
+        );
+    }
+
+    #[test]
+    fn chat_body_serializes_provider_tracking_user_separately_from_prompt() {
+        let value = serde_json::to_value(ChatBody {
+            model: "example/model",
+            messages: vec![Msg {
+                role: "user",
+                content: "prompt text",
+            }],
+            user: Some("person@example.com"),
+            temperature: None,
+            max_tokens: Some(32),
+            max_completion_tokens: None,
+            chat_template_kwargs: None,
+        })
+        .unwrap();
+
+        assert_eq!(value["user"], "person@example.com");
+        assert_eq!(value["messages"][0]["content"], "prompt text");
+    }
+
+    #[test]
+    fn chat_body_serializes_explicit_thinking_switch() {
+        let value = serde_json::to_value(ChatBody {
+            model: "example/model",
+            messages: vec![Msg {
+                role: "user",
+                content: "extract one record",
+            }],
+            user: None,
+            temperature: Some(0.0),
+            max_tokens: Some(2_048),
+            max_completion_tokens: None,
+            chat_template_kwargs: Some(ChatTemplateKwargs {
+                enable_thinking: Some(false),
+                template: None,
+                instructions: None,
+            }),
+        })
+        .unwrap();
+
+        assert_eq!(value["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(value["max_tokens"], 2_048);
+    }
+
+    #[test]
+    fn chat_body_serializes_native_extraction_template() {
+        let value = serde_json::to_value(ChatBody {
+            model: "example/extractor",
+            messages: vec![Msg {
+                role: "user",
+                content: "Ticket T-9 is high priority",
+            }],
+            user: None,
+            temperature: Some(0.2),
+            max_tokens: Some(1_024),
+            max_completion_tokens: None,
+            chat_template_kwargs: Some(ChatTemplateKwargs {
+                enable_thinking: Some(false),
+                template: Some(r#"{"ticket":"verbatim-string","priority":["low","high"]}"#),
+                instructions: Some("Preserve ticket identifiers exactly."),
+            }),
+        })
+        .unwrap();
+
+        assert_eq!(
+            value["chat_template_kwargs"]["template"],
+            r#"{"ticket":"verbatim-string","priority":["low","high"]}"#
+        );
+        assert_eq!(
+            value["chat_template_kwargs"]["instructions"],
+            "Preserve ticket identifiers exactly."
+        );
+        assert_eq!(value["chat_template_kwargs"]["enable_thinking"], false);
+    }
+}

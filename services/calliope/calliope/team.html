@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light"><title>Calliope · Team</title>
+<link rel="icon" href="/calliope/callie-favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+<link rel="stylesheet" href="/theme/superior-fonts.css">
+<link rel="stylesheet" href="/team/team.css?v=__CALLIOPE_ASSET_VERSION__">
+<link rel="stylesheet" href="/theme/warehouse-theme.css"><script src="/theme/warehouse-theme.js"></script>
+</head>
+<body data-warehouse-page="team">
+__CALLIOPE_BACKGROUND__
+<nav class="team-rail" data-warehouse-header aria-label="Calliope navigation">
+<a class="calliope-brand" href="/calliope?view=zen" aria-label="Open Calliope"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></a>
+<div class="team-nav" aria-label="Workspace views">__CALLIOPE_WORKSPACE_NAV__</div>
+<div class="team-account"><span data-warehouse-theme-anchor></span>__CALLIOPE_ACCOUNT__</div>
+</nav>
+<main>
+<header class="team-heading"><div><p class="eyebrow">The people behind the work</p><h1>Your <em>team.</em></h1><p class="lede">Different specialties. A shared workspace.</p></div><p id="teamSummary" class="team-summary" aria-live="polite"></p></header>
+<div class="team-toolbar"><label class="team-search"><span aria-hidden="true">⌕</span><input id="teamSearch" type="search" placeholder="Find a name or specialty" aria-label="Find a team member"></label><span>Activity · past 30 days · work you can access</span><button id="teamRefresh" type="button">Refresh</button></div>
+<p id="teamStatus" role="status">Getting the team together…</p>
+<div id="teamGrid" class="team-grid" aria-label="Team members"></div>
+</main>
+<dialog id="memberDialog" aria-labelledby="memberName"><div class="member-shell"><button id="memberClose" class="member-close" type="button" aria-label="Close member details">×</button><div id="memberContent"></div></div></dialog>
+<script src="/team/team.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+</body></html>

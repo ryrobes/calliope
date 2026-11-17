@@ -1,0 +1,54 @@
+#gallery-brain[hidden]{display:none}
+.brain-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.brain-head p{margin:0;color:var(--dim);font-size:var(--rvbbit-type-small)}
+.brain-head button,.brain-map-tools button{cursor:pointer;background:transparent;color:var(--bone);border:1px solid var(--line);padding:8px 12px;font:600 12px var(--mono)}
+.brain-head button:disabled{opacity:.5;cursor:wait}
+.brain-workspace{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:640px;height:calc(100dvh - 300px);max-height:1000px;border-top:1px solid var(--line)}
+.brain-sources{overflow:auto;padding:0 16px 20px 0;scrollbar-width:thin;min-height:0}
+.brain-family{display:flex;align-items:center;gap:7px;margin:17px 8px 7px;color:var(--dim);font:700 10px var(--mono);letter-spacing:.07em;text-transform:uppercase}
+.brain-family svg{width:15px;height:15px;flex:none}
+.brain-family-count{margin-left:auto;font-variant-numeric:tabular-nums}
+.brain-source{--source-accent:var(--jade);display:block;text-align:left;width:100%;border:0;border-left:2px solid transparent;color:var(--bone);background:color-mix(in oklch,var(--panel) 65%,transparent);padding:9px 10px;margin:4px 0;cursor:pointer;font:inherit;min-width:0}
+.brain-source:hover{background:color-mix(in oklch,var(--bone) 5%,var(--panel))}
+.brain-source[aria-pressed=true]{border-left-color:var(--source-accent);background:color-mix(in oklch,var(--source-accent) 9%,var(--panel))}
+.brain-source:focus-visible{outline:1px solid var(--source-accent);outline-offset:-1px}
+.brain-source-top,.brain-source-meta{display:flex;align-items:baseline;gap:7px;min-width:0}
+.brain-source strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1.35;font-weight:650}
+.brain-source .brain-age{flex:none;margin-left:auto;color:var(--dim);font:10px/1.4 var(--mono);white-space:nowrap}
+.brain-source-meta{margin-top:4px;flex-wrap:wrap;gap:3px 7px}
+.brain-source .brain-count{color:var(--fog);font-size:11px;line-height:1.4;font-variant-numeric:tabular-nums}
+.brain-badge{margin-left:auto;color:var(--dim);font:10px/1.4 var(--sans);white-space:nowrap}
+.brain-source .brain-issue{color:var(--amber)}
+.brain-source .brain-more{display:block;margin-top:7px;color:var(--fog);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.brain-source-all{display:flex;align-items:center;padding-block:10px}
+.brain-map{position:relative;min-width:0;overflow:hidden;background:color-mix(in oklch,var(--void) 70%,transparent);border-left:1px solid var(--line)}
+.brain-map canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;outline-offset:-4px}
+.brain-map canvas:active{cursor:grabbing}
+.brain-map-heading{position:absolute;left:24px;top:20px;pointer-events:none;max-width:calc(100% - 190px)}
+.brain-map-heading strong{font:600 17px var(--sans);display:block;overflow-wrap:anywhere}
+.brain-map-heading small{display:block;color:var(--dim);font:11px var(--mono);margin-top:7px;line-height:1.5}
+.brain-map-tools{position:absolute;right:16px;top:16px;display:flex;gap:4px}
+.brain-map-tools button{background:var(--void);padding:7px 10px}
+.brain-legend{display:flex;gap:15px;flex-wrap:wrap;position:absolute;bottom:16px;left:24px;right:20px;font:11px var(--mono);color:var(--dim);pointer-events:none}
+.brain-legend span::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--jade);margin-right:6px}
+.brain-legend span:nth-child(2)::before{background:var(--amber)}
+.brain-legend span:nth-child(3)::before{background:var(--chart-3,#91b6d8)}
+.brain-legend span:nth-child(4)::before{background:var(--chart-4,#ce9eae)}
+.brain-legend span:last-child::before{display:none}
+.brain-family[data-family=catalog]{color:var(--chart-3,#91b6d8)}
+.brain-family[data-family=context]{color:var(--chart-4,#ce9eae)}
+.brain-source[data-family=memory]{--source-accent:var(--amber)}
+.brain-source[data-family=catalog]{--source-accent:var(--chart-3,#91b6d8)}
+.brain-source[data-family=context]{--source-accent:var(--chart-4,#ce9eae)}
+.brain-tooltip{position:absolute;max-width:260px;pointer-events:none;background:var(--void);color:var(--bone);border:1px solid var(--line);padding:10px 12px;font:12px/1.5 var(--sans);box-shadow:0 8px 25px #0004;overflow-wrap:anywhere}
+.brain-empty{position:absolute;inset:40% 15% auto;text-align:center;color:var(--dim);line-height:1.6;pointer-events:none}
+.brain-feedback{min-height:24px;padding-top:12px;color:var(--fog);font-size:12px;line-height:1.5}
+@media(max-width:760px){.brain-workspace{grid-template-columns:1fr;height:auto;max-height:none;min-height:0}.brain-sources{max-height:290px;padding-right:0}.brain-map{height:560px;border-left:0;border-top:1px solid var(--line)}.brain-head{align-items:flex-start}.brain-map-heading{left:16px;top:62px;max-width:calc(100% - 32px)}.brain-map-heading strong{font-size:15px}.brain-legend{left:16px;gap:9px}.brain-map-tools{top:12px}.brain-family{margin-top:14px}}
+/* Scrollbars on the Brain page take the palette: a jade thumb on a void track, thin and rounded.
+   Chrome and Firefox read scrollbar-color; the WebKit pseudo-elements carry Safari. The page's own
+   bar follows while the Brain view is the one showing, so nothing else in the Gallery changes. */
+.brain-sources,html:has(#gallery-brain:not([hidden])){scrollbar-width:thin;scrollbar-color:color-mix(in oklch,var(--jade) 44%,var(--line)) color-mix(in oklch,var(--void) 72%,transparent)}
+.brain-sources::-webkit-scrollbar,html:has(#gallery-brain:not([hidden]))::-webkit-scrollbar{width:9px;height:9px}
+.brain-sources::-webkit-scrollbar-track,html:has(#gallery-brain:not([hidden]))::-webkit-scrollbar-track{background:color-mix(in oklch,var(--void) 72%,transparent);border-radius:999px}
+.brain-sources::-webkit-scrollbar-thumb,html:has(#gallery-brain:not([hidden]))::-webkit-scrollbar-thumb{background:color-mix(in oklch,var(--jade) 44%,var(--line));border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+.brain-sources::-webkit-scrollbar-thumb:hover,html:has(#gallery-brain:not([hidden]))::-webkit-scrollbar-thumb:hover{background:color-mix(in oklch,var(--jade) 64%,var(--line))}

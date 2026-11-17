@@ -1,0 +1,317 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 9e18eb0..0208f2a 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -1,6 +1,7 @@
+ """OpenAI-compatible API server platform adapter (aiohttp).
+ 
+-Serves /v1/chat/completions, /v1/responses, /v1/models, /v1/capabilities, /api/sessions,
++Serves /v1/chat/completions, /v1/responses, /v1/models, /v1/capabilities, /v1/commands
++(profile-scoped slash-command catalog, plus /execute and /prepare), /api/sessions,
+ /v1/runs, /api/jobs and /health* (full table: ``APIServerAdapter._http_route_table``); any
+ OpenAI-compatible frontend connects at http://localhost:8642/v1 with API_SERVER_KEY. Under
+ ``gateway.multiplex_profiles`` secondary profiles live at ``/p/<profile>/...``.
+@@ -71,7 +72,7 @@ _STATIC_FEATURE_FLAGS = {
+     "session_chat_streaming": True, "session_fork": True, "session_model_lock": True,
+     "reasoning_streaming": True,
+     "admin_config_rw": False, "jobs_admin": False, "memory_write_api": False,
+-    "skills_api": True, "audio_api": False, "realtime_voice": False,
++    "skills_api": True, "commands_api": True, "audio_api": False, "realtime_voice": False,
+     "session_continuity_header": "X-Hermes-Session-Id",
+     "session_key_header": "X-Hermes-Session-Key"}
+ # /v1/capabilities "endpoints" table: name -> (method, path).
+@@ -85,6 +86,7 @@ _CAPABILITY_ENDPOINTS = (
+     ("run_approval", ("POST", "/v1/runs/{run_id}/approval")),
+     ("run_steer", ("POST", "/v1/runs/{run_id}/steer")),
+     ("run_stop", ("POST", "/v1/runs/{run_id}/stop")), ("skills", ("GET", "/v1/skills")),
++    ("commands", ("GET", "/v1/commands")),
+     ("toolsets", ("GET", "/v1/toolsets")), ("sessions", ("GET", "/api/sessions")),
+     ("session_create", ("POST", "/api/sessions")),
+     ("session", ("GET", "/api/sessions/{session_id}")),
+@@ -1584,6 +1586,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+             ("GET", "/v1/models", self._handle_models),
+             ("GET", "/api/model/options", self._handle_model_options),
+             ("GET", "/v1/capabilities", self._handle_capabilities),
++            ("GET", "/v1/commands", self._handle_commands),
++            ("POST", "/v1/commands/execute", self._handle_command_execute),
++            ("POST", "/v1/commands/prepare", self._handle_command_prepare),
+             # Browser-control (gated on browser.extension_control.enabled + API key): POST
+             # mints a short-lived ticket, WS consumes it; artifacts are bounded + scope-bound.
+             ("POST", "/v1/browser-control/register", self._handle_browser_control_register),
+@@ -2703,6 +2708,275 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+             headers={"X-Artifact-Sha256": receipt.sha256, "X-Artifact-Id": receipt.artifact_id,
+                      "Content-Disposition": f'attachment; filename="{receipt.filename}"'})
+ 
++    async def _handle_commands(self, request: "web.Request") -> "web.Response":
++        """GET /v1/commands — deterministic profile-scoped command catalog.
++
++        Hermes remains the owner of registry gates, plugins, active skills,
++        and multiplex profile scope. External clients can therefore build a
++        command palette without scraping help text or copying that policy.
++        """
++        auth_err = self._check_auth(request)
++        if auth_err:
++            return auth_err
++
++        try:
++            from agent.skill_commands import get_skill_commands
++            from hermes_cli.commands import (
++                COMMAND_REGISTRY,
++                _is_gateway_available,
++                _iter_plugin_command_entries,
++                _resolve_config_gates,
++                command_desktop_meta,
++            )
++            from tools.skills_tool import _find_all_skills
++
++            overrides = _resolve_config_gates()
++            commands: List[Dict[str, Any]] = []
++            agent_commands = {
++                "blueprint", "init", "learn", "moa", "queue", "refine", "steer",
++            }
++            for command in COMMAND_REGISTRY:
++                if not _is_gateway_available(command, overrides):
++                    continue
++                desktop_meta = command_desktop_meta(command)
++                commands.append({
++                    "name": command.name,
++                    "command": f"/{command.name}",
++                    "description": command.description,
++                    "category": command.category,
++                    "aliases": [f"/{alias}" for alias in command.aliases],
++                    "args_hint": command.args_hint,
++                    "subcommands": list(command.subcommands),
++                    "source": "core",
++                    "dispatch": "agent" if command.name in agent_commands else "gateway",
++                    "busy_policy": command.busy_policy,
++                    "requires_argument": command.args_hint.strip().startswith("<"),
++                    **desktop_meta,
++                })
++
++            for name, description, args_hint in _iter_plugin_command_entries():
++                commands.append({
++                    "name": name,
++                    "command": f"/{name}",
++                    "description": description,
++                    "category": "Plugins",
++                    "aliases": [],
++                    "args_hint": args_hint,
++                    "subcommands": [],
++                    "source": "plugin",
++                    "dispatch": "gateway",
++                    "busy_policy": "reject",
++                    "requires_argument": args_hint.strip().startswith("<"),
++                    "argument_mode": "text" if args_hint else None,
++                    "desktop": None,
++                })
++
++            skill_categories: Dict[str, str] = {}
++            packaged_skill_names = {
++                skill_md.parent.name.strip().casefold().replace("_", "-")
++                for root in (Path("/opt/hermes/skills"), Path("/opt/hermes/calliope/skills"))
++                if root.exists()
++                for skill_md in root.rglob("SKILL.md")
++            }
++            for skill in _find_all_skills(skip_disabled=False):
++                skill_name = str(skill.get("name") or "").strip().casefold()
++                if skill_name:
++                    skill_categories[skill_name] = str(
++                        skill.get("category") or "Skills"
++                    ).strip()
++            for slash_name, metadata in sorted(get_skill_commands().items()):
++                skill_name = str(metadata.get("name") or slash_name.lstrip("/"))
++                commands.append({
++                    "name": slash_name.lstrip("/"),
++                    "command": slash_name,
++                    "description": str(metadata.get("description") or "Invoke this skill"),
++                    "category": skill_categories.get(skill_name.casefold(), "Skills"),
++                    "aliases": [],
++                    "args_hint": "[request]",
++                    "subcommands": [],
++                    "source": "skill",
++                    "dispatch": "skill",
++                    "provenance": (
++                        "shipped"
++                        if skill_name.casefold().replace("_", "-") in packaged_skill_names
++                        else "workspace"
++                    ),
++                    "busy_policy": "reject",
++                    "requires_argument": False,
++                    "argument_mode": "text",
++                    "desktop": None,
++                })
++
++            commands.sort(key=lambda item: (
++                0 if item["source"] == "core" else 1,
++                str(item["category"]).casefold(),
++                str(item["name"]).casefold(),
++            ))
++            generation_source = json.dumps(
++                [
++                    (
++                        item["command"], item["description"], item["category"],
++                        item["source"], item["dispatch"], item["args_hint"], item["aliases"],
++                    )
++                    for item in commands
++                ],
++                ensure_ascii=False,
++                sort_keys=True,
++                separators=(",", ":"),
++            ).encode("utf-8")
++            generation = hashlib.sha256(generation_source).hexdigest()[:20]
++        except Exception:
++            logger.exception("GET /v1/commands failed")
++            return web.json_response(
++                _openai_error("Failed to enumerate commands", err_type="server_error"),
++                status=500,
++            )
++
++        return web.json_response({
++            "object": "hermes.command_catalog",
++            "profile": _api_request_profile.get() or "default",
++            "generation": generation,
++            "data": commands,
++        })
++
++    async def _handle_command_execute(self, request: "web.Request") -> "web.Response":
++        """Execute one gateway-owned slash command through Hermes dispatch."""
++        auth_err = self._check_auth(request)
++        if auth_err:
++            return auth_err
++        try:
++            body = await request.json()
++        except Exception:
++            return web.json_response(_openai_error("Invalid JSON"), status=400)
++        raw_command = str(body.get("command") or "").strip()
++        session_id = str(body.get("session_id") or "").strip()
++        user_id = str(body.get("user_id") or "calliope-admin").strip()
++        if not raw_command.startswith("/") or "\n" in raw_command:
++            return web.json_response(
++                _openai_error("A single slash command is required", code="invalid_command"),
++                status=400,
++            )
++        from hermes_cli.commands import resolve_command
++
++        typed_name = raw_command.split(maxsplit=1)[0].lstrip("/").split("@", 1)[0]
++        definition = resolve_command(typed_name)
++        if definition is None:
++            return web.json_response(
++                _openai_error("Unknown gateway command", code="unknown_command"),
++                status=404,
++            )
++        if definition.name in {
++            "blueprint", "init", "learn", "moa", "queue", "refine", "steer",
++        }:
++            return web.json_response(
++                _openai_error(
++                    "This command requires an agent turn",
++                    code="command_requires_agent",
++                ),
++                status=409,
++            )
++        runner = getattr(self, "gateway_runner", None)
++        if runner is None:
++            return web.json_response(
++                _openai_error("Gateway command dispatcher is unavailable", err_type="server_error"),
++                status=503,
++            )
++        try:
++            from gateway.config import Platform
++            from gateway.platforms.base import MessageEvent, MessageType
++            from gateway.session import SessionSource
++
++            profile = _api_request_profile.get()
++            source = SessionSource(
++                platform=Platform.API_SERVER,
++                chat_id=f"calliope:{session_id or 'command'}",
++                chat_type="dm",
++                user_id=user_id,
++                user_name=str(body.get("user_name") or "Calliope administrator"),
++                profile=profile,
++            )
++            if session_id:
++                entry = await runner.async_session_store.get_or_create_session(source)
++                if entry.session_id != session_id:
++                    switched = await asyncio.to_thread(
++                        runner.session_store.switch_session,
++                        entry.session_key,
++                        session_id,
++                    )
++                    if switched is None:
++                        raise RuntimeError("Could not bind the command to its Hermes session")
++            event = MessageEvent(
++                text=raw_command,
++                message_type=MessageType.COMMAND,
++                user_id=user_id,
++                user_name=str(body.get("user_name") or "Calliope administrator"),
++                source=source,
++                internal=True,
++            )
++            output = await runner._handle_message(event)
++        except Exception as exc:
++            logger.exception("POST /v1/commands/execute failed")
++            return web.json_response(
++                _openai_error(str(exc)[:500], err_type="server_error"),
++                status=500,
++            )
++        return web.json_response({
++            "object": "hermes.command_result",
++            "profile": _api_request_profile.get() or "default",
++            "command": f"/{definition.name}",
++            "output": str(output or "Command completed."),
++            "agent_run": False,
++        })
++
++    async def _handle_command_prepare(self, request: "web.Request") -> "web.Response":
++        """Resolve an active skill slash command before starting an API run."""
++        auth_err = self._check_auth(request)
++        if auth_err:
++            return auth_err
++        try:
++            body = await request.json()
++        except Exception:
++            return web.json_response(_openai_error("Invalid JSON"), status=400)
++        raw_command = str(body.get("command") or "").strip()
++        if not raw_command.startswith("/") or "\n" in raw_command:
++            return web.json_response(
++                _openai_error("A single slash command is required", code="invalid_command"),
++                status=400,
++            )
++        typed_name, _, instruction = raw_command.partition(" ")
++        typed_name = typed_name.lstrip("/").split("@", 1)[0]
++        try:
++            from agent.skill_commands import (
++                build_skill_invocation_message,
++                resolve_skill_command_key,
++            )
++            command_key = resolve_skill_command_key(typed_name)
++            if command_key is None:
++                return web.json_response(
++                    _openai_error("This is not an active skill command", code="skill_not_active"),
++                    status=404,
++                )
++            prepared = build_skill_invocation_message(
++                command_key,
++                instruction.strip(),
++                task_id=str(body.get("session_id") or "calliope"),
++            )
++            if not prepared:
++                raise RuntimeError("Hermes could not load the active skill")
++        except Exception as exc:
++            logger.exception("POST /v1/commands/prepare failed")
++            return web.json_response(
++                _openai_error(str(exc)[:500], err_type="server_error"),
++                status=500,
++            )
++        return web.json_response({
++            "object": "hermes.prepared_command",
++            "profile": _api_request_profile.get() or "default",
++            "command": f"/{typed_name}",
++            "input": prepared,
++            "agent_run": True,
++        })
++
+     @_require_auth
+     async def _handle_skills(self, request: "web.Request") -> "web.Response":
+         """GET /v1/skills — deterministic JSON listing of installed skills (name, description,

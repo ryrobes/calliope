@@ -1,0 +1,20 @@
+# Optional standalone alternative to installing builtin/clover-analytics through Warren.
+# Configure Clover with --analytics-worker http://clover-analytics:8080.
+services:
+  clover-analytics:
+    image: calliope-clover-analytics:v1
+    build: ../capabilities/templates/clover-analytics
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR}/client.env
+        format: raw
+    environment:
+      ANALYTICS_THREADS: ${CLOVER_ANALYTICS_THREADS:-2}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

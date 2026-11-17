@@ -1,0 +1,1034 @@
+# Canonical shipping stack. Build definitions live in release/services.json.
+name: ${COMPOSE_PROJECT_NAME:-calliope}
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-calliope}
+services:
+  bootstrap:
+    command:
+    - rvbbit-uber-bootstrap
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      warren:
+        condition: service_started
+        required: true
+      clover:
+        condition: service_healthy
+    environment:
+      RVBBIT_CLOVER_INSTALL_SOURCE: shipped
+      RVBBIT_CLOVER_KEY: ${RVBBIT_CLOVER_KEY:?Provision RVBBIT_CLOVER_KEY using ./configure.py}
+      RVBBIT_CLOVER_OPENAI_BASE_URL: ${RVBBIT_CLOVER_OPENAI_BASE_URL:-http://clover:8090/v1}
+      RVBBIT_CLOVER_REQUIRED: 'true'
+      RVBBIT_CLOVER_REQUIRED_MODEL: ${RVBBIT_CLOVER_REQUIRED_MODEL:-calliope}
+      RVBBIT_CLOVER_VERIFY_REMOTE: 'false'
+      RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      RVBBIT_HINDSIGHT_ENDPOINT: http://hindsight:8888
+      RVBBIT_HOSTED_SERVICES: 'true'
+      RVBBIT_LENS_BOOTSTRAP_CONNECTION: ${RVBBIT_LENS_BOOTSTRAP_CONNECTION:-true}
+      RVBBIT_LENS_CONNECTIONS_PATH: /var/lib/rvbbit/lens/connections.json
+      RVBBIT_LENS_CONNECTION_DATABASE: ${POSTGRES_DB:-rvbbit}
+      RVBBIT_LENS_CONNECTION_HOST: ${RVBBIT_LENS_CONNECTION_HOST:-postgres}
+      RVBBIT_LENS_CONNECTION_ID: ${RVBBIT_LENS_CONNECTION_ID:-rvbbit-uber}
+      RVBBIT_LENS_CONNECTION_LABEL: ${RVBBIT_LENS_CONNECTION_LABEL:-Calliope}
+      RVBBIT_LENS_CONNECTION_PASSWORD: ${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}
+      RVBBIT_LENS_CONNECTION_PORT: ${RVBBIT_LENS_CONNECTION_PORT:-5432}
+      RVBBIT_LENS_CONNECTION_USER: ${RVBBIT_LENS_CONNECTION_USER:-postgres}
+      RVBBIT_UBER_BOOTSTRAP_CAPABILITIES: ${RVBBIT_UBER_BOOTSTRAP_CAPABILITIES:-runtimes/python-runtime,runtimes/mcp-gateway,data/dlt-mirror}
+      RVBBIT_UBER_BOOTSTRAP_POLL_SECONDS: ${RVBBIT_UBER_BOOTSTRAP_POLL_SECONDS:-2}
+      RVBBIT_UBER_BOOTSTRAP_TIMEOUT_SECONDS: ${RVBBIT_UBER_BOOTSTRAP_TIMEOUT_SECONDS:-600}
+      RVBBIT_UBER_SKIP_BOOTSTRAP: ${RVBBIT_UBER_SKIP_BOOTSTRAP:-false}
+      RVBBIT_UBER_TARGET_SELECTOR: ${RVBBIT_UBER_TARGET_SELECTOR:-}
+      WARREN_NODE: ${WARREN_NODE:-compose-warren}
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      RVBBIT_CLOVER_CATALOG_SQL: /etc/clover/catalog.sql
+      RVBBIT_RELEASE_CATALOG_SQL: /etc/calliope/capabilities.sql
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: 'no'
+    volumes:
+    - source: rvbbit_lens
+      target: /var/lib/rvbbit/lens
+      type: volume
+      volume: {}
+    - type: bind
+      source: ./state/clover/catalog.sql
+      target: /etc/clover/catalog.sql
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./config/inference.sql
+      target: /etc/clover/inference.sql
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./config/capabilities.sql
+      target: /etc/calliope/capabilities.sql
+      read_only: true
+      bind:
+        create_host_path: false
+  calliope:
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CALLIOPE_MEDIA_LEDGER_DIR: /app/data/media-ledger
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GMEET_CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+      LENS_PUBLIC_URL: ${LENS_PUBLIC_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RVBBIT_CLOVER_KEY: ${RVBBIT_CLOVER_KEY:?Provision RVBBIT_CLOVER_KEY using ./configure.py}
+      RVBBIT_CLOVER_OPENAI_BASE_URL: ${RVBBIT_CLOVER_OPENAI_BASE_URL:-http://clover:8090/v1}
+      RVBBIT_CLOVER_REQUIRED_MODEL: ${RVBBIT_CLOVER_REQUIRED_MODEL:-calliope}
+      RVBBIT_GATEWAY_TOKEN: ${RVBBIT_GATEWAY_TOKEN:?Provision RVBBIT_GATEWAY_TOKEN using ./configure.py}
+      RVBBIT_MIRROR_TOKEN: ${RVBBIT_MIRROR_TOKEN:?Provision RVBBIT_MIRROR_TOKEN using ./configure.py}
+      WAREHOUSE_ALLOWED_EMAILS: ${WAREHOUSE_ALLOWED_EMAILS:?Provision one bootstrap administrator email using ./configure.py}
+      WAREHOUSE_AUTH: ${WAREHOUSE_AUTH:-shared}
+      WAREHOUSE_BRAIN_IMPORT_ROOTS: ${WAREHOUSE_BRAIN_IMPORT_ROOTS:-/opt/data/workspace:/opt/data/outputs:/app/data/brain-imports}
+      WAREHOUSE_BUSINESS_TOPOLOGY_ASSEMBLY_BACKEND: ${WAREHOUSE_BUSINESS_TOPOLOGY_ASSEMBLY_BACKEND:-}
+      WAREHOUSE_BUSINESS_TOPOLOGY_ASSEMBLY_MODEL: ${WAREHOUSE_BUSINESS_TOPOLOGY_ASSEMBLY_MODEL:-}
+      WAREHOUSE_BUSINESS_TOPOLOGY_DIR: /app/data/business-topology
+      WAREHOUSE_BUSINESS_TOPOLOGY_DSN: ${WAREHOUSE_BUSINESS_TOPOLOGY_DSN:-}
+      WAREHOUSE_BUSINESS_TOPOLOGY_GLOBAL_OVERLAP_POPULATIONS: ${WAREHOUSE_BUSINESS_TOPOLOGY_GLOBAL_OVERLAP_POPULATIONS:-512}
+      WAREHOUSE_BUSINESS_TOPOLOGY_GLOBAL_OVERLAP_TIMEOUT_MS: ${WAREHOUSE_BUSINESS_TOPOLOGY_GLOBAL_OVERLAP_TIMEOUT_MS:-120000}
+      WAREHOUSE_BUSINESS_TOPOLOGY_JUDGMENT_BACKEND: ${WAREHOUSE_BUSINESS_TOPOLOGY_JUDGMENT_BACKEND:-}
+      WAREHOUSE_BUSINESS_TOPOLOGY_JUDGMENT_MODEL: ${WAREHOUSE_BUSINESS_TOPOLOGY_JUDGMENT_MODEL:-}
+      WAREHOUSE_BUSINESS_TOPOLOGY_LEASE_SECONDS: ${WAREHOUSE_BUSINESS_TOPOLOGY_LEASE_SECONDS:-300}
+      WAREHOUSE_BUSINESS_TOPOLOGY_OVERLAP_PROBE_BATCH_SIZE: ${WAREHOUSE_BUSINESS_TOPOLOGY_OVERLAP_PROBE_BATCH_SIZE:-100}
+      WAREHOUSE_BUSINESS_TOPOLOGY_OVERLAP_PROBE_PAIRS: ${WAREHOUSE_BUSINESS_TOPOLOGY_OVERLAP_PROBE_PAIRS:-1000}
+      WAREHOUSE_BUSINESS_TOPOLOGY_POLL_SECONDS: ${WAREHOUSE_BUSINESS_TOPOLOGY_POLL_SECONDS:-2}
+      WAREHOUSE_BUSINESS_TOPOLOGY_TARGETED_OVERLAP_TIMEOUT_MS: ${WAREHOUSE_BUSINESS_TOPOLOGY_TARGETED_OVERLAP_TIMEOUT_MS:-30000}
+      WAREHOUSE_BUSINESS_TOPOLOGY_WORKER: ${WAREHOUSE_BUSINESS_TOPOLOGY_WORKER:-1}
+      WAREHOUSE_CALLIOPE_DIR: /app/data/calliope
+      WAREHOUSE_CALLIOPE_EXPORT_ROOTS: /opt/data
+      WAREHOUSE_CALLIOPE_MAX_AUDIO_BYTES: ${WAREHOUSE_CALLIOPE_MAX_AUDIO_BYTES:-12582912}
+      WAREHOUSE_CALLIOPE_MAX_AUDIO_SECONDS: ${WAREHOUSE_CALLIOPE_MAX_AUDIO_SECONDS:-600}
+      WAREHOUSE_CALLIOPE_MAX_EXPORT_BYTES: ${WAREHOUSE_CALLIOPE_MAX_EXPORT_BYTES:-134217728}
+      WAREHOUSE_CALLIOPE_STT_KEYWORDS: ${WAREHOUSE_CALLIOPE_STT_KEYWORDS:-}
+      WAREHOUSE_CALLIOPE_STT_LANGUAGES: ${WAREHOUSE_CALLIOPE_STT_LANGUAGES:-}
+      WAREHOUSE_CALLIOPE_STYLE_ALLOW_PRIVATE_URLS: ${WAREHOUSE_CALLIOPE_STYLE_ALLOW_PRIVATE_URLS:-false}
+      WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_MODEL: ${WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_MODEL:-eleven_v3}
+      WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_STABILITY: ${WAREHOUSE_CALLIOPE_TTS_EXPRESSIVE_STABILITY:-0.3}
+      WAREHOUSE_CALLIOPE_TTS_FAST_MODEL: ${WAREHOUSE_CALLIOPE_TTS_FAST_MODEL:-eleven_flash_v2_5}
+      WAREHOUSE_CALLIOPE_TTS_PREPARE_TIMEOUT_SECONDS: ${WAREHOUSE_CALLIOPE_TTS_PREPARE_TIMEOUT_SECONDS:-120}
+      WAREHOUSE_CALLIOPE_TTS_SAMPLE_RATE: ${WAREHOUSE_CALLIOPE_TTS_SAMPLE_RATE:-24000}
+      WAREHOUSE_DLT_MIRROR_URL: ${WAREHOUSE_DLT_MIRROR_URL:-}
+      WAREHOUSE_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      WAREHOUSE_FILE_IMPORT_ROOTS: ${WAREHOUSE_FILE_IMPORT_ROOTS:-/opt/data/workspace:/opt/data/outputs:/app/data/brain-imports}
+      WAREHOUSE_GOOGLE_CLIENT_ID: ${WAREHOUSE_GOOGLE_CLIENT_ID:-}
+      WAREHOUSE_GOOGLE_CLIENT_SECRET: ${WAREHOUSE_GOOGLE_CLIENT_SECRET:-}
+      WAREHOUSE_GOOGLE_HD: ${WAREHOUSE_GOOGLE_HD:-}
+      WAREHOUSE_GOOGLE_ONLY: ${WAREHOUSE_GOOGLE_ONLY:-}
+      WAREHOUSE_GOOGLE_PICKER_API_KEY: ${WAREHOUSE_GOOGLE_PICKER_API_KEY:-}
+      WAREHOUSE_GOOGLE_PICKER_APP_ID: ${WAREHOUSE_GOOGLE_PICKER_APP_ID:-}
+      WAREHOUSE_HERMES_API_KEY: ${WAREHOUSE_HERMES_API_KEY:?Provision WAREHOUSE_HERMES_API_KEY using ./configure.py}
+      WAREHOUSE_HERMES_MCP_CALLER: ${WAREHOUSE_HERMES_MCP_CALLER:-}
+      WAREHOUSE_HERMES_MCP_KEY: ${WAREHOUSE_HERMES_MCP_KEY:?Provision WAREHOUSE_HERMES_MCP_KEY using ./configure.py}
+      WAREHOUSE_HERMES_MEMORY_KEY: ${WAREHOUSE_HERMES_MEMORY_KEY:-company}
+      WAREHOUSE_HERMES_URL: http://hermes:8642
+      WAREHOUSE_JWT_SECRET: ${WAREHOUSE_JWT_SECRET:?Provision WAREHOUSE_JWT_SECRET using ./configure.py}
+      WAREHOUSE_LIVE_APP_CAPTURE_DIR: /app/data/captures
+      WAREHOUSE_LOGIN_PASSWORD: ${WAREHOUSE_LOGIN_PASSWORD:-}
+      WAREHOUSE_LOGIN_UI: lens
+      WAREHOUSE_MCP_KEY: ${WAREHOUSE_MCP_KEY:?Provision WAREHOUSE_MCP_KEY using ./configure.py}
+      WAREHOUSE_MCP_PORT: '8765'
+      WAREHOUSE_MCP_STATIC_CALLER: ${WAREHOUSE_MCP_STATIC_CALLER:-}
+      WAREHOUSE_PG_LOGIN_ROLE: ${WAREHOUSE_PG_LOGIN_ROLE:-rvbbit_users}
+      WAREHOUSE_PUBLIC_URL: ${WAREHOUSE_PUBLIC_URL:?Provision the browser-facing origin using ./configure.py}
+      WAREHOUSE_SEMANTIC_ENRICHMENT: ${WAREHOUSE_SEMANTIC_ENRICHMENT:-1}
+      WAREHOUSE_SEMANTIC_ENRICH_MAX_ATTEMPTS: ${WAREHOUSE_SEMANTIC_ENRICH_MAX_ATTEMPTS:-3}
+      WAREHOUSE_SEMANTIC_ENRICH_MODEL: ${WAREHOUSE_SEMANTIC_ENRICH_MODEL:-calliope}
+      WAREHOUSE_SEMANTIC_ENRICH_RENDER_WAIT_MS: ${WAREHOUSE_SEMANTIC_ENRICH_RENDER_WAIT_MS:-3000}
+      WAREHOUSE_SEMANTIC_ENRICH_SOURCE_CHARS: ${WAREHOUSE_SEMANTIC_ENRICH_SOURCE_CHARS:-180000}
+      WAREHOUSE_STATE_FILE: /app/data/oauth_state.json
+      WAREHOUSE_TEAM_BOOTSTRAP_ADMINS: ${WAREHOUSE_TEAM_BOOTSTRAP_ADMINS:?Provision the bootstrap Admins Team email
+        using ./configure.py}
+      CALLIOPE_COMPUTER_DEBUG: ${CALLIOPE_COMPUTER_DEBUG:-false}
+      CALLIOPE_COMPUTER_ENABLED: ${CALLIOPE_COMPUTER_ENABLED:-${CALLIOPE_COMPUTER_DEBUG:-false}}
+      CALLIOPE_DESKTOP_VNC_URL: ${CALLIOPE_DESKTOP_VNC_URL:-https://desktop:6901}
+      CALLIOPE_EVIDENCE_RANKING_MODE: ${CALLIOPE_EVIDENCE_RANKING_MODE:-select}
+      CALLIOPE_HINDSIGHT_METADATA_ONLY: 'true'
+      CALLIOPE_MEMORY_EXTRACTOR: ${CALLIOPE_MEMORY_EXTRACTOR:-calliope}
+      CALLIOPE_MEMORY_INFERENCE_BASE_URL: ${RVBBIT_CLOVER_OPENAI_BASE_URL:-http://clover:8090/v1}
+      CALLIOPE_MEMORY_SCOPE: ${CALLIOPE_MEMORY_SCOPE:-shared}
+      CALLIOPE_SPECIALIST_FANOUT_CONCURRENCY: ${CALLIOPE_SPECIALIST_FANOUT_CONCURRENCY:-4}
+      CALLIOPE_SPECIALIST_MODEL_SHADOW: ${CALLIOPE_SPECIALIST_MODEL_SHADOW:-off}
+      CALLIOPE_SPECIALIST_MODEL_SHADOW_OWNERS: ${CALLIOPE_SPECIALIST_MODEL_SHADOW_OWNERS:-}
+      CALLIOPE_SPECIALIST_MODEL_SHADOW_SESSIONS: ${CALLIOPE_SPECIALIST_MODEL_SHADOW_SESSIONS:-}
+      CALLIOPE_STAGE_CONTEXT_MODE: ${CALLIOPE_STAGE_CONTEXT_MODE:-off}
+      CALLIOPE_STAGE_CONTEXT_OWNERS: ${CALLIOPE_STAGE_CONTEXT_OWNERS:-}
+      CALLIOPE_STAGE_CONTEXT_SESSIONS: ${CALLIOPE_STAGE_CONTEXT_SESSIONS:-}
+      WAREHOUSE_CALLIOPE_DEBUG_TOKEN_METER: ${WAREHOUSE_CALLIOPE_DEBUG_TOKEN_METER:-true}
+      WAREHOUSE_CALLIOPE_DESKTOP_CONTROL_KEY: ${CALLIOPE_DESKTOP_CONTROL_KEY:-}
+      WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REF: ${CALLIOPE_DESKTOP_IMAGE_REF:-${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0-rc.5}}
+      WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REVISION: ${CALLIOPE_DESKTOP_IMAGE_REVISION:-${CALLIOPE_REVISION:-unknown}}
+      WAREHOUSE_CALLIOPE_DESKTOP_STORAGE: /var/lib/calliope-desktop
+      WAREHOUSE_CALLIOPE_DESKTOP_URL: ${CALLIOPE_DESKTOP_URL:-http://desktop:9000}
+      WAREHOUSE_CALLIOPE_DESKTOP_VNC_BASIC: ${CALLIOPE_DESKTOP_VNC_BASIC:-}
+      WAREHOUSE_CALLIOPE_DESKTOP_VNC_VIEW_BASIC: ${CALLIOPE_DESKTOP_VNC_VIEW_BASIC:-}
+      WAREHOUSE_CALLIOPE_DREAM_HERMES_TIMEOUT_SECONDS: ${WAREHOUSE_CALLIOPE_DREAM_HERMES_TIMEOUT_SECONDS:-900}
+      WAREHOUSE_CALLIOPE_TTS_HUTCH_BASE_URL: ${WAREHOUSE_CALLIOPE_TTS_HUTCH_BASE_URL:-http://clover:8090/v1}
+      WAREHOUSE_CALLIOPE_TTS_HUTCH_KEY: ${WAREHOUSE_CALLIOPE_TTS_HUTCH_KEY:-}
+      WAREHOUSE_CALLIOPE_TTS_HUTCH_MODEL: ${WAREHOUSE_CALLIOPE_TTS_HUTCH_MODEL:-calliope-voice}
+      WAREHOUSE_CALLIOPE_TTS_PROVIDER: ${WAREHOUSE_CALLIOPE_TTS_PROVIDER:-hutch}
+      WAREHOUSE_CONTROL_WORKERS: ${WAREHOUSE_CONTROL_WORKERS:-4}
+      WAREHOUSE_DASH_QUERY_CACHE_MAX_ENTRIES: ${WAREHOUSE_DASH_QUERY_CACHE_MAX_ENTRIES:-512}
+      WAREHOUSE_DASH_QUERY_CACHE_TTL_SECONDS: ${WAREHOUSE_DASH_QUERY_CACHE_TTL_SECONDS:-90}
+      WAREHOUSE_DASH_QUERY_WORKERS: ${WAREHOUSE_DASH_QUERY_WORKERS:-8}
+      WAREHOUSE_HERMES_CONTROL_URL: http://hermes:8643
+      WAREHOUSE_HERMES_INFERENCE_TIMEOUT_SECONDS: ${WAREHOUSE_HERMES_INFERENCE_TIMEOUT_SECONDS:-900}
+      WAREHOUSE_HERMES_SKILLS_ROOT: /opt/data/skills
+      WAREHOUSE_MAPBOX_STYLE_DARK: ${WAREHOUSE_MAPBOX_STYLE_DARK:-mapbox://styles/mapbox/dark-v11}
+      WAREHOUSE_MAPBOX_STYLE_LIGHT: ${WAREHOUSE_MAPBOX_STYLE_LIGHT:-mapbox://styles/mapbox/light-v11}
+      WAREHOUSE_MAPBOX_TOKEN: ${WAREHOUSE_MAPBOX_TOKEN:-}
+      WAREHOUSE_MEANING_ENRICH: ${WAREHOUSE_MEANING_ENRICH:-1}
+      WAREHOUSE_MEANING_ENRICH_BACKEND: ${WAREHOUSE_MEANING_ENRICH_BACKEND:-}
+      WAREHOUSE_MEANING_ENRICH_BUDGET_USD: ${WAREHOUSE_MEANING_ENRICH_BUDGET_USD:-5}
+      WAREHOUSE_MEANING_ENRICH_MODEL: ${WAREHOUSE_MEANING_ENRICH_MODEL:-calliope-sol}
+      WAREHOUSE_MEANING_NARRATIVE_WORKER: ${WAREHOUSE_MEANING_NARRATIVE_WORKER:-1}
+      WAREHOUSE_NATIVE_PUBLIC_URL: ${WAREHOUSE_NATIVE_PUBLIC_URL:-}
+      WAREHOUSE_SQL_MULTI_WORKERS: ${WAREHOUSE_SQL_MULTI_WORKERS:-6}
+      CALLIOPE_OPENROUTER_KEY_FILE: /run/clover-credentials/openrouter.key
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      CALLIOPE_COMPUTER_CHOOSER_BASE: http://clover:8090
+      CLOVER_DECISION_MODEL: typesafe/jev-1.13
+      CALLIOPE_UI_STUDIO_URL: http://ui-studio:18456
+      CALLIOPE_UI_STUDIO_TOKEN_FILE: /run/secrets/studio-token
+    extra_hosts:
+    - host.docker.internal:host-gateway
+    init: true
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-server:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - source: rvbbit_warehouse_mcp
+      target: /app/data
+      type: volume
+      volume: {}
+    - read_only: true
+      source: rvbbit_hermes
+      target: /opt/data
+      type: volume
+      volume: {}
+    - read_only: true
+      source: rvbbit_desktop
+      target: /var/lib/calliope-desktop
+      type: volume
+      volume: {}
+    - type: bind
+      source: ./state/clover/credentials
+      target: /run/clover-credentials
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./state/studio-token
+      target: /run/secrets/studio-token
+      read_only: true
+      bind:
+        create_host_path: false
+  datarabbit:
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DOCKER_HOST: ${RVBBIT_DOCKER_HOST:-unix:///var/run/docker.sock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GMEET_ACL_MODE: ${GMEET_ACL_MODE:-calendar_invitees_strict}
+      GMEET_ADMIN_SUBJECT: ${GMEET_ADMIN_SUBJECT:-}
+      GMEET_AUTO_TRANSCRIBE: ${GMEET_AUTO_TRANSCRIBE:-false}
+      GMEET_AUTO_TRANSCRIBE_DAYS: ${GMEET_AUTO_TRANSCRIBE_DAYS:-7}
+      GMEET_CALENDAR_LOOKUP: ${GMEET_CALENDAR_LOOKUP:-true}
+      GMEET_CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+      GMEET_DISCOVER_USERS: ${GMEET_DISCOVER_USERS:-true}
+      GMEET_DOMAIN: ${GMEET_DOMAIN:-}
+      GMEET_DRIVE_ACL: ${GMEET_DRIVE_ACL:-true}
+      GMEET_LOOKBACK_DAYS: ${GMEET_LOOKBACK_DAYS:-29}
+      GMEET_MAX_SUBJECTS: ${GMEET_MAX_SUBJECTS:-500}
+      GMEET_SA_KEY_FILE: /run/secrets/gmeet-service-account.json
+      GMEET_SUBJECTS: ${GMEET_SUBJECTS:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RVBBIT_APP_BASE: ${WAREHOUSE_PUBLIC_URL:-}
+      RVBBIT_APP_BASE_INTERNAL: http://calliope:8765
+      RVBBIT_AUTH_INTERNAL: http://calliope:8765
+      RVBBIT_CAPABILITY_CLI: ${RVBBIT_CAPABILITY_CLI:-/usr/share/rvbbit/capabilities/tools/rvbbit-capability}
+      RVBBIT_CAPABILITY_ROOT: ${RVBBIT_CAPABILITY_ROOT:-/usr/share/rvbbit/capabilities}
+      RVBBIT_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-calliope}
+      RVBBIT_LENS_HOME: /data
+      RVBBIT_LENS_SEED_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      RVBBIT_LOCAL_WORK_ROOT: ${RVBBIT_LOCAL_WORK_ROOT:-/data}
+      RVBBIT_MODE: burrow
+      WAREHOUSE_MCP_KEY: ${WAREHOUSE_MCP_KEY:-}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-datarabbit:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - source: rvbbit_lens
+      target: /data
+      type: volume
+      volume: {}
+    - source: ${RVBBIT_DOCKER_SOCKET:-/var/run/docker.sock}
+      target: /var/run/docker.sock
+      type: bind
+      bind:
+        create_host_path: false
+  desktop:
+    environment:
+      CALLIOPE_BROWSER_RENDERER: ${CALLIOPE_BROWSER_RENDERER:-software}
+      CALLIOPE_COMPUTER_DECISION_URL: ${CALLIOPE_COMPUTER_DECISION_URL:-http://calliope:8765/api/calliope/computer/decide}
+      CALLIOPE_DESKTOP_CONTROL_KEY: ${CALLIOPE_DESKTOP_CONTROL_KEY:?Run configure.py}
+      CALLIOPE_DESKTOP_STORAGE: /var/lib/calliope-desktop
+      MAX_FRAME_RATE: ${CALLIOPE_DESKTOP_MAX_FRAME_RATE:-24}
+      VNC_PW: ${CALLIOPE_DESKTOP_VNC_PASSWORD:?Run configure.py}
+      VNC_RESOLUTION: ${CALLIOPE_DESKTOP_RESOLUTION:-1280x720}
+      VNC_VIEW_ONLY_PW: ${CALLIOPE_DESKTOP_VNC_VIEW_PASSWORD:-}
+    expose:
+    - '6901'
+    - '9000'
+    healthcheck:
+      interval: 5s
+      retries: 60
+      start_period: 20s
+      test:
+      - CMD-SHELL
+      - python3 -c "import json,os,urllib.request; r=urllib.request.Request('http://127.0.0.1:9000/health',headers={'X-Calliope-Desktop-Key':os.environ['CALLIOPE_DESKTOP_CONTROL_KEY']});
+        assert json.load(urllib.request.urlopen(r,timeout=3))['ready']"
+      timeout: 5s
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    profiles:
+    - computer
+    restart: unless-stopped
+    shm_size: 1gb
+    stop_grace_period: 30s
+    volumes:
+    - source: rvbbit_desktop
+      target: /var/lib/calliope-desktop
+      type: volume
+      volume: {}
+    - source: rvbbit_desktop_home
+      target: /home/kasm-user
+      type: volume
+      volume: {}
+  doc-extract:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-doc-extract:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - source: rvbbit_staging
+      target: /staging
+      type: volume
+      volume: {}
+  duck:
+    command:
+    - sh
+    - -ec
+    - "until pg_isready -h postgres -p 5432 -U postgres -d \"$${POSTGRES_DB:-rvbbit}\"; do\n  sleep 2\ndone\nexec\
+      \ rvbbit-duck \\\n  --serve-derived-socket \\\n  --workers \"$${RVBBIT_DUCK_WORKERS:-4}\" \\\n  --engine \"\
+      ${RVBBIT_DUCK_ENGINE:-duck}\" \\\n  --layout \"${RVBBIT_DUCK_LAYOUT:-vortex}\" \\\n  --dsn \"$${RVBBIT_DSN}\"\
+      \ \\\n  --threads \"$${RVBBIT_DUCK_THREADS:-4}\" \\\n  --pgdata-prefix \"$${RVBBIT_PGDATA_PREFIX:-/var/lib/postgresql}\"\
+      \ \\\n  --visible-pgdata-prefix \"$${RVBBIT_VISIBLE_PGDATA_PREFIX:-/var/lib/postgresql}\"\n"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rvbbit}
+      RVBBIT_ARROW_IPC_DIR: ${RVBBIT_ARROW_IPC_DIR:-/tmp/rvbbit-arrow-ipc}
+      RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      RVBBIT_DUCK_BACKEND_SHARED_DIR: ${RVBBIT_DUCK_BACKEND_SHARED_DIR:-/run/rvbbit/duck}
+      RVBBIT_DUCK_BIN: ${RVBBIT_DUCK_BIN:-/usr/local/bin/rvbbit-duck}
+      RVBBIT_DUCK_BROKER_QUEUE: ${RVBBIT_DUCK_BROKER_QUEUE:-1024}
+      RVBBIT_DUCK_CONTROL_LOCK_TIMEOUT_MS: ${RVBBIT_DUCK_CONTROL_LOCK_TIMEOUT_MS:-500}
+      RVBBIT_DUCK_CONTROL_STATEMENT_TIMEOUT_MS: ${RVBBIT_DUCK_CONTROL_STATEMENT_TIMEOUT_MS:-30000}
+      RVBBIT_DUCK_MAX_REQUEST_BYTES: ${RVBBIT_DUCK_MAX_REQUEST_BYTES:-16777216}
+      RVBBIT_DUCK_NODE_ID: ${RVBBIT_DUCK_NODE_ID:-compose-duck}
+      RVBBIT_DUCK_SOCKET_IO_TIMEOUT_S: ${RVBBIT_DUCK_SOCKET_IO_TIMEOUT_S:-30}
+      RVBBIT_DUCK_THREADS: ${RVBBIT_DUCK_THREADS:-4}
+      RVBBIT_DUCK_WORKERS: ${RVBBIT_DUCK_BACKEND_SHARED_WORKERS:-4}
+      RVBBIT_PGDATA_PREFIX: ${RVBBIT_PGDATA_PREFIX:-/var/lib/postgresql}
+      RVBBIT_VISIBLE_PGDATA_PREFIX: ${RVBBIT_VISIBLE_PGDATA_PREFIX:-/var/lib/postgresql}
+    healthcheck:
+      interval: 5s
+      retries: 30
+      test:
+      - CMD-SHELL
+      - workers=$${RVBBIT_DUCK_WORKERS:-4}; live=$$(grep -l '^rvbbit-duck-wor' /proc/1/task/*/comm 2>/dev/null |
+        wc -l); test "$$live" -ge "$$workers" && find /run/rvbbit/duck -maxdepth 1 -type s -name 'rvbbit-duck-*.sock'
+        | grep -q .
+      timeout: 3s
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - source: rvbbit_duck_run
+      target: /run/rvbbit
+      type: volume
+      volume: {}
+    - source: rvbbit_duck_arrow_ipc
+      target: /tmp/rvbbit-arrow-ipc
+      type: volume
+      volume: {}
+    - read_only: true
+      source: rvbbit_pgdata
+      target: /var/lib/postgresql
+      type: volume
+      volume: {}
+  hermes:
+    command:
+    - calliope-hermes-supervisor
+    depends_on:
+      calliope:
+        condition: service_healthy
+        required: true
+      hindsight:
+        condition: service_started
+        required: true
+    environment:
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_KEY: ${WAREHOUSE_HERMES_API_KEY:?Provision WAREHOUSE_HERMES_API_KEY using ./configure.py}
+      API_SERVER_PORT: '8642'
+      BU_CDP_URL: http://127.0.0.1:9222
+      CALLIOPE_BROWSER_INTERNAL_ORIGIN: http://origin:80
+      CALLIOPE_BROWSER_PUBLIC_URL: ${WAREHOUSE_PUBLIC_URL}
+      CALLIOPE_MODEL_CONTEXT_LENGTH: ${CALLIOPE_MODEL_CONTEXT_LENGTH:-262144}
+      CALLIOPE_MODEL_MAX_TOKENS: ${CALLIOPE_MODEL_MAX_TOKENS:-32768}
+      HERMES_ENVIRONMENT_HINT: Calliope is the appliance UI. Company data is local in RVBBIT Postgres; remote source
+        credentials are used only by the dlt mirror controller. Dashboard scratch files and the Warehouse source_path
+        handoff both use /opt/data; a local HTML path is never the finished deliverable. Save user-facing files
+        under /opt/data/outputs for automatic Stage publication; keep tests and working files outside outputs/exports.
+        Markdown file links and MEDIA attachments in your reply also publish files.
+      HERMES_GID: ${HERMES_GID:-10000}
+      HERMES_UID: ${HERMES_UID:-10000}
+      HINDSIGHT_API_URL: http://hindsight:8888
+      HINDSIGHT_MODE: local_external
+      HINDSIGHT_TIMEOUT: ${HINDSIGHT_TIMEOUT:-120}
+      # shared: one memory per agent across every conversation; audience: recall only
+      # what everyone in the conversation could see (memories always carry the tags).
+      CALLIOPE_MEMORY_SCOPE: ${CALLIOPE_MEMORY_SCOPE:-shared}
+      RVBBIT_CLOVER_KEY: ${RVBBIT_CLOVER_KEY:?Provision RVBBIT_CLOVER_KEY using ./configure.py}
+      RVBBIT_CLOVER_OPENAI_BASE_URL: ${RVBBIT_CLOVER_OPENAI_BASE_URL:-http://clover:8090/v1}
+      WAREHOUSE_HERMES_MCP_KEY: ${WAREHOUSE_HERMES_MCP_KEY:?Provision WAREHOUSE_HERMES_MCP_KEY using ./configure.py}
+      CALLIOPE_OPENROUTER_KEY_FILE: /run/clover-credentials/openrouter.key
+      CALLIOPE_UI_STUDIO_CONFIG: /run/secrets/studio-client.json
+    expose:
+    - '8642'
+    - '8643'
+    healthcheck:
+      interval: 5s
+      retries: 60
+      start_period: 20s
+      test:
+      - CMD-SHELL
+      - 'curl -fsS -H "Authorization: Bearer $${API_SERVER_KEY}" http://127.0.0.1:8642/health >/dev/null && curl
+        -fsS http://127.0.0.1:9222/json/version >/dev/null'
+      timeout: 5s
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-hermes:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - source: rvbbit_hermes
+      target: /opt/data
+      type: volume
+      volume: {}
+    - type: bind
+      source: ./state/clover/credentials
+      target: /run/clover-credentials
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./state/studio-client.json
+      target: /run/secrets/studio-client.json
+      read_only: true
+      bind:
+        create_host_path: false
+  hindsight:
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      HINDSIGHT_API_AUDIT_LOG_ENABLED: 'true'
+      HINDSIGHT_API_DATABASE_SCHEMA: hindsight
+      HINDSIGHT_API_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: ${RVBBIT_CLOVER_KEY:?Provision RVBBIT_CLOVER_KEY using ./configure.py}
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: ${RVBBIT_CLOVER_OPENAI_BASE_URL:-http://clover:8090/v1}
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: embed
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      HINDSIGHT_API_HOST: 0.0.0.0
+      HINDSIGHT_API_LLM_API_KEY: ${RVBBIT_CLOVER_KEY:?Provision RVBBIT_CLOVER_KEY using ./configure.py}
+      HINDSIGHT_API_LLM_BASE_URL: ${RVBBIT_CLOVER_OPENAI_BASE_URL:-http://clover:8090/v1}
+      # Memory extraction and consolidation run after every turn; the small model
+      # does them well at about a tenth of the flagship chat model's cost.
+      HINDSIGHT_API_LLM_MODEL: ${RVBBIT_HINDSIGHT_LLM_MODEL:-calliope-luna}
+      # Without a fixed language the small model wrote some memories in French or
+      # Spanish from English conversations. Set another language for non-English teams.
+      HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: ${RVBBIT_HINDSIGHT_OUTPUT_LANGUAGE:-English}
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_TRACE_ENABLED: 'true'
+      HINDSIGHT_API_LLM_TRACE_MAX_CHARS: '1'
+      HINDSIGHT_API_LLM_TRACE_RETENTION_DAYS: '7'
+      HINDSIGHT_API_PORT: '8888'
+      HINDSIGHT_API_RERANKER_PROVIDER: openrouter
+      HINDSIGHT_API_WORKER_ID: calliope-hindsight
+      HINDSIGHT_API_RERANKER_OPENROUTER_MODEL: rerank
+      HINDSIGHT_API_RERANKER_OPENROUTER_BASE_URL: http://clover:8090/v1/rerank
+      HINDSIGHT_API_RERANKER_OPENROUTER_API_KEY: ${RVBBIT_CLOVER_KEY}
+      # If reranking still fails after Clover's retries, recall keeps its fusion
+      # order instead of failing: a turn then gets less sharply ranked memories,
+      # not none.
+      HINDSIGHT_API_RERANKER_1_PROVIDER: rrf
+      # Clover already retries a failed rerank; Hindsight's own retries would
+      # add about 4 s before that fallback.
+      HINDSIGHT_API_RERANKER_MAX_RETRIES: '0'
+    expose:
+    - '8888'
+    healthcheck:
+      interval: 5s
+      retries: 60
+      start_period: 20s
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health', timeout=3).read()
+      timeout: 5s
+    image: ${RVBBIT_HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight-api:1.2.1-slim@sha256:084af5a6522d67f5905f7992cdb3d910d778496e5dd2566caec7cf82ed2e7d8c}
+    networks:
+      default: null
+    restart: unless-stopped
+  origin:
+    depends_on:
+      calliope:
+        condition: service_healthy
+        required: true
+      datarabbit:
+        condition: service_started
+        required: true
+    environment:
+      LENS_UPSTREAM: datarabbit:3000
+      ORIGIN_LISTEN: ${CALLIOPE_PUBLIC_HOST:-:80}
+      WAREHOUSE_UPSTREAM: calliope:8765
+      BURROW_LISTEN: ${CALLIOPE_DATA_LISTEN:-:81}
+      DATARABBIT_PUBLIC_URL: ${CALLIOPE_DATA_URL:-http://localhost:3001}
+      WAREHOUSE_PUBLIC_URL: ${WAREHOUSE_PUBLIC_URL:-http://localhost:8080}
+      CALLIOPE_ACME_EMAIL: ${CALLIOPE_ACME_EMAIL:-}
+      CALLIOPE_TRUSTED_PROXIES: ${CALLIOPE_TRUSTED_PROXIES:-127.0.0.1/32}
+    image: caddy:2-alpine
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - bind:
+        create_host_path: false
+      read_only: true
+      source: ./config/Caddyfile
+      target: /etc/caddy/Caddyfile
+      type: bind
+    - source: rvbbit_origin_data
+      target: /data
+      type: volume
+      volume: {}
+    - source: rvbbit_origin_config
+      target: /config
+      type: volume
+      volume: {}
+    ports:
+    - ${CALLIOPE_HTTP_BIND:-8080}:80
+    - ${CALLIOPE_HTTPS_BIND:-127.0.0.1:8443}:${CALLIOPE_HTTPS_PORT:-443}
+    - ${CALLIOPE_DATA_BIND:-127.0.0.1:3001}:${CALLIOPE_DATA_PORT:-81}
+  postgres-tls:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    entrypoint: [python3, /usr/local/bin/rvbbit-postgres-tls]
+    environment:
+      CALLIOPE_SQL_HOST: ${CALLIOPE_SQL_HOST:?Provision the SQL hostname using ./configure.py}
+      CALLIOPE_SQL_TLS: ${CALLIOPE_SQL_TLS:-generated}
+    restart: 'no'
+    network_mode: none
+    volumes:
+    - type: bind
+      source: ./state/postgres-tls
+      target: /tls
+      bind:
+        create_host_path: false
+  postgres:
+    depends_on:
+      postgres-tls:
+        condition: service_completed_successfully
+    command:
+    - postgres
+    - -c
+    - config_file=/etc/rvbbit/tuning.conf
+    - -c
+    - ssl=on
+    - -c
+    - ssl_cert_file=/etc/rvbbit/tls/server.crt
+    - -c
+    - ssl_key_file=/etc/rvbbit/tls/server.key
+    - -c
+    - hba_file=/etc/rvbbit/pg_hba.conf
+    - -c
+    - cron.use_background_workers=on
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GMEET_CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      POSTGRES_DB: ${POSTGRES_DB:-rvbbit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}
+      RVBBIT_ARROW_IPC_DIR: ${RVBBIT_ARROW_IPC_DIR:-/tmp/rvbbit-arrow-ipc}
+      RVBBIT_CLOVER_INSTALL_SOURCE: shipped
+      RVBBIT_CLOVER_KEY: ${RVBBIT_CLOVER_KEY:?Provision RVBBIT_CLOVER_KEY using ./configure.py}
+      RVBBIT_CREDENTIAL_KEY: ${RVBBIT_CREDENTIAL_KEY:?Provision RVBBIT_CREDENTIAL_KEY using ./configure.py}
+      RVBBIT_CREDENTIAL_KEYS: ${RVBBIT_CREDENTIAL_KEYS:-}
+      RVBBIT_CREDENTIAL_KEYS_FILE: ${RVBBIT_CREDENTIAL_KEYS_FILE:-}
+      RVBBIT_CREDENTIAL_KEY_FILE: ${RVBBIT_CREDENTIAL_KEY_FILE:-}
+      RVBBIT_DUCK_BACKEND: ${RVBBIT_DUCK_BACKEND:-true}
+      RVBBIT_DUCK_BACKEND_SHARED: ${RVBBIT_DUCK_BACKEND_SHARED:-true}
+      RVBBIT_DUCK_BACKEND_SHARED_DIR: ${RVBBIT_DUCK_BACKEND_SHARED_DIR:-/run/rvbbit/duck}
+      RVBBIT_DUCK_BACKEND_SHARED_STRICT: ${RVBBIT_DUCK_BACKEND_SHARED_STRICT:-false}
+      RVBBIT_DUCK_BACKEND_SHARED_TARGETS: ${RVBBIT_DUCK_BACKEND_SHARED_TARGETS:-duck:vortex}
+      RVBBIT_DUCK_BACKEND_SHARED_WORKERS: ${RVBBIT_DUCK_BACKEND_SHARED_WORKERS:-4}
+      RVBBIT_DUCK_BACKEND_TIMEOUT_S: ${RVBBIT_DUCK_BACKEND_TIMEOUT_S:-300}
+      RVBBIT_DUCK_BIN: ${RVBBIT_DUCK_BIN:-/usr/local/bin/rvbbit-duck}
+      RVBBIT_DUCK_DSN: postgresql://postgres:${POSTGRES_PASSWORD:-rvbbit}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      RVBBIT_DUCK_THREADS: ${RVBBIT_DUCK_THREADS:-4}
+      RVBBIT_GATEWAY_TOKEN: ${RVBBIT_GATEWAY_TOKEN:?Provision RVBBIT_GATEWAY_TOKEN using ./configure.py}
+      RVBBIT_PGDATA_PREFIX: ${RVBBIT_PGDATA_PREFIX:-/var/lib/postgresql}
+      RVBBIT_VISIBLE_PGDATA_PREFIX: ${RVBBIT_VISIBLE_PGDATA_PREFIX:-/var/lib/postgresql}
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      RVBBIT_CLOVER_CATALOG_SQL: /etc/clover/catalog.sql
+    healthcheck:
+      interval: 5s
+      retries: 30
+      test:
+      - CMD-SHELL
+      - grep -qx postgres /proc/1/comm && pg_isready -U postgres -d ${POSTGRES_DB:-rvbbit}
+      timeout: 3s
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    shm_size: 1gb
+    ports:
+    - ${CALLIOPE_SQL_BIND:-0.0.0.0:5432}:5432
+    volumes:
+    - type: bind
+      source: ./state/postgres-tls
+      target: /etc/rvbbit/tls
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./config/pg_hba.conf
+      target: /etc/rvbbit/pg_hba.conf
+      read_only: true
+      bind:
+        create_host_path: false
+    - source: rvbbit_pgdata
+      target: /var/lib/postgresql
+      type: volume
+      volume: {}
+    - source: rvbbit_staging
+      target: /staging
+      type: volume
+      volume: {}
+    - source: rvbbit_duck_run
+      target: /run/rvbbit
+      type: volume
+      volume: {}
+    - source: rvbbit_duck_arrow_ipc
+      target: /tmp/rvbbit-arrow-ipc
+      type: volume
+      volume: {}
+    - type: bind
+      source: ./state/clover/catalog.sql
+      target: /etc/clover/catalog.sql
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./config/inference.sql
+      target: /etc/clover/inference.sql
+      read_only: true
+      bind:
+        create_host_path: false
+  warren:
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DOCKER_HOST: ${RVBBIT_DOCKER_HOST:-unix:///var/run/docker.sock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GMEET_CONNECTOR_TOKEN: ${GMEET_CONNECTOR_TOKEN:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RVBBIT_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-calliope}
+      RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD using ./configure.py}@postgres:5432/${POSTGRES_DB:-rvbbit}
+      RVBBIT_GATEWAY_TOKEN: ${RVBBIT_GATEWAY_TOKEN:?Provision RVBBIT_GATEWAY_TOKEN using ./configure.py}
+      RVBBIT_MIRROR_TOKEN: ${RVBBIT_MIRROR_TOKEN:?Provision RVBBIT_MIRROR_TOKEN using ./configure.py}
+      RVBBIT_REQUIRE_CANONICAL_CREDENTIALS: 'true'
+      WARREN_CAPACITY: ${WARREN_CAPACITY:-{}}
+      WARREN_LABELS: ${WARREN_LABELS:-{"capability":true,"docker":true,"gpu":false}}
+      WARREN_METRICS_MS: ${WARREN_METRICS_MS:-10000}
+      WARREN_NODE: ${WARREN_NODE:-compose-warren}
+      WARREN_RECONCILE_MS: ${WARREN_RECONCILE_MS:-15000}
+      WARREN_WORK_DIR: /var/lib/rvbbit/warren
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-warren:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+    - source: ${RVBBIT_DOCKER_SOCKET:-/var/run/docker.sock}
+      target: /var/run/docker.sock
+      type: bind
+      bind:
+        create_host_path: false
+    - source: rvbbit_warren
+      target: /var/lib/rvbbit/warren
+      type: volume
+      volume: {}
+  clover:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    command:
+    - --config
+    - /etc/hutch/hutch.json
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+    env_file:
+    - path: ./state/clover/providers.env
+      format: raw
+    - path: ./state/clover/ledger.env
+      format: raw
+    volumes:
+    - type: bind
+      source: ./state/clover/hutch.json
+      target: /etc/hutch/hutch.json
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./state/clover/tenants.json
+      target: /etc/hutch/tenants.json
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./state/clover/credentials
+      target: /run/clover-credentials
+      read_only: true
+      bind:
+        create_host_path: false
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -fsS
+      - http://127.0.0.1:8090/healthz
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      clover-decisions:
+        condition: service_started
+      clover-web:
+        condition: service_started
+      clover-utilities:
+        condition: service_started
+      storage-init:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+  clover-decisions:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-decisions:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+    volumes:
+    - type: bind
+      source: ./state/clover/credentials
+      target: /run/clover-credentials
+      read_only: true
+      bind:
+        create_host_path: false
+    env_file:
+    - path: ./state/clover/providers.env
+      format: raw
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8093/health',timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  clover-web:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-web:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    environment:
+      CLOVER_WEB_BIND: 0.0.0.0:8091
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2.0
+    volumes: []
+  clover-utilities:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-utilities:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+    volumes:
+    - type: bind
+      source: ./state/clover/credentials
+      target: /run/clover-credentials
+      read_only: true
+      bind:
+        create_host_path: false
+    env_file:
+    - path: ./state/clover/providers.env
+      format: raw
+    depends_on:
+      clover-web:
+        condition: service_started
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 2.0
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8094/health',timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  clover-research:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-research:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    env_file:
+    - path: ./state/clover/providers.env
+      format: raw
+    - path: ./state/clover/research.env
+      format: raw
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+      CLOVER_RESEARCH_BIND: 0.0.0.0:8092
+      CLOVER_RESEARCH_SCRAPE_URL: http://clover-web:8091/v1/scrape
+    volumes:
+    - type: bind
+      source: ./state/clover/credentials
+      target: /run/clover-credentials
+      read_only: true
+      bind:
+        create_host_path: false
+    depends_on:
+      clover-web:
+        condition: service_started
+      storage-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 2.0
+  storage-init:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+    - bash
+    - -ec
+    command:
+    - psql "$$RVBBIT_DSN" -X -v ON_ERROR_STOP=1 -f /config/ledger-bootstrap.sql -f /config/research-bootstrap.sql
+    environment:
+      RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Run configure.py}@postgres:5432/rvbbit
+    volumes:
+    - type: bind
+      source: ./state/clover/ledger-bootstrap.sql
+      target: /config/ledger-bootstrap.sql
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./state/clover/research-bootstrap.sql
+      target: /config/research-bootstrap.sql
+      read_only: true
+      bind:
+        create_host_path: false
+  clover-analytics:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-analytics:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    environment:
+      ANALYTICS_THREADS: ${CLOVER_ANALYTICS_THREADS:-2}
+    env_file:
+    - path: ./state/clover/client.env
+      format: raw
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  clover-gliner:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-gliner:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    profiles:
+    - specialists
+    environment:
+      HF_HOME: /models
+      MODEL_THREADS: '2'
+    volumes:
+    - type: volume
+      source: clover_models_gliner
+      target: /models
+      read_only: false
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+  clover-tspulse:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-tspulse:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    profiles:
+    - specialists
+    environment:
+      HF_HOME: /models
+      MODEL_THREADS: '2'
+    volumes:
+    - type: volume
+      source: clover_models_tspulse
+      target: /models
+      read_only: false
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+  ui-studio:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-ui-studio:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 6g
+    cpus: 4
+    tmpfs:
+    - /tmp:size=1g,mode=1777
+    environment:
+      STUDIO_TOKEN_FILE: /run/secrets/studio-token
+      STUDIO_REVISION: ${CALLIOPE_REVISION}
+      XDG_CACHE_HOME: /tmp/cache
+      CALLIOPE_DECISION_URL: http://calliope:8765/api/calliope/ui/decision
+    volumes:
+    - type: bind
+      source: ./state/studio-token
+      target: /run/secrets/studio-token
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: volume
+      source: ui_studio
+      target: /var/lib/calliope-ui-studio
+      read_only: false
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:18456/health',timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+volumes:
+  rvbbit_desktop: {}
+  rvbbit_desktop_home: {}
+  rvbbit_duck_arrow_ipc: {}
+  rvbbit_duck_run: {}
+  rvbbit_hermes: {}
+  rvbbit_lens: {}
+  rvbbit_origin_config: {}
+  rvbbit_origin_data: {}
+  rvbbit_pgdata: {}
+  rvbbit_staging: {}
+  rvbbit_warehouse_mcp: {}
+  rvbbit_warren: {}
+  clover_models_gliner: {}
+  clover_models_tspulse: {}
+  ui_studio: {}

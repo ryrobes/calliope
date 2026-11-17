@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Calliope · The Floor</title>
+<link rel="icon" href="/calliope/callie-favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+<link rel="stylesheet" href="/theme/superior-fonts.css">
+<link rel="stylesheet" href="/theme/metric-cards.css">
+<script src="/theme/metric-cards.js"></script>
+<link rel="stylesheet" href="/floor/floor.css?v=__CALLIOPE_ASSET_VERSION__">
+<link rel="stylesheet" href="/theme/warehouse-theme.css">
+<script src="/theme/warehouse-theme.js"></script>
+<link rel="stylesheet" href="/calliope/playbook-picker.css?v=__CALLIOPE_ASSET_VERSION__">
+</head>
+<body data-warehouse-page="floor">
+__CALLIOPE_BACKGROUND__
+<div class="floor-wash" aria-hidden="true"></div>
+<nav class="floor-rail" data-warehouse-header aria-label="Calliope navigation">
+  <a class="floor-brand" href="/calliope?view=zen" aria-label="Open Calliope">
+    <span class="calliope-brand"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></span>
+  </a>
+  <div class="floor-rail-nav" aria-label="Workspace views">__CALLIOPE_WORKSPACE_NAV__</div>
+  <div class="floor-rail-actions">
+    <button class="floor-open-calliope" id="floorIntakeOpen" type="button" aria-label="Start with Calliope" aria-describedby="floorLaunchTooltip" aria-haspopup="dialog" aria-controls="floorIntake" aria-expanded="false">
+      <span class="floor-open-calliope-avatar" id="floorIntakeOpenAvatar" aria-hidden="true" data-day-src="/calliope/callie-avatar-day.jpg" data-night-src="/calliope/callie-avatar-night.jpg">
+        <img data-floor-launch-avatar alt="" width="56" height="56" decoding="async">
+      </span>
+    </button>
+    <div class="floor-launch-tooltip" id="floorLaunchTooltip" role="tooltip">
+      <span class="floor-launch-tooltip-heading">Start with Calliope</span>
+      <span>Ask a question. Start a project.<br>Search your company’s knowledge.</span>
+    </div>
+    <span data-warehouse-theme-anchor></span>
+    __CALLIOPE_ACCOUNT__
+  </div>
+</nav>
+<section class="floor-intake" id="floorIntake" role="dialog" aria-modal="true" aria-labelledby="floorIntakeHeadline" aria-hidden="true">
+  <div class="floor-intake-stack">
+    <div class="floor-intake-agent" id="floorIntakeAgent">
+      <button class="floor-intake-agent-toggle" id="floorIntakeAgentToggle" type="button" aria-haspopup="listbox" aria-expanded="false" title="Choose who owns this new notebook">
+        <span class="floor-intake-agent-avatar" id="floorIntakeAgentAvatar" aria-hidden="true"></span>
+        <span class="floor-intake-agent-copy"><small id="floorIntakeAgentRole">Warehouse muse</small><strong id="floorIntakeAgentName">Calliope</strong></span>
+        <span class="floor-intake-agent-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="floor-intake-agent-menu" id="floorIntakeAgentMenu" role="listbox" aria-label="Choose who owns this notebook" hidden></div>
+    </div>
+    <form class="floor-intake-composer" id="floorIntakeForm">
+      <div class="floor-intake-copy">
+        <h1 id="floorIntakeHeadline">What are we working on?</h1>
+        <p>Ask anything, resume recent work, or follow what Calliope noticed across the business.</p>
+        <p class="floor-intake-areas-hint" id="floorAreasHint" hidden>Not sure where to start? <button type="button" id="floorAreasHintBtn">See the areas of your business</button></p>
+      </div>
+      <div id="floorIntakePlaybooks" class="playbook-selections" aria-label="Selected playbooks" hidden></div>
+      <div class="floor-intake-attachments" id="floorIntakeAttachments" hidden></div>
+      <label class="floor-intake-compose">
+        <span class="sr-only" id="floorIntakeInputLabel">Message Calliope</span>
+        <div class="floor-intake-editor" id="floorIntakeEditor" hidden></div>
+        <textarea id="floorIntakeInput" rows="4" placeholder="Ask Calliope to explore, compare, or make something…"></textarea>
+      </label>
+      <div class="floor-intake-actions">
+        <button class="floor-intake-desktop" type="button" disabled title="Desktop Lab becomes available inside the notebook"><span aria-hidden="true">▣</span> Desktop Lab</button>
+        <label class="floor-intake-attach" title="Attach images"><input id="floorIntakeImages" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden><span aria-hidden="true">⌁</span> Image</label>
+        <div class="floor-intake-design" id="floorIntakeDesign">
+          <button id="floorIntakeDesignToggle" type="button" aria-haspopup="listbox" aria-expanded="false" title="Design Profile for this notebook">✎ <span>no design</span></button>
+          <div class="floor-intake-design-menu" id="floorIntakeDesignMenu" role="listbox" aria-label="Choose a Design Profile" hidden></div>
+        </div>
+        <button class="floor-intake-team" id="floorIntakePlaybook" type="button" aria-haspopup="dialog" aria-controls="playbook-picker" title="Add a Playbook reference to your message"><span aria-hidden="true">≋</span><span>Playbook</span></button>
+        <button class="floor-intake-team" id="floorIntakeTeam" type="button" aria-pressed="false" title="Team mode (opt-in): Calliope plans and delegates the work to specialists — slower and uses more tokens"><i class="floor-intake-team-indicator" aria-hidden="true"></i><span>Team off</span></button>
+        <button class="floor-intake-team" type="button" id="floorIntakeDictate" hidden aria-pressed="false">Dictate</button><button class="floor-intake-team" type="button" id="floorIntakeDictateCancel" hidden>Cancel</button>
+        <button class="floor-intake-send" id="floorIntakeSend" type="submit" disabled aria-label="Explore data" title="Explore data">→</button>
+      </div>
+      <p class="floor-intake-status" id="floorIntakeStatus" role="status" aria-live="polite"></p>
+      <p id="floorDictationPreview" class="floor-dictation-preview" role="status" aria-live="polite" hidden></p>
+    </form>
+    <!-- Metric ghosts sit beside the composer as siblings, not children: the
+         composer's own backdrop blur is a backdrop root, and a child's glass
+         could only blur what the form paints — nothing, outside its box. -->
+    <div class="floor-ghost-rail" id="floorGhostLeft" data-side="left" aria-label="Governed metrics this question may be about" hidden></div>
+    <div class="floor-ghost-rail" id="floorGhostRight" data-side="right" aria-label="More governed metrics this question may be about" hidden></div>
+    <section class="floor-intake-discovery" id="floorIntakeDiscovery" aria-label="Related company evidence" aria-live="polite" hidden>
+      <header class="floor-intake-discovery-head">
+        <span id="floorIntakeDiscoveryStatus">Looking across company memory…</span>
+        <small id="floorIntakeDiscoveryHint">Choose a breadcrumb to begin with it on the Stage, or press Enter to ask normally.</small>
+      </header>
+      <div class="floor-intake-discovery-items" id="floorIntakeDiscoveryItems"></div>
+    </section>
+  </div>
+</section>
+<div class="app is-veiled">
+  <section class="floor-overview" id="floorOverview" aria-label="Business metrics and work history" hidden>
+    <header class="floor-overview-head">
+      <div><strong id="floorOverviewTitle">Core metrics</strong><span id="floorOverviewHint">A starting point for your next conversation</span></div>
+      <div class="floor-overview-actions">
+        <div class="view-toggle" id="floorOverviewSwitch" role="group" aria-label="Overview" hidden>
+          <button type="button" id="floorMetricsBtn" aria-pressed="true">Metrics</button>
+          <button type="button" id="floorHistoryBtn" aria-pressed="false">History</button>
+          <button type="button" id="floorAreasBtn" aria-pressed="false" hidden>Areas</button>
+        </div>
+        <button type="button" id="floorMetricPeriod" class="floor-metric-period" aria-label="Metric period: Weekly. Switch to Monthly" hidden>↻ Weekly</button>
+        <div class="floor-metric-paging" id="floorMetricPaging" role="group" aria-label="Browse Core metrics" hidden>
+          <span id="floorMetricPosition" aria-live="polite"></span>
+          <button type="button" id="floorMetricsPrev" aria-label="Previous metrics">←</button>
+          <button type="button" id="floorMetricsNext" aria-label="Next metrics">→</button>
+        </div>
+      </div>
+    </header>
+    <p id="floorMetricStatus" class="sr-only" role="status" aria-live="polite"></p>
+    <div class="floor-metrics-panel" id="floorMetricsPanel" hidden>
+      <div class="floor-metrics-track" id="floorMetricsTrack" role="region" aria-label="Core metrics" tabindex="0"></div>
+    </div>
+  <section class="timebar" id="timebar" aria-label="Work graph timeline" hidden>
+    <div><div class="time-kicker" id="timeKicker">At live edge</div><div class="time-title">Movement through time</div><div class="time-caption" id="timeCaption">Active work on a shared, padded scale.</div></div>
+    <div class="time-viz" id="timeViz" role="slider" tabindex="0" aria-label="Scrub work graph history" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="1000"><svg id="timeSvg" viewBox="0 0 1000 78" preserveAspectRatio="xMinYMin meet" aria-hidden="true"></svg><input class="time-range" id="timeRange" type="range" min="0" max="1000" value="1000" step="1" tabindex="-1" aria-label="Timeline position"><div class="time-axis"><span id="timeStart">—</span><span id="timeEnd">Live</span></div></div>
+    <div class="time-readout"><div class="frame-badge" id="frameBadge">Live frame</div><div class="time-when" id="timeWhen">Live</div><div class="time-meta time-delta" id="timeMeta">Current floor</div><div class="time-mix" id="timeMix" role="img" aria-label="Selected frame lane composition"></div><div class="time-composition" id="timeComposition">Loading composition…</div><button type="button" class="live-btn on" id="liveBtn">● Live</button></div>
+  </section>
+  </section>
+
+  <header class="floor-toolbar" aria-label="Filter the Floor">
+    <label class="search floor-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="search" aria-label="Search pieces" placeholder="Search the floor"></label>
+    <div class="controls">
+      <button type="button" class="me-toggle notices-toggle" id="noticesToggle" aria-pressed="true" title="Notices hidden · show low-priority notices" aria-label="Hide notices" hidden><svg class="me-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/><path class="notices-slash" d="m3 3 18 18"/></svg></button>
+      <button type="button" class="me-toggle" id="meToggle" aria-pressed="false" title="My threads as a grid — newest first, click a tile to open it" aria-label="My threads as a grid"><svg class="me-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg></button>
+      <select class="select" id="people" aria-label="Filter people"><option value="all">All people</option></select>
+      <button type="button" id="floorPages" class="select floor-pages-shortcut" title="Show living Pages">Pages</button>
+      <button type="button" id="floorNewPage" class="select" title="Ask Callie to create a living Page">+ Page</button>
+      <select class="select" id="kinds" aria-label="Filter kinds"><option value="all">All kinds</option></select>
+      <select class="select" id="freshness" aria-label="Filter freshness"><option value="all">Any freshness</option><option value="live">Live now</option><option value="day">Past day</option><option value="week">Past week</option><option value="older">Older</option></select>
+      <div class="view-toggle" role="group" aria-label="View"><button type="button" id="boardBtn" class="on">Floor</button><button type="button" id="listBtn">List</button></div>
+    </div>
+  </header>
+  <div class="workspace-shell">
+    <main class="workspace" id="workspace"></main>
+  </div>
+  <footer class="floor-footer" aria-label="Floor status">
+    <div class="subline" id="summaryLine">Loading the work graph…</div>
+    <div class="floor-footer-status"><span class="live-dot" id="liveDot" aria-hidden="true"></span><span id="status" role="status">Connecting to live data…</span><button type="button" id="reload">Refresh</button></div>
+  </footer>
+  <div class="floor-initial-veil" id="floorInitialVeil" aria-hidden="true"></div>
+</div>
+<div class="floor-view-loading" aria-hidden="true"><div class="floor-view-loading-message">Loading selected view…</div></div>
+<script src="/floor/floor-veil.js?v=__CALLIOPE_ASSET_VERSION__"></script>
+<div class="drawer-backdrop" id="drawerBackdrop"><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><div class="drawer-head"><p class="drawer-eyebrow" id="drawerEyebrow"></p><h2 id="drawerTitle">Piece details</h2><button type="button" class="close" id="drawerClose" aria-label="Close">×</button></div><div class="drawer-body" id="drawerBody"></div></aside></div>
+<div class="toast" id="toast"></div>
+<script src="/calliope/daily-notes-editor.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/answerable-match.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/floor/floor-stream.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/floor/floor-metrics.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/dictation.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/playbook-picker.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/floor/floor.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+</body>
+</html>

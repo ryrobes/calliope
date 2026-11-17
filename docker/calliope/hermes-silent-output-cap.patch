@@ -1,0 +1,467 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+index 21c3c49..aeb29aa 100644
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -842,6 +842,106 @@ _LENGTH_CONTINUATION_OUTPUT_LIMIT = (
+ _LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX = "[System: Your previous tool call "
+ 
+ 
++# ── Silent route output-ceiling discovery ───────────────────────────────
++# A provider route can clamp completions FAR below the requested max_tokens
++# and still return HTTP 200 with finish_reason="length" (observed 2026-08-20:
++# google/gemma-4-31b-it via OpenRouter cut every response near ~1.7k tokens
++# against a 32,768-token request). No error text accompanies the clamp, so
++# parse_available_output_tokens_from_error never fires, and the boosted
++# retry ladder re-runs the identical request into the same server-side wall
++# four times before giving up. When a truncated response's own usage shows
++# completions far below what was requested, the truncation point IS the
++# route's real ceiling: remember it for the session, stop boosting past it,
++# and tell the model its actual budget so it can re-plan the work into
++# smaller pieces. Models that fill their requested budget (observed ≈
++# requested) never trip the ratio, so honest large-output routes keep the
++# original ladder untouched.
++# The loop-level seams live in agent/turn_truncation.py (finish_reason="length")
++# and agent/turn_tool_validation.py (router-masked truncation) since 0.21.4;
++# both import these helpers lazily (module-level import would be a cycle).
++_SILENT_OUTPUT_CLAMP_RATIO = 0.6
++# One short truncation is an anecdote, not a ceiling: models also stop short
++# mid-JSON for reasons that have nothing to do with a route clamp (observed
++# 2026-08-20: a single 371-token cut got promoted to a "measured ceiling",
++# and the one-shot request override then enforced it on the retry — a
++# self-fulfilling prophecy). Numeric claims and the request-cap override
++# wait for a second observation; tiny cuts do not count as observations at
++# all, and the override is never set below a workable floor.
++_SILENT_CAP_MIN_OBSERVATION = 256
++_SILENT_CAP_MIN_EPHEMERAL = 1024
++
++
++def _note_silent_output_clamp(agent: Any, observed: int) -> tuple:
++    """Record one silent-clamp observation on the agent (session-scoped).
++    Returns (ceiling, budget, corroborated); only a corroborated ceiling of
++    workable size installs the one-shot request override."""
++    prior = list(getattr(agent, "_silent_output_cap_observations", []) or [])
++    prior.append(observed)
++    agent._silent_output_cap_observations = prior[-8:]
++    ceiling = max(prior)
++    budget = max(256, int(ceiling * 0.85))
++    corroborated = len(prior) >= 2
++    if corroborated and ceiling >= _SILENT_CAP_MIN_EPHEMERAL:
++        agent._ephemeral_max_output_tokens = ceiling
++    return ceiling, budget, corroborated
++
++
++def _last_message_is_replan_nudge(messages: Any) -> bool:
++    tail = messages[-1] if messages else None
++    return (
++        isinstance(tail, dict)
++        and tail.get("role") == "user"
++        and str(tail.get("content") or "").startswith(_LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX)
++    )
++
++
++def _observed_completion_tokens(response: Any) -> Optional[int]:
++    """Completion tokens actually delivered on a (possibly truncated)
++    response, across api modes; None when the provider sent no usage."""
++    usage = getattr(response, "usage", None)
++    if usage is None and isinstance(response, dict):
++        usage = response.get("usage")
++    if usage is None:
++        return None
++    for key in ("completion_tokens", "output_tokens"):
++        raw = getattr(usage, key, None)
++        if raw is None and isinstance(usage, dict):
++            raw = usage.get(key)
++        try:
++            value = int(raw)
++        except (TypeError, ValueError):
++            continue
++        if value > 0:
++            return value
++    return None
++
++
++def _silent_cap_replan_nudge(ceiling: Optional[int] = None, budget: Optional[int] = None) -> str:
++    """Re-plan instruction after a tool call was cut off mid-arguments.
++    With a measured ceiling the budget is stated; without one (router masked
++    finish_reason and no usable usage arithmetic) the guidance stays
++    qualitative. Starts with _LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX so
++    agent.context_compressor recognizes a persisted copy as ephemeral
++    scaffolding, exactly like the chunked-retry nudge."""
++    if ceiling and budget:
++        cause = (
++            f"this provider route stops every response at ~{ceiling:,} "
++            f"tokens, regardless of the larger configured budget"
++        )
++        limit = f"under ~{budget:,} tokens"
++    else:
++        cause = "this provider route is cutting long responses short"
++        limit = "well under your previous response's length"
++    return (
++        f"{_LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX}was cut off "
++        f"mid-arguments and was NOT executed: {cause}. Do not retry the "
++        f"same large call. Re-plan so every response stays {limit}: emit "
++        f"large content in several small steps (for a big document, write "
++        f"it to a file in section-sized appends across multiple tool calls, "
++        f"then use the file path), and keep prose answers short.]"
++    )
++
++
+ def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List[str]] = None) -> str:
+     if is_partial_stub and dropped_tools:
+         tool_list = ", ".join(dropped_tools[:3])
+diff --git a/agent/turn_tool_round.py b/agent/turn_tool_round.py
+index 62e5f30..f5bbb7c 100644
+--- a/agent/turn_tool_round.py
++++ b/agent/turn_tool_round.py
+@@ -47,7 +47,7 @@ def run_tool_round(
+     conversation_history: Any, api_call_count: Any, effective_task_id: Any, user_message: Any,
+     system_message: Any, active_system_prompt: Any, compression_attempts: Any,
+     max_compression_attempts: Any, final_response: Any, failed: Any, _turn_exit_reason: Any,
+-    truncated_tool_call_retries: Any,
++    truncated_tool_call_retries: Any, response: Any = None, api_kwargs: Any = None,
+ ) -> ToolRoundVerdict:
+     """Execute one tool round in the exact original order. Persist-before-execute is a
+     durability invariant: resume must see the executed block if a destructive tool restarts
+@@ -75,8 +75,11 @@ def run_tool_round(
+     _tvv = validate_tool_calls(
+         agent, assistant_message, finish_reason, messages=messages,
+         conversation_history=conversation_history, api_call_count=api_call_count,
+-        effective_task_id=effective_task_id,
++        effective_task_id=effective_task_id, response=response, api_kwargs=api_kwargs,
++        truncated_tool_call_retries=truncated_tool_call_retries,
+     )
++    # The masked-truncation re-plan ladder advances the shared counter.
++    truncated_tool_call_retries = _tvv.truncated_tool_call_retries
+     if _tvv.action == "return":
+         return _verdict("return", _tvv.result)
+     if _tvv.action == "continue":
+diff --git a/agent/turn_tool_validation.py b/agent/turn_tool_validation.py
+index a314688..b6111de 100644
+--- a/agent/turn_tool_validation.py
++++ b/agent/turn_tool_validation.py
+@@ -34,6 +34,8 @@ class ToolValidationVerdict:
+     action: str
+     result: Optional[Dict[str, Any]]
+     mixed_invalid_batch: bool
++    # Rebound by the masked-truncation re-plan ladder; the caller copies it back.
++    truncated_tool_call_retries: int = 0
+ 
+ 
+ def _preview_name(name: str) -> str:
+@@ -70,6 +72,7 @@ def _partial_exit(agent, messages, conversation_history, api_call_count, final_r
+ def validate_tool_calls(
+     agent: Any, assistant_message: Any, finish_reason: str, *, messages: List[Dict[str, Any]],
+     conversation_history: Any, api_call_count: int, effective_task_id: Any,
++    response: Any = None, api_kwargs: Any = None, truncated_tool_call_retries: int = 0,
+ ) -> ToolValidationVerdict:
+     """Validate ``assistant_message.tool_calls`` in place (ids uniquified, names
+     repaired, dict/empty args normalized to JSON strings). Strikes for invalid names
+@@ -82,7 +85,10 @@ def validate_tool_calls(
+     valid_names = agent.valid_tool_names
+ 
+     def _verdict(action: str, result: Optional[Dict[str, Any]] = None) -> ToolValidationVerdict:
+-        return ToolValidationVerdict(action=action, result=result, mixed_invalid_batch=_mixed_invalid_batch)
++        return ToolValidationVerdict(
++            action=action, result=result, mixed_invalid_batch=_mixed_invalid_batch,
++            truncated_tool_call_retries=truncated_tool_call_retries,
++        )
+ 
+     # Uniquify duplicate tool-call ids BEFORE any downstream consumer: the
+     # pre-API sanitizer keeps only the first call/result per id.
+@@ -175,10 +181,83 @@ def validate_tool_calls(
+                 f"(finish_reason={finish_reason!r}) — refusing to execute.",
+                 force=True, diagnostic=True,
+             )
++            # The masked twin of the finish_reason="length" handler
++            # (agent/turn_truncation.py): the router hid the truncation, so the
++            # silent-ceiling machinery runs here too. The broken assistant message
++            # was never appended, so one nudged retry is as safe as it is up there;
++            # the shared counter bounds a turn to two truncated attempts across
++            # both sites.
++            from agent.conversation_loop import (
++                _SILENT_CAP_MIN_OBSERVATION, _SILENT_OUTPUT_CLAMP_RATIO,
++                _last_message_is_replan_nudge, _note_silent_output_clamp,
++                _observed_completion_tokens, _silent_cap_replan_nudge,
++            )
++            from agent.turn_truncation import (
++                _TRUNCATION_FALLBACK_LINE, _TRUNCATION_FALLBACK_STATUS,
++                _clear_length_continuation_marks, truncated_tool_call_final,
++            )
++            _mt_observed = _observed_completion_tokens(response)
++            _mt_requested = agent._requested_output_cap_from_api_kwargs(api_kwargs)
++            _mt_ceiling = None
++            _mt_budget = None
++            _mt_corroborated = False
++            if (
++                _mt_observed
++                and _mt_observed >= _SILENT_CAP_MIN_OBSERVATION
++                and _mt_requested
++                and _mt_observed < _mt_requested * _SILENT_OUTPUT_CLAMP_RATIO
++            ):
++                _mt_ceiling, _mt_budget, _mt_corroborated = (
++                    _note_silent_output_clamp(agent, _mt_observed)
++                )
++                agent._vprint(
++                    f"{agent.log_prefix}⚠️  Provider cut the response at "
++                    f"~{_mt_observed:,} tokens against a requested "
++                    f"{_mt_requested:,} (finish_reason was rewritten to "
++                    f"{finish_reason!r})"
++                    + (
++                        f" — treating ~{_mt_ceiling:,} as this route's "
++                        f"per-response ceiling (corroborated)."
++                        if _mt_corroborated
++                        else " — noted; a repeat will establish the route's ceiling."
++                    ),
++                    force=True, diagnostic=True,
++                )
++            if truncated_tool_call_retries < (2 if _mt_corroborated else 4):
++                truncated_tool_call_retries += 1
++                agent._invalid_json_retries = 0
++                agent._buffer_vprint(
++                    "⚠️  Tool call cut off mid-arguments — asking the "
++                    "model to re-plan in smaller pieces..."
++                )
++                if not _last_message_is_replan_nudge(messages):
++                    append_message(messages, {
++                        "role": "user",
++                        "content": _silent_cap_replan_nudge(
++                            _mt_ceiling if _mt_corroborated else None,
++                            _mt_budget if _mt_corroborated else None,
++                        ),
++                        "_length_continuation_nudge": True,
++                    })
++                    agent._session_messages = messages
++                return _verdict("continue")
+             agent._invalid_json_retries = 0
++            # This site runs in the outer turn loop, so fallback escalation is a
++            # plain restart: activate, reset the truncation counter, and let the
++            # next iteration rebuild the request on the fallback.
++            if agent._fallback_index < len(agent._fallback_chain) and agent._try_activate_fallback():
++                agent._vprint(f"{agent.log_prefix}{_TRUNCATION_FALLBACK_LINE}", force=True, diagnostic=True)
++                agent._emit_status(_TRUNCATION_FALLBACK_STATUS)
++                _clear_length_continuation_marks(messages)
++                agent._session_messages = messages
++                truncated_tool_call_retries = 0
++                return _verdict("continue")
+             agent._cleanup_task_resources(effective_task_id)
+             return _verdict("return", _partial_exit(
+-                agent, messages, conversation_history, api_call_count, site_copy("truncated"),
++                agent, messages, conversation_history, api_call_count,
++                truncated_tool_call_final(
++                    _mt_ceiling, _mt_requested, bool(_mt_ceiling), _mt_corroborated,
++                ),
+             ))
+ 
+         agent._invalid_json_retries += 1
+diff --git a/agent/turn_truncation.py b/agent/turn_truncation.py
+index 4ed96d7..8cc38a6 100644
+--- a/agent/turn_truncation.py
++++ b/agent/turn_truncation.py
+@@ -152,6 +152,14 @@ class _Trunc(TruncationVerdict):
+     action: str = "fallthrough"
+     result: Optional[Dict[str, Any]] = None
+     window_filled: Optional[tuple[int, int]] = None  # (prompt_tokens, context_length)
++    # Silent route output-ceiling discovery (Calliope overlay; rationale at
++    # agent.conversation_loop._SILENT_OUTPUT_CLAMP_RATIO), filled by _note_silent_cap
++    # before the continuation phases run.
++    silent_cap_hit: bool = False
++    silent_cap_ceiling: Optional[int] = None
++    silent_cap_budget: Optional[int] = None
++    silent_cap_corroborated: bool = False
++    silent_requested: Optional[int] = None
+ 
+     def done(self, action: str, result: Optional[Dict[str, Any]] = None) -> TruncationVerdict:
+         self.action, self.result = action, result
+@@ -183,6 +191,94 @@ class _Trunc(TruncationVerdict):
+         return getattr(self.response, "id", "") == PARTIAL_STREAM_STUB_ID
+ 
+ 
++def _note_silent_cap(st: _Trunc, api_kwargs: Any) -> None:
++    """Silent route output-ceiling discovery: when a truncated response's own usage shows
++    completions far below the requested cap, the truncation point IS the route's ceiling —
++    note it on the agent (session-scoped) and on ``st`` for the tool-call retry phase."""
++    from agent.conversation_loop import (
++        _SILENT_CAP_MIN_OBSERVATION, _SILENT_OUTPUT_CLAMP_RATIO, _note_silent_output_clamp,
++        _observed_completion_tokens,
++    )
++
++    agent = st.agent
++    if st.is_stub:
++        return
++    observed = _observed_completion_tokens(st.response)
++    st.silent_requested = agent._requested_output_cap_from_api_kwargs(api_kwargs)
++    if not (
++        observed
++        and observed >= _SILENT_CAP_MIN_OBSERVATION
++        and st.silent_requested
++        and observed < st.silent_requested * _SILENT_OUTPUT_CLAMP_RATIO
++    ):
++        return
++    st.silent_cap_hit = True
++    st.silent_cap_ceiling, st.silent_cap_budget, st.silent_cap_corroborated = (
++        _note_silent_output_clamp(agent, observed)
++    )
++    agent._vprint(
++        f"{agent.log_prefix}⚠️  Provider cut the response at "
++        f"~{observed:,} tokens against a requested "
++        f"{st.silent_requested:,}"
++        + (
++            f" — treating ~{st.silent_cap_ceiling:,} as this route's "
++            f"per-response ceiling (corroborated)."
++            if st.silent_cap_corroborated
++            else " — noted; a repeat will establish the route's ceiling."
++        ),
++        force=True, diagnostic=True,
++    )
++
++
++def _clear_length_continuation_marks(messages: List[Dict[str, Any]]) -> None:
++    for _frag in messages:
++        if isinstance(_frag, dict):
++            _frag.pop("_length_continuation_fragment", None)
++            _frag.pop("_length_continuation_nudge", None)
++
++
++_TRUNCATION_FALLBACK_LINE = (
++    "🛡️  Truncation retries exhausted on the primary — continuing this turn on the fallback model."
++)
++_TRUNCATION_FALLBACK_STATUS = "Responses kept truncating; switching to the fallback model..."
++
++
++def truncated_tool_call_final(
++    ceiling: Optional[int], requested: Optional[int], hit: bool, corroborated: bool,
++) -> str:
++    """User-facing copy once truncated tool-call retries are exhausted with no fallback
++    left: the corroborated route ceiling (numeric), an uncorroborated clamp (qualitative),
++    or a model that just cannot emit the call. Shared with the router-masked twin in
++    agent/turn_tool_validation.py."""
++    if hit and corroborated and ceiling and requested:
++        return (
++            f"Response truncated at this provider route's "
++            f"~{ceiling:,}-token output ceiling (the "
++            f"configured {requested:,}-token budget is not "
++            f"available here). The pending tool call could not be "
++            f"completed even after re-planning — use a model with a "
++            f"larger output window for this step, or ask for the "
++            f"work in smaller pieces."
++        )
++    if hit:
++        return (
++            "Response truncated while emitting a tool call and "
++            "could not be completed after re-planning — the "
++            "provider or model is cutting responses well short "
++            "of the configured budget. Try a model with a larger "
++            "output window for this step, or ask for the work in "
++            "smaller pieces."
++        )
++    return (
++        "The model repeatedly stopped mid tool-call and the "
++        "action was not executed — this model appears "
++        "unreliable at emitting tool calls in this "
++        "conversation (no fallback model was available to "
++        "take over). Try again, use a larger model for this "
++        "step, or ask for the work in smaller pieces."
++    )
++
++
+ def _abort_reason(agent: Any, content: Any, has_tool_calls: bool) -> Optional[tuple]:
+     """``(vprint, user response, error)`` when continuation must NOT be attempted:
+     thinking exhausted the budget (reasoning blocks with no visible text after them —
+@@ -316,14 +412,45 @@ def _continue_text(st: _Trunc, _retry: TurnRetryState, assistant_message: Any) -
+     )
+ 
+ 
+-def _retry_truncated_tool_call(st: _Trunc, api_kwargs: Any) -> TruncationVerdict:
++def _retry_truncated_tool_call(st: _Trunc, _retry: TurnRetryState, api_kwargs: Any) -> TruncationVerdict:
+     """Truncated tool call: re-run the same call (up to 4×) with a boosted max_tokens —
+     a real output-cap truncation needs it, harmless for a network stall — else refuse to
+-    execute incomplete arguments."""
++    execute incomplete arguments.
++
++    Every non-stub retry carries the re-plan nudge: the cut call was NOT executed, and
++    blind identical re-runs are how a flaky emitter burns the whole budget. A corroborated
++    route ceiling makes boosted retries pointless (the wall is server-side) — two nudged
++    attempts at the measured ceiling, then escalate. Exhausted retries hand the turn to the
++    configured fallback before declaring it dead (same escalation as the content-filter
++    stall)."""
++    from agent.conversation_loop import _last_message_is_replan_nudge, _silent_cap_replan_nudge
++
+     agent = st.agent
+-    if st.truncated_tool_call_retries < 4:
++    messages = st.messages
++    _corroborated = st.silent_cap_hit and st.silent_cap_corroborated
++    _tc_retry_budget = 2 if _corroborated else 4
++    if st.truncated_tool_call_retries < _tc_retry_budget:
+         st.truncated_tool_call_retries += 1
+         n = st.truncated_tool_call_retries
++        if not st.is_stub and not _last_message_is_replan_nudge(messages):
++            append_message(messages, {
++                "role": "user",
++                "content": _silent_cap_replan_nudge(
++                    st.silent_cap_ceiling if _corroborated else None,
++                    st.silent_cap_budget if _corroborated else None,
++                ),
++                "_length_continuation_nudge": True,
++            })
++            agent._session_messages = messages
++        if _corroborated:
++            # No boost: the corroborated ceiling is already installed as the one-shot
++            # request override by _note_silent_output_clamp.
++            agent._buffer_vprint(
++                "⚠️  Tool call cut at the route's corroborated "
++                "ceiling — asking the model to re-plan in "
++                "smaller pieces..."
++            )
++            return st.done("continue")  # don't append the broken response
+         if st.is_stub:
+             agent._buffer_vprint(f"⚠️  Stream interrupted mid tool-call — retrying ({n}/4)...")
+         else:
+@@ -346,7 +473,25 @@ def _retry_truncated_tool_call(st: _Trunc, api_kwargs: Any) -> TruncationVerdict
+             f"{agent.log_prefix}⚠️  Truncated tool call response detected again — refusing to execute incomplete tool arguments.",
+             force=True, diagnostic=True,
+         )
+-        _final_response = _TRUNCATED_FINAL
++        # Truncation retries exhausted ≈ the primary cannot produce this response. Same
++        # escalation as the content-filter stall: hand the turn to the configured fallback
++        # before declaring it dead.
++        if agent._fallback_index < len(agent._fallback_chain) and agent._try_activate_fallback():
++            agent._vprint(f"{agent.log_prefix}{_TRUNCATION_FALLBACK_LINE}", force=True, diagnostic=True)
++            agent._emit_status(_TRUNCATION_FALLBACK_STATUS)
++            _clear_length_continuation_marks(messages)
++            agent._session_messages = messages
++            st.length_continue_retries = 0
++            st.truncated_tool_call_retries = 0
++            st.truncated_response_parts = []
++            st.retry_count = 0
++            st.compression_attempts = 0
++            _retry.primary_recovery_attempted = False
++            _retry.restart_with_rebuilt_messages = True
++            return st.done("break")
++        _final_response = truncated_tool_call_final(
++            st.silent_cap_ceiling, st.silent_requested, st.silent_cap_hit, _corroborated,
++        )
+     agent._cleanup_task_resources(st.effective_task_id)
+     # Prior tool batches can leave a tool-result tail; this path never reaches finalize_turn.
+     close_interrupted_tool_sequence(st.messages, _final_response)
+@@ -419,6 +564,10 @@ def recover_from_truncation(
+     _trunc_content = getattr(_trunc_msg, "content", None) if _trunc_msg else None
+     _trunc_has_tool_calls = bool(getattr(_trunc_msg, "tool_calls", None)) if _trunc_msg else False
+ 
++    # ── Silent route output-ceiling discovery ──────────
++    # (rationale at agent.conversation_loop._SILENT_OUTPUT_CLAMP_RATIO)
++    _note_silent_cap(st, api_kwargs)
++
+     abort = _abort_reason(agent, _trunc_content, _trunc_has_tool_calls)
+     if abort is not None:
+         line, user_response, error = abort
+@@ -432,7 +581,7 @@ def recover_from_truncation(
+         if _trunc_msg is not None:
+             if not _trunc_has_tool_calls:
+                 return _continue_text(st, _retry, _trunc_msg)
+-            return _retry_truncated_tool_call(st, api_kwargs)
++            return _retry_truncated_tool_call(st, _retry, api_kwargs)
+ 
+     if len(messages) > 1:
+         agent._vprint(f"{agent.log_prefix}   ⏪ Rolling back to last complete assistant turn", diagnostic=True)

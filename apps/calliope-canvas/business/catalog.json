@@ -1,0 +1,259 @@
+{
+  "id": "https://calliope.local/a2ui/workspace/v1",
+  "version": 10,
+  "baseline": 9,
+  "since": {
+    "CResultTable": 10,
+    "CMarkdown": 10,
+    "CMetric": 10
+  },
+  "components": {
+    "CStack": {
+      "children": "children",
+      "direction": [
+        "row",
+        "column"
+      ],
+      "gap": [
+        "none",
+        "xs",
+        "sm",
+        "md",
+        "lg",
+        "xl"
+      ],
+      "collapse": [
+        "never",
+        "phone",
+        "tablet"
+      ],
+      "weight": "weight",
+      "wrap": "boolean"
+    },
+    "CSurface": {
+      "child": "child",
+      "tone": [
+        "neutral",
+        "accent",
+        "warm",
+        "cool",
+        "success"
+      ],
+      "treatment": [
+        "plain",
+        "outlined",
+        "soft",
+        "wash",
+        "inset",
+        "row"
+      ],
+      "padding": [
+        "none",
+        "sm",
+        "md",
+        "lg"
+      ],
+      "weight": "weight"
+    },
+    "CText": {
+      "text": "text",
+      "size": [
+        "eyebrow",
+        "caption",
+        "body",
+        "title",
+        "display",
+        "metric"
+      ],
+      "tone": [
+        "normal",
+        "muted",
+        "accent",
+        "warm",
+        "cool",
+        "success"
+      ],
+      "family": [
+        "body",
+        "display",
+        "mono"
+      ],
+      "weight": "weight"
+    },
+    "CMarkdown": {
+      "text": "text",
+      "tone": [
+        "normal",
+        "muted"
+      ]
+    },
+    "CBadge": {
+      "text": "text",
+      "tone": [
+        "neutral",
+        "accent",
+        "warm",
+        "cool",
+        "success"
+      ]
+    },
+    "CMeter": {
+      "label": "text",
+      "value": "fraction",
+      "tone": [
+        "neutral",
+        "accent",
+        "warm",
+        "cool",
+        "success"
+      ]
+    },
+    "CMetric": {
+      "label": "text",
+      "value": "text",
+      "delta": "text",
+      "meaning": [
+        "good",
+        "bad",
+        "neutral"
+      ],
+      "status": "text",
+      "caption": "text"
+    },
+    "CArtwork": {
+      "asset": [
+        "neighborhood"
+      ],
+      "size": [
+        "banner",
+        "portrait"
+      ],
+      "weight": "weight"
+    },
+    "CVegaChart": {
+      "spec": "objectBinding",
+      "height": "chartHeight",
+      "description": "text",
+      "onSelect": "eventName"
+    },
+    "CDataGrid": {
+      "columns": "columns",
+      "children": "children",
+      "rowKeys": "rowKeys",
+      "resizable": "boolean"
+    },
+    "CResultTable": {
+      "columns": "resultColumns",
+      "rows": "dataBinding",
+      "rowCount": "count",
+      "truncated": "boolean",
+      "visibleRows": "visibleRows"
+    },
+    "CRecordPicker": {
+      "label": "text",
+      "value": "stringListBinding",
+      "options": "options",
+      "weight": "weight"
+    },
+    "CField": {
+      "label": "text",
+      "value": "text",
+      "error": "text",
+      "kind": [
+        "text",
+        "longText",
+        "money",
+        "quantity",
+        "date",
+        "time"
+      ],
+      "unit": "text",
+      "minimum": "literalText",
+      "maximum": "literalText",
+      "precision": "precision",
+      "maxLength": "maxLength",
+      "required": "booleanBinding",
+      "visible": "booleanBinding",
+      "readOnly": "boolean",
+      "help": "text",
+      "weight": "weight"
+    },
+    "CRecordPane": {
+      "child": "child",
+      "title": "text"
+    },
+    "CAttachments": {
+      "label": "text",
+      "value": "stringListBinding",
+      "names": "dataBinding",
+      "offline": "boolean",
+      "pending": "booleanBinding",
+      "readOnly": "boolean"
+    },
+    "CResourceDay": {
+      "children": "children",
+      "resources": "resources",
+      "positions": "positions",
+      "start": "minute",
+      "end": "minute",
+      "label": "literalText"
+    },
+    "CFilterBar": {
+      "label": "text",
+      "children": "children",
+      "value": "dataBinding",
+      "onChange": "filterEvent",
+      "debounceMs": "filterDelay"
+    },
+    "CSection": {
+      "title": "text",
+      "subtitle": "text",
+      "child": "child",
+      "tone": [
+        "neutral",
+        "accent",
+        "warm",
+        "cool",
+        "success"
+      ],
+      "weight": "weight",
+      "collapse": [
+        "never",
+        "phone"
+      ],
+      "summary": "text"
+    },
+    "CScrollArea": {
+      "child": "child",
+      "label": "text",
+      "height": "scrollHeight",
+      "weight": "weight",
+      "minHeight": "scrollMinimum"
+    },
+    "CRecordItem": {
+      "label": "text",
+      "detail": "text",
+      "badge": "text",
+      "recordId": "text",
+      "selectedId": "text",
+      "onSelect": "eventName"
+    },
+    "CReactiveRegion": {
+      "child": "child",
+      "label": "text",
+      "status": "text",
+      "revision": "text",
+      "weight": "weight"
+    },
+    "CRecordLink": {
+      "label": "text",
+      "reference": "recordReference",
+      "weight": "weight"
+    },
+    "CLink": {
+      "label": "text",
+      "href": "text",
+      "weight": "weight"
+    }
+  }
+}

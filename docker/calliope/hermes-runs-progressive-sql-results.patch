@@ -1,0 +1,100 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/gateway/platforms/api_server_runs.py b/gateway/platforms/api_server_runs.py
+index f018926..c288720 100644
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -279,12 +279,27 @@ def _make_run_event_callback(self, run_id: str, loop: "asyncio.AbstractEventLoop
+     def _callback(event_type: str, tool_name: str = None, preview: str = None, args=None, **kwargs):
+         # _thinking / subagent.tool / subagent_progress are deliberately dropped (UI noise);
+         # lifecycle boundaries must land so clients can observe delegate_task failures.
++        if event_type == "tool.started":
++            event = _run_event(
++                run_id, "tool.started", tool=tool_name, preview=preview,
++                call_id=str(kwargs.get("call_id") or kwargs.get("tool_call_id") or ""))
++            name = str(tool_name or "")
++            if (
++                name in ("todo", "todo_list")
++                or name.endswith(("__todo", "__todo_list"))
++                or name.endswith((".todo", ".todo_list"))
++                or name.endswith(("/todo", "/todo_list"))
++            ) and isinstance(args, dict):
++                event["arguments"] = args
++            _push(event)
++            return
++        if event_type == "tool.completed":
++            # Completion is published by ``_run_tool_complete`` (tool_complete_callback) with the
++            # exact call identity and, for projectable tools, the arguments and result.
++            return
+         fields = _FIXED_EVENT_FIELDS.get(event_type)
+         if fields is not None:
+             event_fields = fields(tool_name, preview, kwargs)
+-            if event_type == "tool.completed":
+-                event_fields["preview"] = _tool_completed_preview(
+-                    kwargs.get("result"), redact_sensitive_text)
+             _push(_run_event(run_id, event_type, **event_fields))
+         elif event_type in {"subagent.start", "subagent.complete"}:
+             event = _run_event(run_id, event_type)
+@@ -889,6 +904,55 @@ async def _execute_run(self, run: _RunLaunch, *, _api_server) -> None:
+             loop.call_soon_threadsafe(run.put_event, _run_event(
+                 run_id, "message.interim", text=text, already_streamed=bool(already_streamed)))
+ 
++    def _run_tool_complete(
++        tool_call_id: str,
++        function_name: str,
++        function_args: Any,
++        function_result: Any,
++    ) -> None:
++        """Publish projectable results using Hermes v0.21's callback contract."""
++        if run_id not in self._run_streams:
++            return
++        name = str(function_name or "")
++        call_id = str(tool_call_id or "")
++        args = function_args if isinstance(function_args, dict) else {}
++        result = function_result
++        if name == "tool_call" and isinstance(args, dict):
++            inner = args.get("tool_call")
++            if isinstance(inner, dict):
++                name = str(inner.get("name") or name)
++                call_id = str(inner.get("id") or call_id)
++                args = inner.get("arguments", args)
++            elif isinstance(args.get("arguments"), dict):
++                name = str(args.get("name") or name)
++                args = args["arguments"]
++        is_error = bool(
++            isinstance(result, dict)
++            and (
++                result.get("isError")
++                or result.get("is_error")
++                or result.get("error")
++            )
++        )
++        payload: Dict[str, Any] = {
++            "event": "tool.failed" if is_error else "tool.completed",
++            "run_id": run_id,
++            "timestamp": time.time(),
++            "tool": name,
++            "call_id": call_id,
++            "error": is_error,
++        }
++        from gateway.calliope_specialist_assignment import tool_receipt
++        receipt = tool_receipt(name, payload["event"], result, args)
++        if receipt is not None:
++            payload["work_receipt"] = receipt
++        from stage_delivery import receipt_fields
++        payload.update(receipt_fields(name, args, result))
++        try:
++            loop.call_soon_threadsafe(run.put_event, payload)
++        except Exception:
++            pass
++
+     def _finish(status: str, extra: Optional[dict] = None, **fields: Any) -> None:
+         """Terminal status, then best-effort ``run.<status>`` event; key order is wire shape."""
+         extra = extra or {}
+@@ -913,6 +1006,7 @@ async def _execute_run(self, run: _RunLaunch, *, _api_server) -> None:
+         with self._profile_scope(run.request_profile):
+             agent = self._create_agent(
+                 stream_delta_callback=_text_cb, tool_progress_callback=self._make_run_event_callback(run_id, loop),
++                tool_complete_callback=_run_tool_complete,
+                 interim_assistant_callback=_interim_cb, **run.agent_kwargs)
+         self._active_run_agents[run_id] = agent
+         approval_notify = _make_approval_notify(self, run, _api_server=_api_server)

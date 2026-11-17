@@ -1,0 +1,81 @@
+api_version: rvbbit.capability/v1
+kind: hf_backend
+name: emotion_distilroberta
+title: Emotion Classifier
+description: Classify text into emotion labels for support, survey, content, and conversation analytics.
+license: unknown
+tags: [classify, emotion, text, tabular, row]
+source:
+  provider: huggingface
+  model: j-hartmann/emotion-english-distilroberta-base
+  url: https://huggingface.co/j-hartmann/emotion-english-distilroberta-base
+runtime:
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+backend:
+  name: classify_emotion_distilroberta
+  transport: rvbbit
+  batch_size: 32
+  max_concurrent: 4
+  timeout_ms: 120000
+  description: DistilRoBERTa emotion classifier.
+operators:
+  - name: classify_emotion
+    description: Classify free text into emotion labels.
+    arg_names: [text]
+    arg_types: [text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      text: "{{ inputs.text }}"
+  - name: classify_row_emotion
+    description: Classify the emotional tone of a JSONB row.
+    arg_names: [row]
+    arg_types: [jsonb]
+    return_type: jsonb
+    parser: json
+    inputs:
+      text: "{{ inputs.row }}"
+  - name: emotion
+    description: Return the top emotion label for free text.
+    arg_names: [text]
+    arg_types: [text]
+    return_type: text
+    parser: strip
+    steps:
+      - name: raw
+        kind: specialist
+        specialist: classify_emotion_distilroberta
+        inputs:
+          text: "{{ inputs.text }}"
+      - name: label
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.raw.output }}"
+          path: label
+          default: neutral
+  - name: emotion_confidence
+    description: Return the confidence score for the top emotion label.
+    arg_names: [text]
+    arg_types: [text]
+    return_type: float8
+    parser: score_0_1
+    steps:
+      - name: raw
+        kind: specialist
+        specialist: classify_emotion_distilroberta
+        inputs:
+          text: "{{ inputs.text }}"
+      - name: score
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.raw.output }}"
+          path: score
+          default: 0
+smoke:
+  inputs:
+    - text: I am thrilled that the replacement arrived early
+      row: '{"ticket":"replacement arrived early","message":"I am thrilled","rating":5}'

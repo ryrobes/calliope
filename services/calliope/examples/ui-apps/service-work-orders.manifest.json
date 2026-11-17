@@ -1,0 +1,31 @@
+{
+  "actions": {
+    "save_note": {
+      "description": "Save a handoff note if the work order is unchanged",
+      "inputs": {
+        "id": {
+          "type": "string",
+          "max_length": 80
+        },
+        "version": {
+          "type": "integer"
+        },
+        "note": {
+          "type": "string",
+          "max_length": 2000
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.ui_example_jobs SET note=$1, version=version+1 WHERE id=$2 AND version=$3 RETURNING id,version,note",
+          "params": [
+            "note",
+            "id",
+            "version"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    }
+  }
+}

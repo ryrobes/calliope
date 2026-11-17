@@ -1,0 +1,51 @@
+{
+  "api_version": "rvbbit.pack/v1",
+  "id": "builtin/clover-analytics",
+  "name": "clover_analytics",
+  "title": "Clover CPU analytics",
+  "description": "CPU clustering using the installed Clover embedding space, plus portable sklearn anomaly models.",
+  "license": "apache-2.0",
+  "tags": [
+    "clover",
+    "cpu",
+    "analytics",
+    "clustering",
+    "anomaly",
+    "sql"
+  ],
+  "capability": "capability.json",
+  "source": {
+    "provider": "builtin",
+    "model": "clover/cpu-analytics",
+    "revision": "v1-sklearn-1.6.1"
+  },
+  "runtime": {
+    "mode": "build",
+    "template": "clover-analytics",
+    "device": "cpu"
+  },
+  "exports": {
+    "backend": "clover_analytics",
+    "operators": [
+      "clover_analytics"
+    ]
+  },
+  "install": {
+    "mode": "build",
+    "warren": true,
+    "docker": true
+  },
+  "acceptance": {
+    "target_selector": {
+      "capability": true,
+      "docker": true,
+      "gpu": false
+    },
+    "tests": [
+      {
+        "name": "cpu_worker_and_sql",
+        "sql": "DO $$ BEGIN IF rvbbit.clover_analytics('health','{}')->>'device' <> 'cpu' THEN RAISE EXCEPTION 'CPU worker did not respond'; END IF; END $$;"
+      }
+    ]
+  }
+}

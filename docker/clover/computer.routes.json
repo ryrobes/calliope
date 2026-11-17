@@ -1,0 +1,10 @@
+{
+  "computer_decide": {
+    "upstream_base": "http://clover-computer:8095",
+    "upstream_path": "/predict",
+    "upstream_bearer_token_env": "CLOVER_COMPUTER_KEY",
+    "health_url": "http://clover-computer:8095/health",
+    "model_version": "cua-s1-4b-0.2/16818868b0cc",
+    "timeout_ms": 180000
+  }
+}

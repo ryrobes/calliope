@@ -1,0 +1,1754 @@
+/*
+ * Shared Warehouse appearance chrome.  This stylesheet is loaded only by
+ * first-party Warehouse pages; authored dashboard/app documents and their
+ * iframes intentionally do not receive it.
+ */
+/* Do not opt first-party pages into cross-document View Transitions. Browser
+   compositor snapshots can expose their default canvas between documents,
+   which is especially glaring in dark mode. Each destination paints its own
+   desktop first, then animates only these foreground shells on entry. */
+html {
+  background: var(--void, #100d0b);
+}
+
+.warehouse-desktop-background {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* A tiny same-origin navigation bridge. The outgoing page records its actual
+   wallpaper URL; the incoming head restores it on this root pseudo before its
+   body exists, then fades it once the real backdrop has decoded. */
+html[data-warehouse-background-bridge]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  background-color: var(--void, #100d0b);
+  background-image: var(--warehouse-bridge-wallpaper);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: var(--warehouse-bridge-opacity, .58);
+  filter: saturate(.72) contrast(1.04);
+  transition: opacity .22s ease-out;
+}
+
+html[data-warehouse-background-bridge="settling"]::before {
+  opacity: 0;
+}
+
+.warehouse-desktop-background > .bg,
+.warehouse-desktop-background > .veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.warehouse-desktop-background > .bg {
+  z-index: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.warehouse-desktop-background > .veil {
+  z-index: 1;
+}
+
+body > nav,
+body > main,
+body > .card,
+body > .gate,
+body > .calliope-float {
+  animation: warehouse-page-in .24s cubic-bezier(.16, 1, .3, 1) backwards;
+}
+
+/* Keep Calliope's glass surfaces outside animated stacking contexts. A
+   transformed notebook/topbar becomes a backdrop root and prevents the panes'
+   backdrop-filter from sampling the wallpaper. Animate their contents only. */
+body[data-warehouse-page="calliope"] > nav,
+body[data-warehouse-page="calliope"] > main {
+  animation: none;
+}
+
+body[data-warehouse-page="calliope"] > nav > *,
+body[data-warehouse-page="calliope"] > main > .sessions-column > *,
+body[data-warehouse-page="calliope"] > main > .stage-column > *,
+body[data-warehouse-page="calliope"] > main > .chat-column > * {
+  animation: warehouse-page-in .24s cubic-bezier(.16, 1, .3, 1) backwards;
+}
+
+/* Product identity shared by the login, Gallery, access gate, and Calliope.
+   RVBBIT.AI is deliberately provenance beneath the product, not a peer label. */
+.calliope-brand {
+  display: inline-flex;
+  min-width: max-content;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  color: var(--bone-bright, #fff7e9);
+  text-decoration: none;
+}
+
+.calliope-brand-name {
+  color: inherit;
+  font: 700 25px/.95 "Homemade Apple", cursive;
+  letter-spacing: -.025em;
+  -webkit-text-stroke: .38px currentColor;
+  paint-order: stroke fill;
+  text-shadow: 0 2px 13px color-mix(in oklch, var(--void, #100d0b) 62%, transparent);
+  white-space: nowrap;
+}
+
+.calliope-brand-provenance {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding-left: 1px;
+  color: var(--amber, #f5b446);
+  white-space: nowrap;
+}
+
+.calliope-brand-rabbit {
+  display: block;
+  width: 16px;
+  height: 8px;
+  flex: none;
+  object-fit: contain;
+}
+
+.calliope-brand-byline {
+  color: inherit;
+  font: 650 var(--rvbbit-type-small)/1 var(--font-superior-mono);
+  letter-spacing: .19em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.calliope-brand--hero {
+  align-items: center;
+}
+
+.calliope-brand--hero .calliope-brand-name {
+  font-size: clamp(37px, 10vw, 45px);
+  line-height: 1.22;
+  -webkit-text-stroke: .45px currentColor;
+  paint-order: stroke fill;
+  text-shadow: 0 4px 22px color-mix(in oklch, var(--void, #100d0b) 72%, transparent);
+}
+
+.calliope-brand--hero .calliope-brand-provenance {
+  align-self: flex-start;
+  margin-top: 2px;
+  margin-left: 15px;
+}
+
+.calliope-brand--hero .calliope-brand-byline {
+  font-size: var(--rvbbit-type-small);
+  font-weight: 700;
+  letter-spacing: .24em;
+}
+
+.calliope-brand--hero .calliope-brand-rabbit {
+  width: 20px;
+  height: 10px;
+}
+
+@keyframes warehouse-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(.996);
+  }
+}
+
+/* A fresh account has no derived wallpaper tokens. Supply the same complete
+   vocabulary in both modes so Floor and the older Warehouse shells agree.
+   Saved image palettes still override these defaults through inline tokens. */
+:root[data-warehouse-color-mode="dark"] {
+  color-scheme: dark;
+  --background: #100d0b;
+  --secondary-background: #1d1813;
+  --foreground: #e8ddcc;
+  --border: #65574b;
+  --ring: #f5b446;
+  --overlay: rgb(0 0 0 / .7);
+  --main: #f5b446;
+  --main-foreground: #100d0b;
+  --chart-1: #f5b446;
+  --chart-2: #68c7b2;
+  --chart-3: #80b9de;
+  --chart-4: #bb9cdb;
+  --chart-5: #df765f;
+  --chart-6: #da9abb;
+  --success: oklch(72% 0.19 145);
+  --warning: oklch(80% 0.16 85);
+  --danger: #df765f;
+  --info: oklch(70% 0.14 240);
+  --chrome-bg: #100d0b;
+  --chrome-border: #44382e;
+  --chrome-text: #b5aa9b;
+  --doc-bg: #100d0b;
+  --block-bg: #171310;
+  --block-bg-hover: #1d1813;
+  --block-border: #44382e;
+  --grid-dot: #30271f;
+  --grid-outline: #30271f;
+  --rvbbit-accent: #68c7b2;
+  --rvbbit-bg: #10221d;
+  --wallpaper-overlay-from: rgb(16 13 11 / .78);
+  --wallpaper-overlay-to: rgb(29 24 19 / .45);
+  --ambient-1: rgb(245 180 70 / .08);
+  --ambient-2: rgb(104 199 178 / .05);
+  --ambient-3: rgb(187 156 219 / .05);
+  --void: var(--background);
+  --panel: var(--block-bg);
+  --panel-2: var(--secondary-background);
+  --panel-raised: var(--block-bg-hover);
+  --panel-soft: color-mix(in oklch, var(--panel) 74%, transparent);
+  --bone: var(--foreground);
+  --bone-bright: #fff7e9;
+  --fog: rgb(232 221 204 / .60);
+  --dim: rgb(232 221 204 / .34);
+  --faint: rgb(232 221 204 / .16);
+  --line: rgb(232 221 204 / .13);
+  --line-hot: rgb(245 180 70 / .48);
+  --amber: var(--main);
+  --amber-soft: rgb(245 180 70 / .12);
+  --jade: var(--rvbbit-accent);
+  --jade-soft: rgb(104 199 178 / .10);
+  --gallery-rail-bg: color-mix(in oklch, var(--void) 84%, transparent);
+}
+
+:root[data-warehouse-color-mode="light"] {
+  color-scheme: light;
+  --background: oklch(97% 0.008 85);
+  --secondary-background: oklch(93% 0.010 85);
+  --foreground: oklch(22% 0.012 65);
+  --border: oklch(48% 0.012 70);
+  --ring: oklch(58% 0.13 68);
+  --overlay: oklch(22% 0.01 65 / .14);
+  --main: oklch(58% 0.13 68);
+  --main-foreground: oklch(99% 0.004 85);
+  --chart-1: oklch(54% 0.14 68);
+  --chart-2: oklch(52% 0.14 165);
+  --chart-3: oklch(58% 0.14 238);
+  --chart-4: oklch(55% 0.15 305);
+  --chart-5: oklch(58% 0.15 28);
+  --chart-6: oklch(56% 0.14 345);
+  --success: oklch(52% 0.15 145);
+  --warning: oklch(66% 0.15 82);
+  --danger: oklch(55% 0.19 25);
+  --info: oklch(52% 0.13 240);
+  --chrome-bg: oklch(92% 0.010 85);
+  --chrome-border: oklch(74% 0.012 75);
+  --chrome-text: oklch(40% 0.010 68);
+  --doc-bg: oklch(98% 0.005 88);
+  --block-bg: oklch(99% 0.004 88);
+  --block-bg-hover: oklch(95% 0.012 80);
+  --block-border: oklch(78% 0.012 75);
+  --grid-dot: oklch(85% 0.012 78);
+  --grid-outline: oklch(82% 0.012 78);
+  --rvbbit-accent: oklch(48% 0.11 165);
+  --rvbbit-bg: oklch(94% 0.025 160);
+  --wallpaper-overlay-from: oklch(96% 0.01 85 / .72);
+  --wallpaper-overlay-to: oklch(90% 0.025 85 / .52);
+  --ambient-1: oklch(76% 0.10 68 / .16);
+  --ambient-2: oklch(82% 0.10 165 / .12);
+  --ambient-3: oklch(76% 0.10 305 / .08);
+  --void: var(--background);
+  --panel: var(--block-bg);
+  --panel-2: var(--secondary-background);
+  --panel-raised: var(--block-bg-hover);
+  --panel-soft: color-mix(in oklch, var(--panel) 82%, transparent);
+  --bone: var(--foreground);
+  --bone-bright: oklch(16% 0.012 65);
+  --fog: color-mix(in oklch, var(--bone) 68%, transparent);
+  --dim: color-mix(in oklch, var(--bone) 46%, transparent);
+  --faint: color-mix(in oklch, var(--bone) 16%, transparent);
+  --line: color-mix(in oklch, var(--bone) 15%, transparent);
+  --line-hot: color-mix(in oklch, var(--main) 52%, transparent);
+  --amber: var(--main);
+  --amber-soft: color-mix(in oklch, var(--main) 11%, transparent);
+  --jade: var(--rvbbit-accent);
+  --jade-soft: color-mix(in oklch, var(--rvbbit-accent) 9%, transparent);
+  --gallery-rail-bg: color-mix(in oklch, var(--void) 84%, transparent);
+}
+
+[data-warehouse-theme-anchor] {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+
+.warehouse-theme-button {
+  position: relative;
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line, rgba(232, 221, 204, .16));
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--panel-raised, #1d1813) 88%, transparent);
+  color: var(--amber, #f5b446);
+  cursor: pointer;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .22);
+  transition: border-color .18s, color .18s, transform .18s;
+}
+
+.warehouse-theme-button:hover,
+.warehouse-theme-button[aria-expanded="true"] {
+  border-color: var(--line-hot, rgba(245, 180, 70, .55));
+  color: var(--bone, #e8ddcc);
+  transform: translateY(-1px);
+}
+
+.warehouse-theme-mode-button {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line, rgba(232, 221, 204, .16));
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--panel-raised, #1d1813) 72%, transparent);
+  color: var(--fog, rgba(232, 221, 204, .62));
+  cursor: pointer;
+  transition: border-color .18s, background .18s, color .18s, transform .18s;
+}
+
+.warehouse-theme-mode-button:hover,
+.warehouse-theme-mode-button:focus-visible {
+  outline: 0;
+  border-color: var(--line-hot, rgba(245, 180, 70, .55));
+  background: var(--amber-soft, rgba(245, 180, 70, .12));
+  color: var(--amber, #f5b446);
+  transform: translateY(-1px);
+}
+
+.warehouse-theme-mode-button svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.warehouse-theme-button .warehouse-theme-button-thumb {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-color: var(--panel-raised, #1d1813);
+  background-image:
+    var(
+      --warehouse-wallpaper,
+      linear-gradient(135deg, var(--amber, #f5b446), var(--panel-raised, #1d1813))
+    );
+  background-position: center;
+  background-size: cover;
+  opacity: 1;
+}
+
+.warehouse-theme-fallback {
+  position: fixed;
+  z-index: 80;
+  top: 12px;
+  right: 18px;
+}
+
+.warehouse-account {
+  position: relative;
+  min-width: 0;
+  flex: none;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font-family: var(--font-superior-mono);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-account-trigger {
+  min-width: 0;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 2px 3px 2px 11px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .16));
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--panel-raised, #1d1813) 70%, transparent);
+  color: inherit;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--bone, #e8ddcc) 4%, transparent);
+  transition: border-color .18s, background .18s, color .18s, transform .18s;
+}
+
+.warehouse-account-trigger:hover,
+.warehouse-account-trigger:focus-visible,
+.warehouse-account-trigger[aria-expanded="true"] {
+  outline: 0;
+  border-color: color-mix(in oklch, var(--amber, #f5b446) 50%, var(--line, transparent));
+  background: color-mix(in oklch, var(--amber-soft, rgba(245, 180, 70, .12)) 72%, var(--panel-raised, #1d1813));
+  color: var(--bone, #e8ddcc);
+}
+
+.warehouse-account-trigger:hover {
+  transform: translateY(-1px);
+}
+
+.warehouse-account-email {
+  max-width: min(220px, 22vw);
+  overflow: hidden;
+  color: inherit;
+  font: 500 var(--rvbbit-type-small)/1 var(--font-superior-mono);
+  letter-spacing: .035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-account-avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--jade, #68c7b2) 44%, var(--line, transparent));
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--jade-soft, rgba(104, 199, 178, .10)), var(--amber-soft, rgba(245, 180, 70, .12)));
+  color: var(--jade, #68c7b2);
+}
+
+.warehouse-account-initials {
+  font: 800 var(--rvbbit-type-small)/1 var(--font-superior-mono);
+  letter-spacing: .04em;
+}
+
+.warehouse-account-avatar-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .16s ease;
+}
+
+.warehouse-account-avatar-image.is-ready {
+  opacity: 1;
+}
+
+.warehouse-account-avatar.has-image {
+  border: 0;
+  background: transparent;
+}
+
+.warehouse-account-menu {
+  font-family: var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  position: absolute;
+  z-index: 140;
+  top: calc(100% + 9px);
+  right: 0;
+  width: min(270px, calc(100vw - 26px));
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--amber, #f5b446) 30%, var(--line, transparent));
+  background: color-mix(in oklch, var(--panel, #171310) 96%, transparent);
+  color: var(--bone, #e8ddcc);
+  box-shadow: 0 22px 58px color-mix(in oklch, var(--void, #100d0b) 78%, transparent), inset 0 1px 0 color-mix(in oklch, var(--bone, #e8ddcc) 4%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.16);
+  backdrop-filter: blur(24px) saturate(1.16);
+  animation: warehouse-account-in .14s ease-out;
+}
+
+.warehouse-account-menu[hidden] {
+  display: none;
+}
+
+.warehouse-account-menu-profile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 15px 13px;
+  border-bottom: 1px solid var(--line, rgba(232, 221, 204, .13));
+}
+
+.warehouse-account-menu-profile > span {
+  color: var(--jade, #68c7b2);
+  font: 700 var(--rvbbit-type-small)/1 var(--font-superior-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.warehouse-account-menu-profile strong,
+.warehouse-account-menu-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-account-menu-profile strong {
+  margin-top: 3px;
+  color: var(--bone-bright, #fff7e9);
+  font: 600 var(--rvbbit-type-body)/1.25 var(--font-superior-sans);
+}
+
+.warehouse-account-menu-email {
+  color: var(--dim, rgba(232, 221, 204, .4));
+  font: var(--rvbbit-type-small)/1.3 var(--font-superior-mono);
+}
+
+.warehouse-account-signout {
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 15px;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 700 var(--rvbbit-type-small)/1 var(--font-superior-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.warehouse-account-signout:hover,
+.warehouse-account-signout:focus-visible {
+  outline: 0;
+  background: var(--amber-soft, rgba(245, 180, 70, .12));
+  color: var(--amber, #f5b446);
+}
+
+.warehouse-account-menu.workspace-account-menu {
+  box-sizing: border-box;
+  width: min(326px, calc(100vw - 26px));
+  max-height: calc(100dvh - 82px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color:
+    color-mix(in oklch, var(--amber, #f5b446) 42%, var(--line, transparent))
+    color-mix(in oklch, var(--panel, #171310) 88%, transparent);
+}
+
+.warehouse-account-menu.workspace-account-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.warehouse-account-menu.workspace-account-menu::-webkit-scrollbar-track {
+  background: color-mix(in oklch, var(--panel, #171310) 88%, transparent);
+}
+
+.warehouse-account-menu.workspace-account-menu::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--amber, #f5b446) 42%, var(--line, transparent));
+  background-clip: padding-box;
+}
+
+.warehouse-account-actions {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+}
+
+.warehouse-account-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.warehouse-account-section + .warehouse-account-section {
+  margin-top: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line, rgba(232, 221, 204, .13));
+}
+
+.warehouse-account-section-label {
+  padding: 4px 7px 5px;
+  color: var(--dim, rgba(232, 221, 204, .4));
+  font: 700 var(--rvbbit-type-small)/1.2 var(--font-superior-sans);
+  letter-spacing: .035em;
+}
+
+.warehouse-account-action {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.warehouse-account-action > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.warehouse-account-action strong {
+  color: var(--bone-bright, #fff7e9);
+  font: 700 var(--rvbbit-type-body)/1.15 var(--font-superior-sans);
+}
+
+.warehouse-account-action small {
+  overflow: hidden;
+  color: var(--dim, rgba(232, 221, 204, .4));
+  font: var(--rvbbit-type-small)/1.25 var(--font-superior-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-account-action i {
+  color: var(--faint, rgba(232, 221, 204, .2));
+  font: 700 var(--rvbbit-type-body)/1 var(--font-superior-mono);
+  font-style: normal;
+  transition: transform .14s ease, color .14s ease;
+}
+
+.warehouse-account-action:hover,
+.warehouse-account-action:focus-visible {
+  outline: 0;
+  border-color: color-mix(in oklch, var(--amber, #f5b446) 34%, var(--line, transparent));
+  background: color-mix(in oklch, var(--amber, #f5b446) 8%, transparent);
+  color: var(--amber, #f5b446);
+}
+
+.warehouse-account-action:hover i,
+.warehouse-account-action:focus-visible i {
+  color: var(--amber, #f5b446);
+  transform: translateX(2px);
+}
+
+.workspace-account-menu .warehouse-account-signout {
+  border-top: 1px solid var(--line, rgba(232, 221, 204, .13));
+}
+
+@keyframes warehouse-account-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(.985);
+  }
+}
+
+.warehouse-theme-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(1200px, calc(100vw - 40px));
+  height: min(780px, calc(100dvh - 40px));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-hot, rgba(245, 180, 70, .45));
+  border-radius: 2px;
+  background: var(--void, #100d0b);
+  color: var(--bone, #e8ddcc);
+  box-shadow: 0 34px 120px rgba(0, 0, 0, .78);
+}
+
+.warehouse-theme-dialog::backdrop {
+  background: rgba(5, 4, 3, .76);
+  backdrop-filter: blur(7px);
+}
+
+.warehouse-theme-dialog [hidden] {
+  display: none !important;
+}
+
+.warehouse-theme-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--amber, #f5b446) 5%, transparent), transparent 32%),
+    color-mix(in oklch, var(--void, #100d0b) 96%, black);
+}
+
+.warehouse-theme-head {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  padding: 0 18px 0 21px;
+  border-bottom: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: color-mix(in oklch, var(--panel, #171310) 90%, transparent);
+}
+
+.warehouse-theme-head > div {
+  min-width: 0;
+}
+
+.warehouse-theme-kicker {
+  margin: 0 0 5px;
+  color: var(--amber, #f5b446);
+  font: 13px/1 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-theme-head h2 {
+  margin: 0;
+  color: var(--bone, #e8ddcc);
+  font: 650 24px/1.15 var(--font-superior-sans);
+  letter-spacing: -.02em;
+}
+
+.warehouse-theme-close {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: transparent;
+  color: var(--dim, rgba(232, 221, 204, .4));
+  font: 22px/1 var(--font-superior-sans);
+  cursor: pointer;
+}
+
+.warehouse-theme-close:hover {
+  border-color: var(--line-hot, rgba(245, 180, 70, .45));
+  color: var(--amber, #f5b446);
+}
+
+.warehouse-theme-content {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.warehouse-theme-library {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  border-right: 1px solid var(--line, rgba(232, 221, 204, .13));
+}
+
+.warehouse-theme-library,
+.warehouse-theme-content {
+  scrollbar-width: thin;
+  scrollbar-color:
+    color-mix(in oklch, var(--amber, #f5b446) 56%, var(--panel-raised, #1d1813))
+    color-mix(in oklch, var(--panel, #171310) 82%, transparent);
+}
+
+.warehouse-theme-library::-webkit-scrollbar,
+.warehouse-theme-content::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.warehouse-theme-library::-webkit-scrollbar-track,
+.warehouse-theme-content::-webkit-scrollbar-track {
+  background: color-mix(in oklch, var(--panel, #171310) 82%, transparent);
+  border-left: 1px solid var(--line, rgba(232, 221, 204, .13));
+}
+
+.warehouse-theme-library::-webkit-scrollbar-thumb,
+.warehouse-theme-content::-webkit-scrollbar-thumb {
+  min-height: 36px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background:
+    color-mix(in oklch, var(--amber, #f5b446) 56%, var(--panel-raised, #1d1813))
+    padding-box;
+}
+
+.warehouse-theme-library::-webkit-scrollbar-thumb:hover,
+.warehouse-theme-content::-webkit-scrollbar-thumb:hover {
+  background:
+    color-mix(in oklch, var(--amber, #f5b446) 78%, var(--panel-raised, #1d1813))
+    padding-box;
+}
+
+.warehouse-theme-library::-webkit-scrollbar-corner,
+.warehouse-theme-content::-webkit-scrollbar-corner {
+  background: var(--panel, #171310);
+}
+
+.warehouse-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 10px;
+}
+
+.warehouse-theme-tile {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: var(--panel, #171310);
+  color: var(--fog, rgba(232, 221, 204, .62));
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s, transform .18s, background .18s;
+}
+
+.warehouse-theme-tile:hover {
+  border-color: var(--line-hot, rgba(245, 180, 70, .45));
+  transform: translateY(-2px);
+}
+
+.warehouse-theme-tile[aria-pressed="true"] {
+  border-color: var(--amber, #f5b446);
+  background: var(--panel-raised, #1d1813);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--amber, #f5b446) 25%, transparent);
+}
+
+.warehouse-theme-tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: #0b0a09;
+}
+
+.warehouse-theme-tile span {
+  display: block;
+  padding: 8px 9px 9px;
+  overflow: hidden;
+  color: inherit;
+  font: 13px/1.2 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.warehouse-theme-empty {
+  min-height: 230px;
+  display: grid;
+  place-items: center;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1.6 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-align: center;
+  text-transform: none;
+}
+
+.warehouse-theme-preview {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 14px;
+  background: color-mix(in oklch, var(--panel, #171310) 74%, transparent);
+}
+
+.warehouse-theme-preview > * { flex-shrink: 0; }
+.warehouse-theme-background > .warehouse-theme-background-head { margin: 0; }
+.warehouse-theme-voice > .warehouse-theme-background-head b { font-weight: 700; color: var(--bone); }
+.warehouse-theme-presentation:has(input:disabled) { cursor: default; }
+
+.warehouse-theme-preview-image {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  height: clamp(64px, 12dvh, 116px);
+  overflow: hidden;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: var(--panel-raised, #1d1813);
+  background-position: center;
+  background-size: cover;
+}
+
+.warehouse-theme-preview-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, color-mix(in oklch, var(--void, #100d0b) 45%, transparent), transparent 55%);
+}
+
+.warehouse-theme-preview-status {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in oklch, var(--amber, #f5b446) 48%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--void, #100d0b) 76%, transparent);
+  color: var(--bone, #e8ddcc);
+  font: 13px/1 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
+  backdrop-filter: blur(12px) saturate(1.12);
+  box-shadow: 0 5px 18px color-mix(in oklch, var(--void, #100d0b) 32%, transparent);
+}
+
+.warehouse-theme-preview-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--amber, #f5b446);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--amber, #f5b446) 14%, transparent);
+  animation: warehouse-theme-preview-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.warehouse-theme-preview-status[hidden] {
+  display: none;
+}
+
+@keyframes warehouse-theme-preview-pulse {
+  from { opacity: .58; }
+  to { opacity: 1; }
+}
+
+.warehouse-theme-preview h3 {
+  margin: 8px 0 0;
+  overflow: hidden;
+  color: var(--bone, #e8ddcc);
+  font: 500 var(--rvbbit-type-body)/1.3 var(--font-superior-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-theme-preview > p {
+  margin: 0;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1.55 var(--font-superior-sans);
+}
+
+.warehouse-theme-swatches {
+  display: flex;
+  gap: 5px;
+  min-height: 10px;
+  margin-top: 8px;
+}
+
+.warehouse-theme-swatch {
+  min-width: 0;
+  flex: 1;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, white 14%, transparent);
+  background: var(--swatch);
+}
+
+.warehouse-theme-background {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: color-mix(in oklch, var(--panel-raised, #1d1813) 66%, transparent);
+}
+
+.warehouse-theme-voice {
+  margin-top: 10px;
+  padding: 10px;
+  border-top: 1px solid var(--line, rgba(232, 221, 204, .13));
+}
+
+.warehouse-theme-voice-subhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 6px;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1.2 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-theme-voice-subhead span {
+  color: var(--fog, rgba(232, 221, 204, .62));
+}
+
+.warehouse-theme-voice-modes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  padding: 2px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--void, #100d0b) 58%, transparent);
+}
+
+.warehouse-theme-voice-modes button {
+  min-height: 27px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+
+.warehouse-theme-voice-modes button[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--amber, #f5b446) 88%, white 4%);
+  color: var(--main-foreground, #1a1206);
+  box-shadow: 0 3px 12px color-mix(in oklch, var(--amber, #f5b446) 24%, transparent);
+  font-weight: 800;
+}
+
+.warehouse-theme-voice-personality {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.warehouse-theme-voice-personality > span {
+  display: flex;
+  justify-content: space-between;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1.2 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-theme-voice-personality output {
+  color: var(--fog, rgba(232, 221, 204, .62));
+}
+
+.warehouse-theme-voice-personality textarea {
+  height: 62px;
+  min-height: 62px;
+  box-sizing: border-box;
+  resize: none;
+  padding: 8px 9px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  border-radius: 2px;
+  outline: 0;
+  background: color-mix(in oklch, var(--void, #100d0b) 58%, transparent);
+  color: var(--bone, #e8ddcc);
+  font: 13px/1.4 var(--font-superior-sans);
+}
+
+.warehouse-theme-voice-personality textarea:focus {
+  border-color: var(--line-hot, rgba(245, 180, 70, .45));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--amber, #f5b446) 10%, transparent);
+}
+
+.warehouse-theme-voice:not([data-presentation="on"]) .warehouse-theme-voice-personality,
+.warehouse-theme-voice:not([data-presentation="on"]) .warehouse-theme-voice-modes {
+  opacity: .42;
+}
+
+.warehouse-theme-voice-modes button:disabled {
+  cursor: default;
+}
+
+.warehouse-theme-presentation,
+.warehouse-theme-voice-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  cursor: pointer;
+}
+
+.warehouse-theme-presentation input,
+.warehouse-theme-voice-progress input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--amber, #f5b446);
+}
+
+.warehouse-theme-presentation span,
+.warehouse-theme-voice-progress span {
+  display: grid;
+  gap: 2px;
+}
+
+.warehouse-theme-presentation b,
+.warehouse-theme-voice-progress b {
+  font: 13px/1.2 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-theme-presentation i,
+.warehouse-theme-voice-progress i {
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1.25 var(--font-superior-sans);
+  font-style: normal;
+}
+
+.warehouse-theme-voice-progress:has(input:disabled) {
+  opacity: .42;
+  cursor: default;
+}
+
+.warehouse-theme-voice > p {
+  margin: 7px 0 0 !important;
+  color: var(--fog, rgba(232, 221, 204, .62)) !important;
+  font: 13px/1.45 var(--font-superior-sans) !important;
+}
+
+.warehouse-theme-background-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font: 13px/1.2 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-theme-background-head b {
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font-weight: 500;
+}
+
+.warehouse-theme-background-head span {
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font-size: 13px;
+}
+
+.warehouse-theme-background-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.warehouse-theme-background-modes button {
+  min-height: 31px;
+  padding: 0 8px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: transparent;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.warehouse-theme-background-modes button + button {
+  border-left: 0;
+}
+
+.warehouse-theme-background-modes button[aria-pressed="true"] {
+  border-color: var(--line-hot, rgba(245, 180, 70, .45));
+  background: var(--amber-soft, rgba(245, 180, 70, .12));
+  color: var(--amber, #f5b446);
+}
+
+.warehouse-theme-background-modes button:disabled {
+  opacity: .36;
+  cursor: not-allowed;
+}
+
+.warehouse-theme-color {
+  grid-column: 1 / -1;
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: 1fr 32px auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-theme-color input {
+  width: 32px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: transparent;
+  cursor: pointer;
+}
+
+.warehouse-theme-color output {
+  color: var(--fog, rgba(232, 221, 204, .62));
+  letter-spacing: normal;
+}
+
+.warehouse-theme-preview-image[data-background-mode="solid"]::after {
+  display: none;
+}
+
+.warehouse-theme-error {
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in oklch, var(--danger, #df765f) 48%, transparent);
+  background: color-mix(in oklch, var(--danger, #df765f) 9%, transparent);
+  color: color-mix(in oklch, var(--danger, #df765f) 72%, white);
+  font: 13px/1.45 var(--font-superior-sans);
+}
+
+.warehouse-theme-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.warehouse-theme-action,
+.warehouse-theme-upload {
+  min-height: 33px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  border: 1px solid var(--line, rgba(232, 221, 204, .13));
+  background: transparent;
+  color: var(--fog, rgba(232, 221, 204, .62));
+  font: 13px/1 var(--font-superior-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.warehouse-theme-action:hover:not(:disabled),
+.warehouse-theme-upload:hover {
+  border-color: var(--line-hot, rgba(245, 180, 70, .45));
+  color: var(--amber, #f5b446);
+}
+
+.warehouse-theme-action.primary {
+  border-color: var(--amber, #f5b446);
+  background: var(--amber, #f5b446);
+  color: var(--main-foreground, #1a1206);
+  font-weight: 800;
+}
+
+.warehouse-theme-action:disabled,
+.warehouse-theme-upload[aria-disabled="true"] {
+  opacity: .36;
+  cursor: wait;
+}
+
+.warehouse-theme-upload input {
+  display: none;
+}
+
+.warehouse-theme-footnote {
+  margin-top: 8px !important;
+  color: var(--fog, rgba(232, 221, 204, .62)) !important;
+  font-size: 13px !important;
+}
+
+/* Once a saved image theme is active, re-tint first-party Warehouse chrome.
+   Artifact iframe documents remain a separate CSS tree and are untouched. */
+html[data-warehouse-wallpaper] .bg {
+  background-image: var(--warehouse-wallpaper) !important;
+  filter: saturate(.72) contrast(1.04) !important;
+}
+
+html body[data-warehouse-page="calliope"] .bg {
+  filter: brightness(.64) saturate(.72) contrast(1.08) !important;
+}
+
+html[data-warehouse-theme] .veil {
+  background:
+    radial-gradient(1100px 760px at 28% -8%, color-mix(in oklch, var(--main) 16%, transparent), transparent 63%),
+    linear-gradient(to bottom, color-mix(in oklch, var(--background) 32%, transparent) 0%, color-mix(in oklch, var(--background) 72%, transparent) 52%, color-mix(in oklch, var(--background) 94%, transparent) 100%) !important;
+}
+
+html[data-warehouse-theme] .wash,
+html[data-warehouse-theme] .grid-wash {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) !important;
+}
+
+html[data-warehouse-theme] nav,
+html[data-warehouse-theme] .topbar,
+html[data-warehouse-theme] .loginbar {
+  border-color: var(--line) !important;
+  background: color-mix(in oklch, var(--void) 85%, transparent) !important;
+}
+
+html[data-warehouse-theme] .card,
+html[data-warehouse-theme] .gate-card,
+html[data-warehouse-theme] .session-dialog,
+html[data-warehouse-theme] .surface:not(.kind-artifact),
+html[data-warehouse-theme] .rail-note {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel) 95%, transparent);
+}
+
+html[data-warehouse-theme] .card:hover,
+html[data-warehouse-theme] .surface:not(.kind-artifact):hover {
+  background: var(--panel-raised);
+}
+
+html[data-warehouse-theme] .sessions-column,
+html[data-warehouse-theme] .stage-column,
+html[data-warehouse-theme] .chat-column,
+html[data-warehouse-theme] .column-head,
+html[data-warehouse-theme] .composer,
+html[data-warehouse-theme] .markup-head,
+html[data-warehouse-theme] .markup-toolbar,
+html[data-warehouse-theme] .markup-foot {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel) 78%, transparent);
+}
+
+html[data-warehouse-theme] .stage-column {
+  background: color-mix(in oklch, var(--void) 55%, transparent);
+}
+
+html[data-warehouse-theme] .chat-column {
+  background: color-mix(in oklch, var(--panel) 90%, transparent);
+}
+
+/* Calliope deliberately keeps more of the selected scene visible than the
+   gallery/login shells. Its three panes and native surfaces act as layered
+   glass, while authored artifact iframe documents retain their own styling. */
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .veil {
+  background:
+    radial-gradient(1100px 760px at 28% -8%, color-mix(in oklch, var(--main) 6%, transparent), transparent 64%),
+    linear-gradient(to bottom, color-mix(in oklch, var(--background) 8%, transparent) 0%, color-mix(in oklch, var(--background) 20%, transparent) 54%, color-mix(in oklch, var(--background) 38%, transparent) 100%) !important;
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .topbar {
+  background: color-mix(in oklch, var(--void) 85%, transparent) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: blur(18px) saturate(1.16);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .sessions-column {
+  background: color-mix(in oklch, var(--panel) 24%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .stage-column {
+  background: color-mix(in oklch, var(--void) 7%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.13);
+  backdrop-filter: blur(12px) saturate(1.13);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .chat-column {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--void) 72%, transparent),
+      color-mix(in oklch, var(--panel) 68%, transparent)
+    );
+  -webkit-backdrop-filter: blur(24px) saturate(1.10);
+  backdrop-filter: blur(24px) saturate(1.10);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .column-head {
+  background: color-mix(in oklch, var(--panel) 23%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .composer {
+  background: color-mix(in oklch, var(--panel) 24%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .chat-column .calliope-head {
+  background: color-mix(in oklch, var(--void) 54%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .chat-column .composer {
+  background: color-mix(in oklch, var(--void) 62%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .stage-head {
+  background: color-mix(in oklch, var(--void) 17%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .surface {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel) 48%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.16);
+  backdrop-filter: blur(16px) saturate(1.16);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .surface.metadata-surface {
+  background: color-mix(in oklch, var(--panel) 40%, transparent);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .surface:not(.kind-artifact):hover {
+  background: color-mix(in oklch, var(--panel-raised) 59%, transparent);
+}
+
+html[data-warehouse-theme][data-warehouse-background="solid"] {
+  background: var(--warehouse-solid-background, var(--background)) !important;
+}
+
+html[data-warehouse-theme][data-warehouse-background="solid"] .bg {
+  opacity: 1 !important;
+  background-color: var(--warehouse-solid-background, var(--background)) !important;
+  background-image: none !important;
+  filter: none !important;
+}
+
+html[data-warehouse-theme][data-warehouse-background="solid"] body .veil {
+  background: none !important;
+}
+
+html[data-warehouse-theme][data-warehouse-background="solid"] .warehouse-theme-button-thumb {
+  background-color: var(--warehouse-solid-background, var(--background));
+  background-image: none;
+}
+
+html[data-warehouse-theme] input,
+html[data-warehouse-theme] textarea,
+html[data-warehouse-theme] .compose-box,
+html[data-warehouse-theme] .session-search {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel-raised) 78%, transparent);
+  color: var(--bone);
+}
+
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .compose-box,
+html[data-warehouse-theme] body[data-warehouse-page="calliope"] .session-search {
+  background: color-mix(in oklch, var(--panel-raised) 35%, transparent);
+}
+
+html[data-warehouse-theme] .data-table th {
+  background: var(--panel-raised);
+}
+
+html[data-warehouse-theme] .data-table td {
+  border-color: var(--line);
+}
+
+html[data-warehouse-theme] .chart-wrap {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--void) 66%, transparent);
+}
+
+html[data-warehouse-theme] .chart-axis {
+  stroke: color-mix(in oklch, var(--bone) 22%, transparent);
+}
+
+html[data-warehouse-theme] .chart-grid {
+  stroke: color-mix(in oklch, var(--bone) 8%, transparent);
+}
+
+html[data-warehouse-theme] .chart-label {
+  fill: color-mix(in oklch, var(--bone) 48%, transparent);
+}
+
+html[data-warehouse-theme] .chart-bar {
+  fill: var(--chart-2, var(--jade));
+}
+
+html[data-warehouse-theme] .chart-bar:hover {
+  fill: var(--chart-1, var(--amber));
+}
+
+html[data-warehouse-theme] .chart-line {
+  stroke: var(--chart-1, var(--amber));
+}
+
+html[data-warehouse-theme] .chart-area {
+  fill: color-mix(in oklch, var(--chart-1, var(--amber)) 13%, transparent);
+}
+
+html[data-warehouse-theme] .chart-point {
+  fill: var(--chart-1, var(--amber));
+  stroke: var(--panel);
+}
+
+/* Light mode is a structural re-render of the active room: the same image and
+   accent family, with warm paper glass and dark ink. Authored artifact iframe
+   documents remain isolated and keep their own color scheme. */
+html[data-warehouse-color-mode="light"] {
+  background: var(--void) !important;
+}
+
+html[data-warehouse-color-mode="light"] body {
+  color: var(--bone);
+}
+
+html[data-warehouse-color-mode="light"] .bg {
+  opacity: .32;
+  filter: brightness(1.08) saturate(.55) contrast(.9) !important;
+}
+
+html[data-warehouse-color-mode="light"] .veil {
+  background:
+    radial-gradient(1100px 760px at 28% -8%, color-mix(in oklch, var(--main) 9%, transparent), transparent 62%),
+    linear-gradient(to bottom, color-mix(in oklch, var(--background) 72%, transparent) 0%, color-mix(in oklch, var(--background) 88%, transparent) 54%, color-mix(in oklch, var(--background) 96%, transparent) 100%) !important;
+}
+
+html[data-warehouse-color-mode="light"] .wash,
+html[data-warehouse-color-mode="light"] .grid-wash {
+  opacity: .38;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) !important;
+}
+
+html[data-warehouse-color-mode="light"] nav,
+html[data-warehouse-color-mode="light"] .topbar,
+html[data-warehouse-color-mode="light"] .loginbar {
+  border-color: var(--line) !important;
+  background: color-mix(in oklch, var(--background) 88%, transparent) !important;
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] .loginbrand {
+  color: var(--bone) !important;
+}
+
+html[data-warehouse-color-mode="light"] .loginbrand small {
+  border-color: var(--line) !important;
+  color: var(--dim) !important;
+}
+
+html[data-warehouse-color-mode="light"] .card h1 {
+  color: var(--amber);
+}
+
+html[data-warehouse-color-mode="light"] .card p.sub,
+html[data-warehouse-color-mode="light"] .card label {
+  color: var(--fog);
+}
+
+html[data-warehouse-color-mode="light"] .card,
+html[data-warehouse-color-mode="light"] .gate-card,
+html[data-warehouse-color-mode="light"] .session-dialog,
+html[data-warehouse-color-mode="light"] .surface:not(.kind-artifact),
+html[data-warehouse-color-mode="light"] .rail-note {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel) 91%, transparent);
+  box-shadow: 0 14px 38px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] .sessions-column,
+html[data-warehouse-color-mode="light"] .stage-column,
+html[data-warehouse-color-mode="light"] .chat-column,
+html[data-warehouse-color-mode="light"] .column-head,
+html[data-warehouse-color-mode="light"] .composer,
+html[data-warehouse-color-mode="light"] .markup-head,
+html[data-warehouse-color-mode="light"] .markup-toolbar,
+html[data-warehouse-color-mode="light"] .markup-foot {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel) 73%, transparent);
+  box-shadow: none;
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .veil {
+  background:
+    radial-gradient(1100px 760px at 28% -8%, color-mix(in oklch, var(--main) 7%, transparent), transparent 64%),
+    linear-gradient(to bottom, color-mix(in oklch, var(--background) 64%, transparent) 0%, color-mix(in oklch, var(--background) 78%, transparent) 54%, color-mix(in oklch, var(--background) 91%, transparent) 100%) !important;
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .sessions-column {
+  background: color-mix(in oklch, var(--panel) 69%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .stage-column {
+  background: color-mix(in oklch, var(--background) 43%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .chat-column {
+  background: linear-gradient(180deg, color-mix(in oklch, var(--doc-bg) 83%, transparent), color-mix(in oklch, var(--panel) 76%, transparent));
+  box-shadow: inset 1px 0 0 color-mix(in oklch, var(--foreground) 4%, transparent), -16px 0 42px color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .column-head,
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .composer,
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .chat-column .calliope-head,
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .chat-column .composer,
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .stage-head {
+  background: color-mix(in oklch, var(--panel) 72%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .evidence-search {
+  background: linear-gradient(90deg, color-mix(in oklch, var(--jade) 5%, var(--panel)), color-mix(in oklch, var(--panel) 78%, transparent));
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .surface:not(.kind-artifact) {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel) 88%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] body[data-warehouse-page="calliope"] .surface:not(.kind-artifact):hover {
+  background: color-mix(in oklch, var(--panel-raised) 82%, white);
+}
+
+html[data-warehouse-color-mode="light"] .session-card:hover,
+html[data-warehouse-color-mode="light"] .surface-tabs button.active,
+html[data-warehouse-color-mode="light"] .compose-box,
+html[data-warehouse-color-mode="light"] .session-search,
+html[data-warehouse-color-mode="light"] input,
+html[data-warehouse-color-mode="light"] textarea {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--panel-raised) 52%, transparent);
+  color: var(--bone);
+}
+
+html[data-warehouse-color-mode="light"] .session-card.active {
+  background: linear-gradient(90deg, var(--amber-soft), color-mix(in oklch, var(--panel) 54%, transparent));
+}
+
+html[data-warehouse-color-mode="light"] .data-table th {
+  background: var(--secondary-background);
+}
+
+html[data-warehouse-color-mode="light"] .data-table td {
+  border-color: var(--line);
+}
+
+html[data-warehouse-color-mode="light"] .chart-wrap {
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--doc-bg) 88%, transparent);
+}
+
+html[data-warehouse-color-mode="light"] .instrument-library-dialog,
+html[data-warehouse-color-mode="light"] .action-library-dialog,
+html[data-warehouse-color-mode="light"] .style-library-dialog,
+html[data-warehouse-color-mode="light"] .work-inbox-dialog,
+html[data-warehouse-color-mode="light"] .surface-viewer-dialog,
+html[data-warehouse-color-mode="light"] .trail-dialog {
+  color-scheme: inherit;
+}
+
+html[data-warehouse-color-mode="light"] .tool-activity {
+  --bone: #e8f1ed;
+  --bone-bright: #f8fffc;
+  --fog: rgba(232, 241, 237, .62);
+  --dim: rgba(232, 241, 237, .38);
+  --line: rgba(232, 241, 237, .14);
+}
+
+html[data-warehouse-color-mode="light"] ::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--bone) 22%, transparent);
+}
+
+@media (max-width: 880px) {
+  body[data-warehouse-page="calliope"] .warehouse-account-email {
+    display: none;
+  }
+
+  body[data-warehouse-page="calliope"] .warehouse-account-trigger {
+    width: 34px;
+    padding: 2px;
+  }
+}
+
+@media (max-width: 760px) {
+  .warehouse-account-email {
+    display: none;
+  }
+
+  .warehouse-account-trigger {
+    width: 34px;
+    padding: 2px;
+  }
+
+  .warehouse-theme-dialog {
+    width: 100vw;
+    height: 100dvh;
+    border: 0;
+  }
+
+  .warehouse-theme-content {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .warehouse-theme-library {
+    min-height: 330px;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--line, rgba(232, 221, 204, .13));
+  }
+
+  .warehouse-theme-preview {
+    min-height: 340px;
+  }
+
+  .warehouse-theme-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  }
+
+  [data-warehouse-theme-anchor] {
+    gap: 4px;
+  }
+
+  .warehouse-theme-button,
+  .warehouse-theme-mode-button {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body > nav,
+  body > main,
+  body > .card,
+  body > .gate,
+  body > .calliope-float,
+  body[data-warehouse-page="calliope"] > nav > *,
+  body[data-warehouse-page="calliope"] > main > .sessions-column > *,
+  body[data-warehouse-page="calliope"] > main > .stage-column > *,
+  body[data-warehouse-page="calliope"] > main > .chat-column > *,
+
+  .warehouse-theme-button,
+  .warehouse-theme-mode-button,
+  .warehouse-account-trigger,
+  .warehouse-account-avatar-image,
+  .warehouse-theme-tile {
+    transition: none;
+  }
+
+  .warehouse-account-menu {
+    animation: none;
+  }
+
+  .warehouse-theme-preview-status::before {
+    animation: none;
+  }
+}
+
+/* Workspace settings reuse the appearance picker with a separate shared draft. */
+.warehouse-theme-dialog [hidden]{display:none!important}
+.warehouse-workspace-mode{display:grid;gap:9px;margin:18px 0;font:inherit;color:var(--bone)}
+.warehouse-workspace-mode>span{font-weight:600}
+.warehouse-workspace-mode select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--bone);font:inherit}
+.warehouse-workspace-mode small{color:var(--dim);line-height:1.5}
+
+.warehouse-theme-dialog[data-scope="workspace"] .warehouse-theme-shell{grid-template-rows:auto minmax(0,1fr) auto}
+.warehouse-theme-dialog[data-scope="workspace"] .warehouse-theme-preview>*{flex-shrink:0}
+.warehouse-theme-dialog[data-scope="workspace"] .warehouse-theme-preview>p,.warehouse-workspace-mode small{color:color-mix(in srgb,var(--bone) 70%,var(--panel))}
+.warehouse-workspace-footer{border-top:1px solid var(--line);padding:12px 16px;background:var(--panel)}
+.warehouse-workspace-footer .warehouse-theme-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin:0}

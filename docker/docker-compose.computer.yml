@@ -1,0 +1,21 @@
+# Run only Callie's persistent desktop inside its dedicated VM. The appliance
+# connects to the VM's private address; its authenticated gateway serves Stage.
+name: calliope-computer
+
+services:
+  desktop:
+    extends:
+      file: docker-compose.computer-base.yml
+      service: desktop
+    ports:
+      - "${CALLIOPE_COMPUTER_BIND_ADDRESS:?Set the VM private address}:9000:9000"
+      - "${CALLIOPE_COMPUTER_BIND_ADDRESS:?Set the VM private address}:6901:6901"
+    environment:
+      VNC_PW: ${CALLIOPE_DESKTOP_VNC_PASSWORD:?Initialize Computer credentials}
+      CALLIOPE_DESKTOP_CONTROL_KEY: ${CALLIOPE_DESKTOP_CONTROL_KEY:?Initialize Computer credentials}
+      CALLIOPE_COMPUTER_DECISION_URL: ${CALLIOPE_COMPUTER_DECISION_URL:?Set the appliance Computer decision endpoint}
+      CALLIOPE_COMPUTER_ALLOW_SUDO: ${CALLIOPE_COMPUTER_ALLOW_SUDO:-false}
+
+volumes:
+  rvbbit_desktop:
+  rvbbit_desktop_home:

@@ -1,0 +1,32 @@
+{
+  "actions": {
+    "save_visit": {
+      "description": "Save notes and append a report with the new photos for this fictional visit",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "key": {
+          "type": "uuid"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_hvac_jobs SET notes=$1::jsonb->>'notes',version=version+1 WHERE id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer AND length(trim($1::jsonb->>'notes')) BETWEEN 1 AND 4000 RETURNING id,version,notes",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_field_reports(id,job_id,request_id,fingerprint,notes,temperature,pressure,correction_of,source,attachments)\n       SELECT 'FR-'||$2::text,j.id,$2::text,md5($1::jsonb::text),$1::jsonb->>'notes',coalesce($1::jsonb->>'temperature',''),coalesce($1::jsonb->>'pressure',''),nullif($1::jsonb->>'correction_of',''),'Company app',coalesce($1::jsonb->'attachments','[]'::jsonb)\n       FROM calliope_apps.demo_hvac_jobs j WHERE j.id=$1::jsonb->>'id' AND length(trim($1::jsonb->>'notes')) BETWEEN 1 AND 4000\n       AND jsonb_typeof(coalesce($1::jsonb->'attachments','[]'::jsonb))='array'\n       AND jsonb_array_length(coalesce($1::jsonb->'attachments','[]'::jsonb))<=5\n       AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce($1::jsonb->'attachments','[]'::jsonb)) v WHERE jsonb_typeof(v)!='string' OR trim(both '\"' from v::text)!~'^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')\n       AND (nullif($1::jsonb->>'temperature','') IS NULL OR ($1::jsonb->>'temperature')::numeric BETWEEN -50 AND 150)\n       AND (nullif($1::jsonb->>'pressure','') IS NULL OR ($1::jsonb->>'pressure')::numeric BETWEEN 0 AND 1000)\n       AND (nullif($1::jsonb->>'correction_of','') IS NULL OR EXISTS(SELECT 1 FROM calliope_apps.demo_field_reports f WHERE f.id=$1::jsonb->>'correction_of' AND f.job_id=j.id)) RETURNING id",
+          "params": [
+            "draft",
+            "key"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    }
+  }
+}

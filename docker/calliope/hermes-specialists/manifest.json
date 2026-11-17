@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "key": "dashboard-studio",
+      "memory_bank": "calliope-dashboard-studio",
+      "memory_mission": "Retain durable dashboard construction, design-profile application, validation, publication, and repair lessons that make future Calliope visual work more reliable.",
+      "skills": [
+        "calliope-live-dashboards",
+        "calliope-hosted-operations",
+        "calliope-native-apps"
+      ]
+    },
+    {
+      "key": "warehouse-steward",
+      "memory_bank": "calliope-warehouse-steward",
+      "memory_mission": "Retain durable RVBBIT appliance-stewardship lessons across all three charters: warehouse/mirror/catalog/Business-Context diagnosis and repair; acceleration trials, refresh costs, layout outcomes, and reversals; and reusable integration recipes, authentication contracts, and verification steps.",
+      "skills": [
+        "calliope-acceleration-steward",
+        "calliope-integration-scout",
+        "calliope-hosted-operations"
+      ],
+      "cron": {
+        "name": "Calliope nightly acceleration stewardship",
+        "schedule": "17 2 * * *",
+        "skill": "calliope-acceleration-steward",
+        "prompt": "Run the nightly acceleration stewardship loop. Inspect the typed snapshot and open trials, judge new candidates and due outcomes, apply only evidence-backed reversible actions, and finish with a compact receipt of what changed and why. Do not wait for human approval."
+      }
+    },
+    {
+      "key": "semantic-architect",
+      "memory_bank": "calliope-semantic-architect",
+      "memory_mission": "Retain durable metric definitions, cube grains, value-system decomposition, semantic conflicts, topology evidence, and reuse opportunities that improve the governed business model.",
+      "skills": [
+        "calliope-semantic-architect",
+        "calliope-hosted-operations"
+      ],
+      "cron": {
+        "name": "Calliope nightly semantic architecture",
+        "schedule": "41 3 * * *",
+        "skill": "calliope-semantic-architect",
+        "prompt": "Run the semantic architecture maintenance loop. Inspect current Business Topology, governed metrics and cubes, repeated workload patterns, and recent specialist findings. Make only evidence-backed semantic improvements, record material findings, and finish with a compact receipt. If nothing should change, respond with exactly [SILENT]."
+      }
+    },
+    {
+      "key": "signal-watch",
+      "memory_bank": "calliope-signal-watch",
+      "memory_mission": "Retain which business changes proved material, which apparent anomalies were noise, the investigations that explained them, and the evidence patterns that improve future signal judgment.",
+      "skills": [
+        "calliope-signal-watch",
+        "calliope-hosted-operations"
+      ],
+      "cron": {
+        "name": "Calliope daily signal watch",
+        "schedule": "15 11 * * *",
+        "skill": "calliope-signal-watch",
+        "prompt": "Run the daily business signal watch. Use governed semantics, value systems, change evidence, and recent findings to identify only material changes worth attention. Investigate before reporting, record durable findings for real signals, and suppress routine noise. If nothing material changed, respond with exactly [SILENT]."
+      }
+    },
+    {
+      "key": "knowledge-gardener",
+      "memory_bank": "calliope-knowledge-gardener",
+      "memory_mission": "Retain durable Company Brain source quirks, coverage gaps, stale or duplicate content patterns, entity-linkage lessons, and successful enrichment repairs.",
+      "skills": [
+        "calliope-knowledge-gardener",
+        "calliope-hosted-operations"
+      ],
+      "cron": {
+        "name": "Calliope nightly knowledge gardening",
+        "schedule": "53 4 * * *",
+        "skill": "calliope-knowledge-gardener",
+        "prompt": "Run the Company Brain gardening loop. Inspect provider health, document freshness and failures, source coverage, duplication, and entity linkage. Apply safe local repairs, record material gaps or actions, and finish with a compact receipt. Then run the wiki pass: resolve flagged wiki pages first (rewrite against current evidence or retire), then distill the day's durable operational knowledge \u2014 human corrections first \u2014 into new or revised wiki pages with wiki_write_page, linking assertion fingerprints for checkable claims. If the garden and wiki are healthy and unchanged, respond with exactly [SILENT]."
+      }
+    },
+    {
+      "key": "analytical-skeptic",
+      "memory_bank": "calliope-analytical-skeptic",
+      "memory_mission": "Retain recurring analytical failure modes, misleading joins or comparisons, weak provenance patterns, visual interpretation hazards, and the corrections that made prior work defensible.",
+      "skills": [
+        "calliope-analytical-skeptic",
+        "calliope-hosted-operations"
+      ]
+    },
+    {
+      "key": "design-red-team",
+      "memory_bank": "calliope-design-red-team",
+      "memory_mission": "Retain recurring design failures in published dashboards and live apps \u2014 hierarchy, typography, colour, spacing, responsiveness, the generic-template smell \u2014 and the exact corrections that held, so future visual work ships cleaner on the first pass.",
+      "skills": [
+        "calliope-design-red-team",
+        "calliope-hosted-operations"
+      ]
+    }
+  ]
+}

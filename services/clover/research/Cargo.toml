@@ -1,0 +1,31 @@
+[package]
+name = "clover-research"
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Bounded, evidence-first Gemma web research sidecar for Clover"
+
+[dependencies]
+axum = { version = "0.8", features = ["http1", "json", "tokio"] }
+futures-util = "0.3"
+hex = "0.4"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+# Independently packaged CPU service.
+[workspace]

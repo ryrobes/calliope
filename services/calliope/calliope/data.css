@@ -1,0 +1,95 @@
+/* Floor supplies shared chrome and tokens. Connected Data owns its row order
+   and status/search bar so changes to the board cannot displace the inventory. */
+body[data-calliope-surface="data"] .app{grid-template-rows:auto auto minmax(0,1fr)}
+body[data-calliope-surface="data"] .floor-toolbar{grid-row:1}
+.floor-heading{min-width:0}
+.contextbar{grid-row:2;min-width:0;min-height:43px;padding:5px 22px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px;color:var(--muted);border-bottom:1px solid var(--line);font-size:var(--rvbbit-type-body);background:color-mix(in oklch,var(--panel) 90%,transparent);backdrop-filter:blur(14px)}
+.contextbar-status,.contextbar-actions{min-width:0;display:flex;align-items:center;gap:10px}
+.contextbar-status #status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contextbar-actions{justify-self:end;white-space:nowrap}
+.contextbar button{border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);padding:5px 10px}
+.contextbar button:hover{border-color:var(--accent)}
+.contextbar-search{min-width:0;justify-self:center}
+.contextbar-search input{width:clamp(240px,25vw,360px);font-size:var(--rvbbit-type-small)}
+
+.data-layout{grid-row:3;display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:12px;min-width:0;min-height:0;padding:12px 14px 14px}
+@media (max-width:880px){
+  .contextbar{grid-template-columns:minmax(0,1fr) auto;padding-inline:14px;gap:8px}
+  .contextbar-search{grid-row:2;grid-column:1/-1;width:100%}
+  .contextbar-search input{width:100%}
+  .contextbar-actions>span{display:none}
+  .data-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(100px,1fr) minmax(180px,2fr)}
+}
+@media (max-width:600px){
+  .floor-rail{height:96px;flex-wrap:wrap;gap:0 10px;padding:8px 14px}
+  .floor-rail-nav{order:3;justify-content:center;width:100%;height:28px}
+  .floor-open-calliope,.floor-open-calliope:hover,.floor-open-calliope:focus-visible{position:static;width:36px;height:36px;padding:0;border:0;border-radius:50%;transform:none;box-shadow:none}
+  .floor-open-calliope-avatar{width:36px;height:36px}
+  body[data-calliope-surface="data"] .app{height:calc(100% - 96px)}
+  .floor-wash{top:96px}
+}
+
+/* Freshness key in the toolbar */
+.data-key{display:inline-flex;align-items:center;gap:5px;padding:0 8px;color:var(--muted);font-size:var(--rvbbit-type-small)}
+.data-dot{width:7px;height:7px;flex:none;border-radius:50%;background:var(--line)}
+.data-dot.fresh{background:var(--ok,#4fae7a);box-shadow:0 0 7px color-mix(in srgb,var(--ok,#4fae7a) 55%,transparent)}
+.data-dot.day{background:var(--floor-wait)}
+.data-dot.old{background:color-mix(in srgb,var(--muted) 55%,transparent)}
+.data-dot.unknown{background:var(--line)}
+
+/* ── Tree ─────────────────────────────────────────────────────────────── */
+.data-tree{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:7px;padding-right:2px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.data-tree::-webkit-scrollbar{width:6px}
+.data-tree::-webkit-scrollbar-track{background:transparent}
+.data-tree::-webkit-scrollbar-thumb{border-radius:999px;background:var(--line)}
+.data-tree::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--muted) 45%,var(--line))}
+.data-tree>*{flex:none}
+.data-tree-group{border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}
+.data-tree-group.kind-service{border-left:2px solid color-mix(in srgb,var(--floor-stand) 70%,var(--line))}
+.data-tree-group.kind-integration{border-left:2px solid color-mix(in srgb,var(--floor-move) 60%,var(--line))}
+.data-tree-group.kind-schema{border-left:2px solid color-mix(in srgb,var(--floor-wait) 70%,var(--line))}
+.data-tree-head{width:100%;display:flex;align-items:center;gap:9px;padding:10px 11px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.data-tree-head:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+.data-tree-name{min-width:0;display:flex;flex-direction:column;gap:2px}
+.data-tree-name small{color:var(--muted);font:700 var(--rvbbit-type-small)/1 var(--mono);letter-spacing:.09em;text-transform:uppercase}
+.data-tree-name strong{overflow:hidden;font-size:var(--rvbbit-type-body);text-overflow:ellipsis;white-space:nowrap}
+.data-tree-detail{margin-left:auto;max-width:46%;overflow:hidden;color:var(--muted);font-size:var(--rvbbit-type-small);text-overflow:ellipsis;white-space:nowrap}
+.data-tree-when{color:var(--muted);font:var(--rvbbit-type-small)/1 var(--mono);white-space:nowrap}
+.data-tree-chevron{color:var(--muted);transition:transform .15s ease}
+.data-tree-group.open .data-tree-chevron{transform:rotate(180deg)}
+.data-tree-members{display:flex;flex-direction:column;border-top:1px solid var(--line);padding:4px 0}
+.data-tree-member{display:flex;align-items:center;gap:8px;padding:5px 11px 5px 16px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:var(--rvbbit-type-small);text-align:left;cursor:pointer}
+.data-tree-member:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+.data-tree-member.selected{background:color-mix(in srgb,var(--floor-wait) 12%,transparent)}
+.data-tree-member-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.data-tree-member-meta{margin-left:auto;color:var(--muted);font:var(--rvbbit-type-small)/1 var(--mono);white-space:nowrap}
+.data-tree-empty{padding:22px 14px;color:var(--muted);font-size:var(--rvbbit-type-small);text-align:center}
+
+/* ── Constellation ────────────────────────────────────────────────────── */
+.data-map{position:relative;min-height:0;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--card) 55%,transparent);overflow:hidden}
+.data-map svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.data-map-empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:var(--rvbbit-type-small);pointer-events:none}
+.data-map-empty[hidden]{display:none}
+.data-node{cursor:pointer;transition:opacity .2s ease}
+.data-node.dim{opacity:.3}
+.data-node-ring{fill:color-mix(in srgb,var(--card) 60%,transparent);stroke:var(--line);stroke-width:1}
+.data-node-ring.fresh{stroke:color-mix(in srgb,var(--ok,#4fae7a) 70%,var(--line));stroke-width:1.5}
+.data-node-ring.day{stroke:color-mix(in srgb,var(--floor-wait) 70%,var(--line))}
+.data-node:hover .data-node-ring{stroke-width:2;fill:color-mix(in srgb,var(--floor-wait) 7%,transparent)}
+.data-node-member{fill:color-mix(in srgb,var(--muted) 60%,transparent);transition:r .15s ease}
+.data-node-member.fresh{fill:var(--ok,#4fae7a)}
+.data-node-member.day{fill:var(--floor-wait)}
+.data-node-member.selected{fill:var(--floor-move);filter:drop-shadow(0 0 5px var(--floor-move))}
+.data-node-member:hover{r:4.5}
+.data-node-label{fill:var(--muted);font:600 11px var(--sans);pointer-events:none;paint-order:stroke;stroke:var(--bg,#0a1118);stroke-width:3px;stroke-linejoin:round}
+.data-node:hover .data-node-label{fill:var(--ink)}
+
+/* Layers: the generated Briarpatch scene (iframe) as the primary view,
+   the live constellation beneath it as the alternate. */
+.data-map-sketch{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
+.data-map-layers{position:absolute;top:10px;right:12px;z-index:2;display:flex;align-items:center;gap:6px}
+.data-map-layers button{padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--muted);font:700 var(--rvbbit-type-small)/1 var(--mono);letter-spacing:.05em;cursor:pointer;transition:color .14s,border-color .14s,background .14s}
+.data-map-layers button:hover{color:var(--ink)}
+.data-map-layers button.on{border-color:color-mix(in srgb,var(--floor-wait) 65%,var(--line));background:color-mix(in srgb,var(--floor-wait) 14%,var(--card));color:var(--ink)}
+.data-map-layers [data-layer-stamp]{padding-right:2px;color:var(--muted);font:var(--rvbbit-type-small)/1 var(--mono)}
+.data-map-layers[hidden]{display:none}

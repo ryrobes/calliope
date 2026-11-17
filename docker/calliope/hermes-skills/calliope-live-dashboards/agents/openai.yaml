@@ -1,0 +1,4 @@
+interface:
+  display_name: "Calliope Live Dashboards"
+  short_description: "Build and verify live warehouse dashboards"
+  default_prompt: "Use $calliope-live-dashboards to create or revise this live Calliope dashboard."

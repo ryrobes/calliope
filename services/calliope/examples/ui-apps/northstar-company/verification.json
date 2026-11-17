@@ -1,0 +1,142 @@
+{
+  "verified_at": "2026-10-11",
+  "author_session": "1afe33c6-c818-405e-9b66-d66d20afac55",
+  "authoring_evidence": "/api/calliope/files/5e669b0d-ecc2-4784-8115-2f217069f3a8",
+  "published_definitions": [
+    {
+      "slug": "northstar-dispatch",
+      "version": 2,
+      "definition_sha256": "deffe5707de72e9c7839adefd41f331ca006c2f3a13836346ab9a113fafc5ca0"
+    },
+    {
+      "slug": "northstar-my-visits",
+      "version": 2,
+      "definition_sha256": "df379d641e6cc20379040de2233a7a5b64ee0cbd1bbf786bba86df3e57ad3231"
+    },
+    {
+      "slug": "northstar-review",
+      "version": 1,
+      "definition_sha256": "bccebe5318c13adc3e4609987147c4e7597ef4f00b9ac48700dc4fb8b73367e9"
+    }
+  ],
+  "native_journey": {
+    "platform": "iOS Simulator",
+    "visit": "NS-2002",
+    "steps": [
+      "assign",
+      "local notes and Photos attachment",
+      "restart recovery",
+      "block v1 to v2 switch with unfinished draft",
+      "submit using v1",
+      "adopt v2 after submission",
+      "open saved evidence preview",
+      "accept review"
+    ],
+    "final_status": "Accepted",
+    "final_record_version": 4,
+    "reports": 1,
+    "reviews": 1,
+    "evidence_files": 1,
+    "submission_replayed": true,
+    "submission_run_id": "6d67fbd9-9025-4e8a-907d-11106bb856d5",
+    "review_clean_form": true
+  },
+  "actor_checks": {
+    "forged_visit_read": 404,
+    "foreign_queue": 404,
+    "forged_write": 409,
+    "injected_actor_input": 400,
+    "restricted_app_and_command": 404,
+    "unrelated_visit_unchanged": true
+  },
+  "desktop_navigation": {
+    "same_record_across_apps": true,
+    "back_skips_old_destination_history": true,
+    "reopened_record_keeps_draft": true,
+    "source_and_destination_drafts_retained": true,
+    "recent_apps": [
+      "northstar-review",
+      "northstar-my-visits",
+      "northstar-dispatch"
+    ],
+    "business_commands_executed": 0
+  },
+  "web_navigation": {
+    "cross_app_record_and_back": true,
+    "unsent_notes_retained": true,
+    "companion_live_read": true,
+    "page_errors": 0
+  },
+  "fixture": {
+    "fresh_postgres_setup": true,
+    "rerun_retains_user_changes": true,
+    "visits": 6,
+    "seed_reports": 3
+  },
+  "limits": [
+    "App and artifact access checks; no new global SQL row-level security.",
+    "Attachment grants remain at app artifact level.",
+    "Physical iPhone media and distribution remain separate release checks."
+  ],
+  "completed_commands": [
+    {
+      "action": "assign_visit",
+      "actor": "northstar-dispatcher@local.test",
+      "app_version": 1,
+      "completed": 1
+    },
+    {
+      "action": "review_report",
+      "actor": "northstar-dispatcher@local.test",
+      "app_version": 1,
+      "completed": 1
+    },
+    {
+      "action": "submit_report",
+      "actor": "northstar-technician@local.test",
+      "app_version": 1,
+      "completed": 1
+    }
+  ],
+  "deployment": {
+    "server_source_and_asset_files_verified": 68,
+    "worker_binary_sha256": "cf383f0876cb17e1e1f51d4a1501dd3d9b046fd7b82a52740133f32194f776c3",
+    "server_healthy": true,
+    "worker_healthy": true
+  },
+  "android_journey": {
+    "platform": "Galaxy S23 Ultra",
+    "transport": "LAN HTTPS",
+    "visit": "NS-2001",
+    "steps": [
+      "dispatcher assignment",
+      "technician notes and Android document-picker fixture image",
+      "process restart recovery",
+      "submit report",
+      "saved image in Android Gallery",
+      "accept review",
+      "cross-app record link and Android Back"
+    ],
+    "final_status": "Accepted",
+    "final_record_version": 4,
+    "reports": 1,
+    "reviews": 1,
+    "evidence_files": 1,
+    "original_admin_restored": true,
+    "device_wake_setting_restored": true
+  },
+  "thumbnails": {
+    "native_apps_ready": 19,
+    "missing": [],
+    "separate_admin_and_technician_images": true,
+    "authorized_conditional_requests": true,
+    "unauthorized_app_404": true,
+    "gallery_browser_images_loaded": [
+      "/thumbs/app/northstar-my-visits.png",
+      "/thumbs/app/northstar-dispatch.png",
+      "/thumbs/app/northstar-review.png",
+      "/thumbs/app/northstar-visit-desk.png",
+      "/thumbs/dashboard/northstar-visit-analysis.png"
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "postgres": {
+    "image": "calliope-postgres",
+    "context": ".",
+    "dockerfile": "docker/Dockerfile.rvbbit"
+  },
+  "datarabbit": {
+    "image": "calliope-datarabbit",
+    "context": ".",
+    "dockerfile": "datarabbit/Dockerfile.calliope"
+  },
+  "warren": {
+    "image": "calliope-warren",
+    "context": ".",
+    "dockerfile": "docker/Dockerfile.warren-agent"
+  },
+  "calliope": {
+    "image": "calliope-server",
+    "context": ".",
+    "dockerfile": "services/calliope/Dockerfile"
+  },
+  "hermes": {
+    "image": "calliope-hermes",
+    "context": ".",
+    "dockerfile": "docker/Dockerfile.calliope-hermes"
+  },
+  "desktop": {
+    "image": "calliope-desktop",
+    "context": ".",
+    "dockerfile": "docker/Dockerfile.calliope-desktop"
+  },
+  "doc-extract": {
+    "image": "calliope-doc-extract",
+    "context": "sidecars/doc-extract",
+    "dockerfile": "Dockerfile"
+  },
+  "clover": {
+    "image": "calliope-clover",
+    "context": ".",
+    "dockerfile": "docker/Dockerfile.rvbbit-hutch"
+  },
+  "ui-studio": {
+    "image": "calliope-ui-studio",
+    "context": ".",
+    "dockerfile": "apps/calliope-canvas/Dockerfile.studio"
+  },
+  "clover-decisions": {
+    "image": "calliope-clover-decisions",
+    "context": "services/clover/decisions",
+    "dockerfile": "Dockerfile"
+  },
+  "clover-utilities": {
+    "image": "calliope-clover-utilities",
+    "context": "services/clover/utilities",
+    "dockerfile": "Dockerfile"
+  },
+  "clover-web": {
+    "image": "calliope-clover-web",
+    "context": "services/clover/web",
+    "dockerfile": "Dockerfile"
+  },
+  "clover-research": {
+    "image": "calliope-clover-research",
+    "context": "services/clover/research",
+    "dockerfile": "Dockerfile"
+  },
+  "clover-analytics": {
+    "image": "calliope-clover-analytics",
+    "context": "capabilities/templates/clover-analytics",
+    "dockerfile": "Dockerfile"
+  },
+  "clover-gliner": {
+    "image": "calliope-clover-gliner",
+    "context": "capabilities/templates/clover-gliner",
+    "dockerfile": "Dockerfile"
+  },
+  "clover-tspulse": {
+    "image": "calliope-clover-tspulse",
+    "context": "capabilities/templates/clover-tspulse",
+    "dockerfile": "Dockerfile"
+  }
+}

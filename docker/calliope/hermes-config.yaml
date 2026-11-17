@@ -1,0 +1,245 @@
+_config_version: 36
+
+# Calliope owns an unattended appliance sandbox. Hermes must not park tool
+# execution on interactive approvals that its Floor user cannot answer.
+approvals:
+  mode: "off"
+
+# The boot reconciler seeds calliope-luna through Hutch as the first fallback
+# for background tasks (including compression); the main model still runs
+# first. Existing auxiliary settings, including an explicit empty {} for
+# automatic routing, survive upgrades.
+
+# One gateway owns the listener while named profiles provide isolated model,
+# skill, session, cron, and Hindsight runtimes behind /p/<profile>/... routes.
+gateway:
+  multiplex_profiles: true
+  # 0.21.4 boots block the event loop while ~23 profiles start; 3 strikes (~2 min) looped.
+  loop_watchdog_max_strikes: 12
+  multiplex_profile_allowlist:
+    - dashboard-studio
+    - warehouse-steward
+    - semantic-architect
+    - signal-watch
+    - knowledge-gardener
+    - analytical-skeptic
+    - design-red-team
+
+# Fresh installs use OpenRouter. Connecting or rotating credentials never
+# changes an existing model choice.
+# Which provider and model this agent (the default profile = Calliope) thinks
+# with. Operators change it from Models & agents in the Calliope UI, which
+# rewrites this block through the revision controller; each specialist profile
+# carries its own block. There are no model aliases: `custom` is the
+# appliance's Clover endpoint (bound only when custom is selected), every
+# other hosted provider (openrouter, openai-api, gemini, xai, openai-codex,
+# nous, xai-oauth) takes its credentials from the Hermes credential pool and carries
+# no base_url/api_key here.
+model:
+  default: openai/gpt-6.1-sol
+  provider: openrouter
+  # The working budget the compression ratios hang off, not the route's
+  # window (the Hutch `calliope` route accepts far more). Measured 2026-08-17:
+  # a Calliope turn is ~86k prompt tokens before any conversation, so 131k
+  # (0.7 -> 92k) compacted on nearly every turn and then ran "ineffective";
+  # 262k keeps ~95k of real headroom over that base.
+  context_length: 262144
+  # Per-response output cap: a dashboard write is 10-14k tokens of HTML; at
+  # 8192 every such write was cut and re-emitted whole. Capped further by the
+  # chosen model's own output limit (Models & agents).
+  max_tokens: 32768
+
+# The default agent's pinned tool working set: these schemas stay in the
+# model-facing array (stable, cacheable prefix) instead of deferring behind
+# tool_search — the 2026-08-21 audit measured ~30% of tool executions as
+# tool_describe round-trips re-fetching exactly these verbs. The deferred
+# catalog still lists them, so discovery stays complete. The boot reconciler
+# seeds this list when missing and preserves an operator's own.
+tools:
+  tool_search:
+    pinned:
+      - mcp__Warehouse__run_sql
+      - mcp__Warehouse__run_sql_multi
+      - mcp__Warehouse__recall_calliope_sql
+      - mcp__Warehouse__read_calliope_specialist_result
+      - mcp__Warehouse__search_data
+      - mcp__Warehouse__find
+      - mcp__Warehouse__capability_search
+      - mcp__Warehouse__calliope_work_item
+      - mcp__Warehouse__calliope_observation_context
+      - mcp__Warehouse__calliope_decision_request
+      - mcp__Warehouse__open_desktop
+      - mcp__Warehouse__desktop_exec
+      - mcp__Warehouse__finish_desktop
+      - mcp__Warehouse__look_at_desktop
+      - mcp__Warehouse__read_calliope_sketch
+      - mcp__Warehouse__update_calliope_sketch
+      - mcp__Warehouse__get_live_app
+      - mcp__Warehouse__update_live_app
+      - mcp__Warehouse__capture_live_app
+      - mcp__Warehouse__list_calliope_specialists
+      - mcp__Roundtable__delegate_calliope_specialist
+      - mcp__Roundtable__continue_calliope_specialist
+      - mcp__Roundtable__await_calliope_specialists
+      - image_generate
+      - mcp__Warehouse__get_metric
+      - mcp__Warehouse__list_metrics
+      - mcp__Warehouse__metric
+      - mcp__Warehouse__metric_history
+      - mcp__Warehouse__describe_table
+      - mcp__Warehouse__search_business_context
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  write_approval: false
+  provider: hindsight
+  memory_char_limit: 2200
+  user_char_limit: 1375
+  nudge_interval: 10
+  flush_min_turns: 6
+
+# Context economy. Hermes' own defaults (compact at 85% of the window, 50 KB
+# tool outputs, sessions that never reset) suit a single coding session;
+# Calliope threads live for weeks and every API step re-reads the whole active
+# window. `model.context_length` is the working budget the ratios hang off
+# (never let it inherit a 1M model window; the route itself is larger).
+#
+# Measured (2026-08, Hermes session store). Pilot, upstream 0.85 threshold:
+# median 56-90k tokens per API call, p90 ~130k, 93% of it tool results, a
+# compaction every ~7-9 user turns. First appliance pass at threshold 0.5:
+# a compaction every ~2 user turns, yet median 97k per call (max 281k) because
+# a single build turn adds more than the headroom, two consecutive compactions
+# then each recover <10% and Hermes' anti-thrash guard suspends compaction for
+# five minutes. Churn and bloat at once. Neither box's problem was SQL rows
+# (run_sql averaged 0.8-4k chars); it was HTML dashboard reads, skill bodies,
+# ask_brain / describe_cube payloads and specialist fan-out results.
+#
+# So: a deterministic proactive prune does the routine work (no LLM call —
+# once the context passes 120k tokens, tool results older than the last 12
+# messages and larger than 6k chars become bounded evidence with exact recall IDs, committed only when
+# that reclaims >=8k tokens so prompt-cache breaks stay rare; small SQL
+# results are untouched and the full outputs stay in the session store), the
+# LLM compaction at 70% is the backstop with headroom for one heavy build
+# turn, and a thread resumed after an hour idle compacts up front instead of
+# mid-turn. Compaction keeps the opening ask, a summary, and the recent tail
+# verbatim. `tool_output.max_bytes` caps only terminal / read_file output
+# (never MCP results), and a truncated dashboard read is a broken patch, so
+# it stays at upstream's 50 KB. The reconciler applies these when the durable
+# config still carries upstream (or earlier appliance) values and leaves an
+# operator's own numbers alone.
+compression:
+  enabled: true
+  threshold: 0.7
+  target_ratio: 0.25
+  protect_last_n: 12
+  proactive_prune_tokens: 120000
+  proactive_prune_min_result_chars: 6000
+  proactive_prune_min_reclaim_tokens: 8192
+  idle_compact_after_seconds: 3600
+# Middle memory is scoped to the current agent/session. New durable transcript
+# records are embedded asynchronously through Hutch; exact lexical/ID retrieval
+# remains available during index lag or inference outages. Jev ranks excerpts,
+# never synthesizes replacement evidence. Hindsight remains long-term memory.
+session_context:
+  enabled: true
+  embedding_model: embed
+  judge: true
+tool_output:
+  max_bytes: 50000
+session_reset:
+  mode: idle
+  idle_minutes: 240
+# Hermes' background skill curator (a forked agent replaying the whole
+# uncompacted history after any turn with >= creation_nudge_interval tool
+# iterations) cost 215-285k prompt tokens per dashboard turn on the appliance
+# and could not write to Calliope's user-owned skills anyway. Off by default;
+# curate skills deliberately (RVBBIT capability search + an explicit
+# `skill_manage` review job / cron), not by reflex after every turn.
+skills:
+  creation_nudge_interval: 0
+
+platforms:
+  api_server:
+    enabled: true
+    extra:
+      host: 0.0.0.0
+      port: 8642
+      model_name: calliope
+
+# The Warehouse transports are registered process-wide so specialists can call
+# back while their parent delegation is still in flight. The roundtable lane
+# exposes only the tools that block on a specialist run — the @all fan-out and
+# single delegate/continue calls (a single delegation waits for its child; Iris
+# takes minutes to build a dashboard, and on the 90 s lane that surfaced as an
+# MCP timeout while the specialist kept working). Ordinary Warehouse operations
+# keep their short transport budget.
+# Composed toolsets, not the hermes-api-server preset: the preset bundles the
+# credential-gated Firecrawl web tools (a dead end here — governed web search
+# lives in the SQL dialect via capability_search) and the BFL video suite.
+# The web coordinator delegates through Roundtable; native Hermes
+# background children do not participate in Calliope's turn lifecycle.
+platform_toolsets:
+  api_server:
+    - terminal
+    - file
+    - vision
+    - image_gen
+    - skills
+    - browser
+    - todo
+    - memory
+    - session_search
+    - code_execution
+    - cronjob
+    - homeassistant
+    - Warehouse
+    - Roundtable
+
+mcp_servers:
+  Warehouse:
+    url: http://calliope:8765/mcp
+    headers:
+      Authorization: "Bearer ${env:WAREHOUSE_HERMES_MCP_KEY}"
+    forward_session_identity: true
+    supports_parallel_tool_calls: true
+    timeout: 90
+    tool_timeouts:
+      generate_image: 660
+      run_workspace_sql: 660
+      administer_local_sql: 660
+    tools:
+      exclude: [delegate_all_calliope_specialists, delegate_calliope_specialist, continue_calliope_specialist, await_calliope_specialists, ask_calliope]
+      prompts: false
+      resources: false
+  Roundtable:
+    url: http://calliope:8765/mcp?lane=roundtable
+    headers:
+      Authorization: "Bearer ${env:WAREHOUSE_HERMES_MCP_KEY}"
+    forward_session_identity: true
+    supports_parallel_tool_calls: true
+    # Eight specialists run in bounded waves. Each child has its own 15-minute
+    # ceiling, so two full waves plus orchestration overhead fit here. With
+    # mode="async" (0336 mailbox) a delegation returns at once and the reply
+    # arrives as an agent-message turn, so this ceiling only governs sync rounds
+    # and await_calliope_specialists.
+    timeout: 2100
+    tool_timeouts:
+      await_calliope_specialists: 360
+    tools:
+      include: [delegate_all_calliope_specialists, delegate_calliope_specialist, continue_calliope_specialist, await_calliope_specialists]
+      prompts: false
+      resources: false
+  # A separate Streamable HTTP session prevents a specialist callback from
+  # queueing behind the still-open parent Warehouse delegation call.
+  Specialist:
+    url: http://calliope:8765/mcp?lane=specialist
+    headers:
+      Authorization: "Bearer ${env:WAREHOUSE_HERMES_MCP_KEY}"
+    forward_session_identity: true
+    supports_parallel_tool_calls: true
+    timeout: 90
+    tool_timeouts:
+      generate_image: 660
+      run_workspace_sql: 660
+      administer_local_sql: 660

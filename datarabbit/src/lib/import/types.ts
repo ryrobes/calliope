@@ -1,0 +1,172 @@
+/**
+ * Shared contract for the CSV importer — the types that cross the
+ * client (drop surface + import window) / server (inspect + run routes)
+ * boundary. Pure types only, safe to import from either side.
+ *
+ * Flow: drop a CSV → /api/db/import/inspect reads a bounded head slice
+ * and returns a {@link InspectResult} (detected dialect + inferred typed
+ * columns + a row sample). The user edits column names/types and picks a
+ * target (schema + table + HEAP/RVBBIT acceleration) to form an {@link ImportConfig},
+ * then /api/db/import/run streams the full file into a freshly-created
+ * table via COPY, emitting {@link ImportProgress} frames.
+ */
+
+/** Postgres column types the inferrer can assign. `text` is the always-safe fallback. */
+export type PgType =
+  | "text"
+  | "boolean"
+  | "integer"
+  | "bigint"
+  | "double precision"
+  | "numeric"
+  | "date"
+  | "timestamptz"
+  | "jsonb"
+
+/** Source file shape. CSV/TSV are delimited text; JSONL is one JSON object per line. */
+export type ImportFormat = "csv" | "jsonl"
+
+/** Import target mode. `rvbbit` uses `CREATE TABLE … USING rvbbit` as a registration shortcut. */
+export type AccessMethod = "heap" | "rvbbit"
+
+/**
+ * Recognized date/datetime layouts the importer can normalize to ISO before
+ * loading. `iso` = already `YYYY-MM-DD[…]`; `ymd` = year-first numeric;
+ * `mdy`/`dmy` = US/EU numeric order; `monthname-*` = textual month.
+ */
+export type DateLayout = "iso" | "ymd" | "mdy" | "dmy" | "monthname-mdy" | "monthname-dmy"
+
+/** The source date format detected for (or chosen on) a date/timestamptz column. */
+export interface DateColumnFormat {
+  layout: DateLayout
+  /** Column carries a time component → target timestamptz, else date. */
+  hasTime: boolean
+  /** True when MDY vs DMY couldn't be resolved from the sample (every day ≤ 12). */
+  ambiguous?: boolean
+}
+
+export type CsvEncoding = "utf-8" | "utf-16le" | "latin1"
+
+/**
+ * How to interpret the raw bytes. Detected from a head sample, then
+ * user-overridable in the import window before the full load runs.
+ */
+export interface CsvDialect {
+  /** Field separator — usually one of `, ; \t |`. */
+  delimiter: string
+  /** Quote char — almost always `"`. Quoted fields may contain the delimiter + newlines. */
+  quote: string
+  /** Whether the first row is column names (else columns are synthesized `col_1…`). */
+  hasHeader: boolean
+  encoding: CsvEncoding
+  /** Token that maps to SQL NULL. Default `""` (empty field → NULL). */
+  nullToken: string
+  /** Trim surrounding whitespace from each unquoted field before coercion. */
+  trimWhitespace: boolean
+}
+
+/** One CSV column mapped to a target table column. */
+export interface ImportColumn {
+  /** 0-based position in the CSV row (for JSONL: order of first appearance). */
+  sourceIndex: number
+  /** JSONL only: the top-level key this column reads. */
+  sourceKey?: string
+  /** Original header text (or synthesized `col_<n>` when {@link CsvDialect.hasHeader} is false). */
+  sourceName: string
+  /** SQL-safe identifier to create — sanitized from sourceName, user-editable. */
+  targetName: string
+  /** Target Postgres type — starts at {@link inferredType}, user-overridable. */
+  type: PgType
+  /** What the sniffer guessed from the sample (lets the UI offer "reset to inferred"). */
+  inferredType: PgType
+  /**
+   * For `date`/`timestamptz` columns whose source isn't already ISO, the
+   * detected source layout — used to normalize each value to ISO before COPY.
+   * Absent for ISO/non-date columns. User-editable (e.g. to flip MDY↔DMY).
+   */
+  dateFormat?: DateColumnFormat
+  nullable: boolean
+  /** Whether to include this column in the import (lets the user drop junk columns). */
+  include: boolean
+  /** A few raw sample values (for the preview + to explain the inferred type). */
+  sampleValues: string[]
+}
+
+/** Result of inspecting the head slice of a dropped file. */
+export interface InspectResult {
+  /** Absent means csv (older clients). */
+  format?: ImportFormat
+  dialect: CsvDialect
+  columns: ImportColumn[]
+  /** First N fully-parsed rows (raw cell strings), for the preview grid. */
+  sampleRows: string[][]
+  /** Size of the whole file, bytes. */
+  totalBytes: number
+  /** Size of the head slice we actually parsed, bytes. */
+  sampledBytes: number
+  /** Extrapolated row count from avg sampled line length (null if not estimable). */
+  estimatedRows: number | null
+  /** Non-fatal observations (ragged rows in sample, BOM stripped, deduped names, …). */
+  warnings: string[]
+}
+
+/** Everything the run route needs to create the table and load it. */
+export interface ImportConfig {
+  /** Absent means csv (older clients). */
+  format?: ImportFormat
+  connectionId: string
+  schema: string
+  table: string
+  accessMethod: AccessMethod
+  dialect: CsvDialect
+  columns: ImportColumn[]
+}
+
+export type ImportPhase = "creating" | "copying" | "done" | "error"
+
+/** A progress frame streamed back from the run route (newline-delimited JSON). */
+export interface ImportProgress {
+  bytesRead: number
+  rowsRead: number
+  rowsLoaded: number
+  rowsRejected: number
+}
+
+/** A quarantined row — surfaced in the summary + downloadable report. */
+export interface RejectRow {
+  /** 1-based data row number (excludes the header). */
+  row: number
+  reason: string
+  /** The original cells, joined for context (truncated). */
+  sample: string
+}
+
+/** Where an import session is; `status` reports it while the window polls. */
+export type ImportSessionPhase = "uploading" | "importing" | "done" | "failed" | "cancelled"
+
+/** The `status` route's answer: enough for a window to draw the footer, or to re-attach after a reload. */
+export interface ImportSessionStatus {
+  id: string
+  phase: ImportSessionPhase
+  schema: string
+  table: string
+  /** The file size the client declared at prepare; null when it did not. */
+  bytesExpected: number | null
+  /** Bytes staged on the server so far (the offset a resumed upload continues from). */
+  bytesReceived: number
+  progress: ImportProgress | null
+  result: ImportRunResult | null
+  error: string | null
+  updatedAt: number
+}
+
+/** Final outcome of a run (the `done` frame). */
+export interface ImportRunResult {
+  rowsRead: number
+  rowsLoaded: number
+  rowsRejected: number
+  durationMs: number
+  /** Capped sample of rejects for the report; `rejectsTruncated` if more exist. */
+  rejects: RejectRow[]
+  rejectsTruncated: boolean
+}

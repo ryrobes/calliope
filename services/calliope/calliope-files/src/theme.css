@@ -1,0 +1,29 @@
+.calliope-files{height:100%;display:flex;flex-direction:column;min-height:0;font-family:var(--sans);color:var(--bone)}
+.files-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.files-heading strong{font-size:20px}.files-heading span{color:var(--fog);font-size:13px;margin-left:12px}
+.files-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.files-actions button,.files-heading button{font:inherit;font-size:12px;color:var(--bone);border:1px solid var(--line);border-radius:6px;background:transparent;padding:7px 10px;cursor:pointer}
+.files-actions button:hover,.files-heading button:hover{background:var(--jade-soft);color:var(--jade)}.files-actions button[aria-pressed=true]{color:var(--jade);border-color:var(--jade)}
+.files-actions button:disabled{opacity:.4;cursor:default}.files-status{color:var(--fog);font-size:12px;min-height:18px;margin:12px 0;line-height:1.5}
+.files-manager{flex:1;min-height:0;position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.files-manager>.wx-willow-theme{height:100%}
+.shared-files-dialog .wx-willow-theme{font-family:var(--sans);color:var(--bone);
+ --wx-color-font:var(--bone);--wx-color-font-alt:var(--fog);--wx-color-font-disabled:var(--dim);--wx-icon-color:var(--fog);
+ --wx-font-family:var(--sans);--wx-font-color:var(--bone);--wx-font-color-secondary:var(--fog);--wx-font-color-disabled:var(--dim);
+ --wx-color-primary:var(--jade);--wx-color-primary-font:var(--void);--wx-color-secondary:var(--panel-raised);
+ --wx-background:var(--panel);--wx-background-alt:var(--panel-raised);--wx-background-hover:var(--jade-soft);--wx-background-selected:var(--jade-soft);
+ --wx-border-color:var(--line);--wx-border:1px solid var(--line);--wx-border-radius:6px;
+ --wx-fm-background:var(--panel);--wx-fm-box-shadow:none;--wx-fm-select-background:var(--jade-soft);--wx-fm-select-color:var(--jade-soft);
+ --wx-fm-grid-border:1px solid var(--line);--wx-fm-grid-header-color:var(--panel-raised);--wx-fm-button-font-color:var(--fog);--wx-fm-toolbar-height:44px;
+ --wx-table-header-font-color:var(--fog);--wx-table-header-background:var(--panel-raised);--wx-table-row-background:var(--panel);
+ --wx-table-select-background:var(--jade-soft);--wx-table-select-focus-background:var(--jade-soft);--wx-table-border:1px solid var(--line);
+ --wx-input-background:var(--panel-raised);--wx-input-font-color:var(--bone);--wx-input-border:1px solid var(--line);
+ --wx-button-background:var(--panel-raised);--wx-button-font-color:var(--bone);--wx-button-border:1px solid var(--line);
+ --wx-popup-background:var(--panel-raised);--wx-popup-border:1px solid var(--line);--wx-modal-background:var(--panel-raised);
+ --wx-menu-background:var(--panel-raised);--wx-menu-font-color:var(--bone);--wx-menu-item-hover:var(--jade-soft);
+}
+.files-manager [data-id="panels"]{display:none}
+.files-manager .wx-name{font-size:13px}.files-manager .wx-filemanager{font-family:var(--sans)}
+.calliope-files footer{font-size:11px;line-height:1.4;color:var(--fog);padding-top:12px}
+@media(max-width:700px){.files-heading span{display:none}.files-actions{gap:5px}.files-actions button{font-size:11px;padding:6px}.files-manager .wx-sidebar{max-width:180px}}
+.files-manager .wx-modes button:has(.wxi-view-column){display:none}
+.shared-files-dialog .wx-willow-theme{--wx-modal-header-font-color:var(--bone);--wx-modal-backdrop:rgba(0,0,0,.5)}

@@ -1,0 +1,45 @@
+api_version: rvbbit.capability/v1
+kind: hf_backend
+name: tabpfn_foundation
+title: TabPFN-style In-Context Tabular Predictor
+description: >
+  TabPFN-shaped in-context tabular prediction for labeled support rows and
+  query rows. The current sidecar handler is a deterministic CPU reference
+  implementation with the same SQL/request contract expected by a true TabPFN
+  GPU forward pass, so the package can prove the operator shape before the
+  heavier model runtime is swapped in.
+license: prior-labs
+tags: [tabular, foundation, in-context, prediction, gpu, tabpfn]
+source:
+  provider: huggingface
+  model: Prior-Labs/TabPFN-v2-clf
+  url: https://huggingface.co/Prior-Labs/TabPFN-v2-clf
+runtime:
+  template: hf-rvbbit-fastapi
+  handler: tabular_foundation
+  device: auto
+  env:
+    RVBBIT_CAPABILITY_EAGER: "0"
+    RVBBIT_TABULAR_FOUNDATION_MAX_SUPPORT: "10000"
+backend:
+  name: predict_tabular_foundation
+  transport: rvbbit
+  batch_size: 1          # one in-context bundle per request (support + queries)
+  max_concurrent: 1
+  timeout_ms: 300000
+  description: In-context tabular foundation predictor (support set + query rows).
+operators:
+  - name: predict_tabular_foundation
+    description: >
+      Predict a target for query rows in-context from a labeled support set.
+      Input is a single jsonb bundle {task, target, support, queries}; output is
+      {predictions:[...]} aligned to queries. Invoked by rvbbit.predict_tabular.
+    arg_names: [bundle]
+    arg_types: [jsonb]
+    return_type: jsonb
+    parser: json
+    inputs:
+      bundle: "{{ inputs.bundle }}"
+smoke:
+  inputs:
+    - bundle: '{"task":"classification","target":"churn","support":[{"tenure":1,"plan":"basic","churn":"yes"},{"tenure":24,"plan":"enterprise","churn":"no"},{"tenure":3,"plan":"basic","churn":"yes"}],"queries":[{"tenure":18,"plan":"enterprise"}]}'

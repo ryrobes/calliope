@@ -1,0 +1,130 @@
+api_version: rvbbit.capability/v1
+kind: hf_backend
+name: ms_marco_minilm_l6_v2
+title: MS MARCO MiniLM Reranker
+description: Lightweight cross-encoder reranker for query/document scoring and ranking table rows by relevance.
+license: apache-2.0
+tags: [rerank, retrieval, relevance, row, cpu-friendly]
+source:
+  provider: huggingface
+  model: cross-encoder/ms-marco-MiniLM-L6-v2
+  url: https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2
+runtime:
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+backend:
+  name: rerank_ms_marco_minilm
+  transport: rvbbit
+  batch_size: 32
+  max_concurrent: 4
+  timeout_ms: 120000
+  description: MS MARCO MiniLM cross-encoder relevance scorer.
+operators:
+  - name: rerank_ms_marco_score
+    description: Score how relevant text is to a query using a lightweight MS MARCO MiniLM cross-encoder.
+    arg_names: [query, text]
+    arg_types: [text, text]
+    return_type: jsonb
+    parser: json
+    inputs:
+      query: "{{ inputs.query }}"
+      text: "{{ inputs.text }}"
+  - name: rerank_ms_marco_row
+    description: Score how relevant a JSONB row is to a query using a lightweight MS MARCO MiniLM cross-encoder.
+    arg_names: [query, row]
+    arg_types: [text, jsonb]
+    return_type: jsonb
+    parser: json
+    inputs:
+      query: "{{ inputs.query }}"
+      text: "{{ inputs.row }}"
+  - name: about
+    description: Relevance score in [0,1] of text to a topic, backed by MS MARCO MiniLM.
+    arg_names: [text, topic]
+    arg_types: [text, text]
+    return_type: float8
+    parser: score_0_1
+    infix_symbol: "~~%"
+    infix_word: ABOUT
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_ms_marco_minilm
+        inputs:
+          query: "{{ inputs.topic }}"
+          text: "{{ inputs.text }}"
+      - name: score
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.rerank.output }}"
+          path: score
+          default: 0
+  - name: semantic_score
+    description: Score how relevant text is to a semantic criterion.
+    arg_names: [text, criterion]
+    arg_types: [text, text]
+    return_type: float8
+    parser: score_0_1
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_ms_marco_minilm
+        inputs:
+          query: "{{ inputs.criterion }}"
+          text: "{{ inputs.text }}"
+      - name: score
+        kind: code
+        fn: json_get
+        inputs:
+          value: "{{ steps.rerank.output }}"
+          path: score
+          default: 0
+  - name: means
+    description: True when text semantically matches a criterion using MS MARCO MiniLM.
+    arg_names: [text, criterion]
+    arg_types: [text, text]
+    return_type: bool
+    parser: yes_no
+    infix_symbol: "~~?"
+    infix_word: MEANS
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_ms_marco_minilm
+        inputs:
+          query: "{{ inputs.criterion }}"
+          text: "{{ inputs.text }}"
+      - name: threshold
+        kind: code
+        fn: number_gte
+        inputs:
+          value: "{{ steps.rerank.output.score }}"
+          threshold: "{{ opts.threshold }}"
+  - name: semantic_matches
+    description: True when text semantically matches a criterion using MS MARCO MiniLM.
+    arg_names: [text, criterion]
+    arg_types: [text, text]
+    return_type: bool
+    parser: yes_no
+    steps:
+      - name: rerank
+        kind: specialist
+        specialist: rerank_ms_marco_minilm
+        inputs:
+          query: "{{ inputs.criterion }}"
+          text: "{{ inputs.text }}"
+      - name: threshold
+        kind: code
+        fn: number_gte
+        inputs:
+          value: "{{ steps.rerank.output.score }}"
+          threshold: "{{ opts.threshold }}"
+smoke:
+  inputs:
+    - query: billing refund
+      text: customer was charged twice and asks for their money back
+      topic: billing refund
+      criterion: billing refund
+      row: '{"ticket":"charged twice","requested_action":"refund","priority":"high"}'

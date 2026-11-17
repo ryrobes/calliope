@@ -1,0 +1,81 @@
+ARG KASM_BASE_IMAGE=kasmweb/ubuntu-noble-desktop@sha256:5910fcb7cd4676d3f47b22ffcd51876bfef967ef24a195bbfb455cd88461a285
+FROM ubuntu:24.04 AS atspi-reader-build
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates curl xz-utils gcc libc6-dev meson ninja-build libglib2.0-dev libdbus-1-dev libxml2-dev
+COPY docker/desktop/build-atspi-reader.sh /tmp/build-atspi-reader.sh
+RUN bash /tmp/build-atspi-reader.sh
+
+FROM ${KASM_BASE_IMAGE}
+
+USER root
+# Kasm's base image supplies its own LD_LIBRARY_PATH. LibreOffice's splash
+# launcher does not prepend its private program directory before starting
+# soffice.bin, so keep that directory visible to the office runtime.
+ENV LD_LIBRARY_PATH="/usr/lib/libreoffice/program:/usr/lib/x86_64-linux-gnu:/usr/lib/i386-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       libreoffice-calc \
+       libreoffice-writer \
+       libreoffice-gtk3 \
+       python3-openpyxl \
+       python3-pandas \
+       python3-xlrd \
+       csvkit \
+       jq \
+       evince \
+       poppler-utils \
+       tesseract-ocr \
+       qpdf \
+       p7zip-full \
+       file \
+       python3-venv \
+       python3-pyatspi \
+       gir1.2-gtk-3.0 \
+       dbus-x11 \
+       at-spi2-core \
+       libxi6 \
+       libxkbcommon0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY docker/desktop/install-cua-driver.sh /opt/calliope-desktop/install-cua-driver.sh
+RUN bash /opt/calliope-desktop/install-cua-driver.sh
+RUN python3 -m venv --system-site-packages /opt/computer-venv \
+    && /opt/computer-venv/bin/pip install --no-cache-dir playwright==1.63.0
+ENV PATH="/opt/computer-venv/bin:${PATH}"
+# Preserve explicitly inventoried user-installed packages on image replacement.
+ARG CALLIOPE_DESKTOP_EXTRA_PACKAGES=""
+RUN if [ -n "$CALLIOPE_DESKTOP_EXTRA_PACKAGES" ]; then \
+      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $CALLIOPE_DESKTOP_EXTRA_PACKAGES \
+      && rm -rf /var/lib/apt/lists/*; fi
+COPY --from=atspi-reader-build /opt/calliope-atspi /opt/calliope-atspi
+COPY docker/desktop/calliope_desktop.py /opt/calliope-desktop/calliope_desktop.py
+COPY docker/desktop/computer_runtime.py docker/desktop/computer_capture.py docker/desktop/computer_job.py docker/desktop/computer_terminal.py docker/desktop/computer_driver.py docker/desktop/calliope_computer.py /opt/calliope-desktop/
+COPY docker/desktop/desktop_session.py docker/desktop/browser_activity.js /opt/calliope-desktop/
+COPY docker/desktop/computer_lifecycle.py /opt/calliope-desktop/
+COPY docker/desktop/computer_catalog.py docker/desktop/computer_observation.py docker/desktop/computer_quick.py /opt/calliope-desktop/
+COPY docker/desktop/computer_launch.py docker/desktop/computer_layers.py docker/desktop/computer_dialogs.py /opt/calliope-desktop/
+COPY docker/desktop/computer_work.py docker/desktop/computer_health.py /opt/calliope-desktop/
+COPY docker/desktop/computer_browser_auth.py /opt/calliope-desktop/
+COPY docker/desktop/computer_browser.py /opt/calliope-desktop/
+COPY docker/desktop/computer_files.py services/calliope/shared_file_paths.py /opt/calliope-desktop/
+COPY services/calliope/desktop_terminal.py /opt/calliope-desktop/
+COPY services/calliope/desktop_decision_token.py /opt/calliope-desktop/
+RUN /opt/computer-venv/bin/python -c \
+    "import sys; sys.path.insert(0, '/opt/calliope-desktop'); import computer_capture, pyatspi, gi; gi.require_version('Gdk', '3.0'); from gi.repository import Gdk, GdkPixbuf"
+COPY docker/desktop/start-callie-browser.sh /dockerstartup/start-callie-browser.sh
+COPY docker/desktop/calliope_proving_ground.py /opt/calliope-desktop/calliope_proving_ground.py
+COPY docker/desktop/start-calliope-desktop.sh /dockerstartup/start-calliope-desktop.sh
+RUN chmod 0755 /dockerstartup/start-calliope-desktop.sh \
+    /opt/calliope-desktop/calliope_desktop.py \
+    && install -d -o 1000 -g 1000 -m 0770 \
+       /var/lib/calliope-desktop/recordings \
+       /var/lib/calliope-desktop/screenshots \
+       /var/lib/calliope-desktop/computer \
+    && install -d -o 1000 -g 1000 -m 0700 \
+       /home/kasm-user/.cache \
+       /home/kasm-user/.cache/dconf
+
+# The entrypoint initializes newly added paths in existing named volumes, then
+# drops to the desktop user before starting any long-lived process.
+USER root
+EXPOSE 6901 9000
+ENTRYPOINT ["/dockerstartup/start-calliope-desktop.sh"]

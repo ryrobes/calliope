@@ -1,0 +1,36 @@
+# Optional, isolated authoring service. No published ports, warehouse credentials,
+# Docker socket, user home, or production database mounts.
+services:
+  ui-studio:
+    image: ${UI_STUDIO_IMAGE:?set UI_STUDIO_IMAGE to the verified image}
+    container_name: calliope-ui-studio
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 6g
+    cpus: 4
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    environment:
+      STUDIO_TOKEN_FILE: /run/secrets/studio-token
+      STUDIO_REVISION: ${UI_STUDIO_REVISION:?set source revision}
+      XDG_CACHE_HOME: /tmp/cache
+      CALLIOPE_DECISION_URL: http://calliope-server:8765/api/calliope/ui/decision
+    volumes:
+      - ${UI_STUDIO_ROOT:?set private deployment directory}/token:/run/secrets/studio-token:ro
+      - ${UI_STUDIO_ROOT}/data:/var/lib/calliope-ui-studio
+    networks:
+      calliope:
+        aliases: [ui-studio]
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18456/health',timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+networks:
+  calliope:
+    external: true
+    name: ${UI_STUDIO_NETWORK:-calliope}

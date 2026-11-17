@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const source=readFileSync(new URL('./calliope/floor.js',import.meta.url),'utf8');
+const state={liveTotal:1069,liveLaneRows:[{column_state:'awaiting_you',pieces:6}],snapshots:[{snapshot_at:'2026-09-08T09:00:00Z',total_items:2631,counts_by_column_state:{awaiting_you:63,in_motion:1,standing:7}}],liveTimelineFrame:{total_items:2632,counts_by_column_state:{awaiting_you:64,in_motion:0,standing:7}}};
+const context=vm.createContext({state,Date,Number});
+vm.runInContext(source.slice(source.indexOf('function timelinePoints()'),source.indexOf('\nfunction timeBounds')),context);
+assert.equal(context.timelinePoints().at(-1).counts_by_column_state.awaiting_you,64);
+assert.equal(context.timelinePoints().at(-1).total_items,2632);
+assert.equal(context.timelinePoints().at(-1).counts_by_column_state.in_motion,0,'Genuine zero remains zero');
+state.liveTimelineFrame=null;
+assert.equal(context.timelinePoints().at(-1).counts_by_column_state.awaiting_you,63,'Unavailable live counts must not become a synthetic drop');
+assert.equal(context.timelinePoints().at(-1).estimated,true);
+state.snapshots=[];
+assert.equal(context.timelinePoints().length,0,'No synthetic empty frame before loading');
+console.log('Floor timeline: consistent system scope, real zeros, and missing-live fallback passed');

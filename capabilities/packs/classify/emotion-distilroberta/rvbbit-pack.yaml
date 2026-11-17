@@ -1,0 +1,97 @@
+api_version: rvbbit.pack/v1
+id: classify/emotion-distilroberta
+name: emotion_distilroberta
+title: Emotion Classifier
+description: Classify text into emotion labels for support, survey, content, and conversation analytics.
+license: unknown
+tags:
+- classify
+- emotion
+- text
+- tabular
+- row
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: j-hartmann/emotion-english-distilroberta-base
+  url: https://huggingface.co/j-hartmann/emotion-english-distilroberta-base
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 328544361
+    vram_required_bytes: 410680452
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: classify_emotion_distilroberta
+  operators:
+  - classify_emotion
+  - classify_row_emotion
+  - emotion
+  - emotion_confidence
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: emotion_ticket_sample
+    description: Classify an unambiguous customer-success note and assert classifier JSON shape.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          label text;
+          score float8;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.classify_emotion('I am thrilled that the replacement arrived early') INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'classify_emotion returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'label')
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected emotion result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'emotion score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.classify_row_emotion(
+              '{"note":"I am thrilled that the replacement arrived early","account":"enterprise"}'::jsonb
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'label')
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected row emotion result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'row emotion score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.emotion('I am thrilled that the replacement arrived early') INTO label;
+          IF label IS NULL OR label = '' THEN
+              RAISE EXCEPTION 'bundled emotion operator returned an empty label';
+          END IF;
+
+          SELECT rvbbit.emotion_confidence('I am thrilled that the replacement arrived early') INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled emotion_confidence out of range: %', score;
+          END IF;
+      END
+      $$;

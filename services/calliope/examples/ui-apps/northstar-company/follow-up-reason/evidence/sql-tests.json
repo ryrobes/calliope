@@ -1,0 +1,87 @@
+{
+  "engine": "PGlite PostgreSQL WASM; disposable in-memory fixture only. No Lab SQL, actions, grants or records mutated.",
+  "migration_idempotent": true,
+  "existing_report_fields_unchanged": true,
+  "results": [
+    {
+      "name": "v2 insert survives additive migration and stores null",
+      "passed": true
+    },
+    {
+      "name": "v3 stores exact choice: No follow-up",
+      "passed": true
+    },
+    {
+      "name": "v3 stores exact choice: Parts needed",
+      "passed": true
+    },
+    {
+      "name": "v3 stores exact choice: Return diagnostic visit",
+      "passed": true
+    },
+    {
+      "name": "v3 stores exact choice: Customer unavailable",
+      "passed": true
+    },
+    {
+      "name": "v3 stores exact choice: Other",
+      "passed": true
+    },
+    {
+      "name": "v3 nullable compatibility: omitted",
+      "passed": true
+    },
+    {
+      "name": "v3 nullable compatibility: empty",
+      "passed": true
+    },
+    {
+      "name": "v3 nullable compatibility: null",
+      "passed": true
+    },
+    {
+      "name": "reject invalid reason: unknown",
+      "passed": true
+    },
+    {
+      "name": "reject invalid reason: multiple",
+      "passed": true
+    },
+    {
+      "name": "reject invalid reason: string",
+      "passed": true
+    },
+    {
+      "name": "reject invalid reason: nonstring",
+      "passed": true
+    },
+    {
+      "name": "reject invalid reason: object",
+      "passed": true
+    },
+    {
+      "name": "reject foreign actor",
+      "passed": true
+    },
+    {
+      "name": "reject author dispatcher submission",
+      "passed": true
+    },
+    {
+      "name": "reject stale version",
+      "passed": true
+    },
+    {
+      "name": "request replay cannot append twice",
+      "passed": true
+    },
+    {
+      "name": "old reports all remain Not recorded, never No follow-up",
+      "passed": true
+    },
+    {
+      "name": "non-dispatcher summary returns no report counts",
+      "passed": true
+    }
+  ]
+}

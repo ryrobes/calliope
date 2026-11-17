@@ -1,0 +1,49 @@
+{
+  "api_version": "rvbbit.pack/v1",
+  "id": "builtin/clover-tspulse",
+  "name": "clover_tspulse",
+  "title": "Clover TSPulse CPU worker",
+  "description": "Pinned TSPulse CPU anomaly detection, imputation, embeddings and similarity. Preserves Clover Zoo v2 windows and outputs.",
+  "license": "apache-2.0",
+  "tags": [
+    "clover",
+    "cpu",
+    "tspulse",
+    "sql"
+  ],
+  "capability": "capability.json",
+  "source": {
+    "provider": "huggingface",
+    "model": "ibm-granite/granite-timeseries-tspulse-r1",
+    "revision": "2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2"
+  },
+  "runtime": {
+    "mode": "build",
+    "template": "clover-tspulse",
+    "device": "cpu"
+  },
+  "exports": {
+    "backend": "clover_tspulse",
+    "operators": [
+      "clover_tspulse"
+    ]
+  },
+  "install": {
+    "mode": "build",
+    "warren": true,
+    "docker": true
+  },
+  "acceptance": {
+    "target_selector": {
+      "capability": true,
+      "docker": true,
+      "gpu": false
+    },
+    "tests": [
+      {
+        "name": "real_inference",
+        "sql": "DO $$ DECLARE v jsonb; BEGIN v := rvbbit.clover_tspulse('timeseries_embed',jsonb_build_object('values',(SELECT jsonb_agg(sin(i/10.0)) FROM generate_series(1,512) i))::text); IF (v->>'dimension')::int < 1 OR jsonb_array_length(v->'embedding') <> (v->>'dimension')::int OR v IS NULL THEN RAISE EXCEPTION 'CPU inference failed: %',v; END IF; END $$;"
+      }
+    ]
+  }
+}

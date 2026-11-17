@@ -1,0 +1,647 @@
+{
+  "schema": "calliope.app.v1",
+  "title": "HVAC visit workspace",
+  "data": {
+    "state": {
+      "selected": "HV-1001",
+      "filter": {
+        "search": ""
+      },
+      "draft": {
+        "id": "HV-1001",
+        "customer": "Cedar House",
+        "equipment": "Heat pump \u00b7 3 ton \u00b7 installed 2021",
+        "status": "Scheduled",
+        "notes": "Verify condensate drain and filter condition.",
+        "version": 1,
+        "attachments": []
+      }
+    },
+    "visits": [
+      {
+        "id": "HV-1001",
+        "customer": "Cedar House",
+        "equipment": "Heat pump \u00b7 3 ton \u00b7 installed 2021",
+        "status": "Scheduled",
+        "notes": "Verify condensate drain and filter condition.",
+        "version": 1,
+        "attachments": []
+      },
+      {
+        "id": "HV-1002",
+        "customer": "Harbor Dental",
+        "equipment": "Rooftop unit \u00b7 7.5 ton \u00b7 installed 2018",
+        "status": "Dispatched",
+        "notes": "Diagnose intermittent cooling. Access through side gate.",
+        "version": 1,
+        "attachments": []
+      },
+      {
+        "id": "HV-1003",
+        "customer": "Oak Apartments",
+        "equipment": "Split system \u00b7 2 ton \u00b7 installed 2023",
+        "status": "On site",
+        "notes": "Commission replacement system; record final readings.",
+        "version": 1,
+        "attachments": []
+      }
+    ],
+    "record": {
+      "id": "HV-1001",
+      "customer": "Cedar House",
+      "equipment": "Heat pump \u00b7 3 ton \u00b7 installed 2021",
+      "status": "Scheduled",
+      "notes": "Verify condensate drain and filter condition.",
+      "version": 1,
+      "attachments": []
+    },
+    "chart": {
+      "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "status": "Scheduled",
+            "visits": 4
+          },
+          {
+            "status": "Dispatched",
+            "visits": 3
+          },
+          {
+            "status": "On site",
+            "visits": 2
+          },
+          {
+            "status": "Complete",
+            "visits": 9
+          }
+        ]
+      },
+      "mark": {
+        "type": "bar",
+        "color": "#82b7ca",
+        "cornerRadiusEnd": 4
+      },
+      "encoding": {
+        "x": {
+          "field": "status",
+          "type": "nominal",
+          "axis": {
+            "labelAngle": 0,
+            "title": null
+          }
+        },
+        "y": {
+          "field": "visits",
+          "type": "quantitative",
+          "title": "Visits"
+        },
+        "tooltip": [
+          {
+            "field": "status"
+          },
+          {
+            "field": "visits",
+            "type": "quantitative"
+          }
+        ]
+      },
+      "config": {
+        "view": {
+          "stroke": null
+        },
+        "axis": {
+          "labelColor": "#a6b7bb",
+          "titleColor": "#a6b7bb",
+          "gridColor": "#293442"
+        }
+      }
+    },
+    "policy": {
+      "kind": "choice",
+      "question": "Which workspace is most useful next? Prioritize the technician working notes over the older job record. A return of the same symptom after repair is a comeback even if a part is mentioned. These are workflow suggestions, not technical diagnosis.",
+      "choices": {
+        "diagnose": "A new fault or intermittent symptom needs investigation; no confirmed failed part yet.",
+        "parts": "A specific failed part or needed replacement has been identified. The next step is parts coordination.",
+        "comeback": "A previous repair has failed or the same problem has returned after a recent visit.",
+        "clarify": "Too little or conflicting information to select an appropriate next workspace."
+      },
+      "routes": {
+        "diagnose": {
+          "kind": "leaf",
+          "label": "diagnose"
+        },
+        "parts": {
+          "kind": "leaf",
+          "label": "parts"
+        },
+        "comeback": {
+          "kind": "leaf",
+          "label": "comeback"
+        },
+        "clarify": {
+          "kind": "leaf",
+          "label": "clarify"
+        }
+      }
+    },
+    "decision": {
+      "label": "diagnose",
+      "status": "ready"
+    },
+    "supportStatus": "ready"
+  },
+  "components": [
+    {
+      "id": "root",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "lg",
+      "children": [
+        "intro",
+        "workspace"
+      ]
+    },
+    {
+      "id": "intro",
+      "component": "CText",
+      "text": "NORTHSTAR SERVICE  /  FICTIONAL VISITS",
+      "size": "eyebrow",
+      "tone": "muted"
+    },
+    {
+      "id": "workspace",
+      "component": "CStack",
+      "direction": "row",
+      "collapse": "tablet",
+      "gap": "lg",
+      "children": [
+        "queue",
+        "detail"
+      ]
+    },
+    {
+      "id": "queue",
+      "component": "CSection",
+      "title": "Visit queue",
+      "summary": {
+        "path": "/record/customer"
+      },
+      "collapse": "phone",
+      "weight": 1,
+      "child": "queue-content"
+    },
+    {
+      "id": "queue-content",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "md",
+      "children": [
+        "filters",
+        "queue-scroll"
+      ]
+    },
+    {
+      "id": "filters",
+      "component": "CFilterBar",
+      "label": "Search visits",
+      "value": {
+        "path": "/state/filter"
+      },
+      "onChange": "filter",
+      "children": [
+        "search"
+      ]
+    },
+    {
+      "id": "search",
+      "component": "CField",
+      "label": "Customer or visit ID",
+      "value": {
+        "path": "/state/filter/search"
+      },
+      "kind": "text"
+    },
+    {
+      "id": "queue-scroll",
+      "component": "CScrollArea",
+      "child": "visits",
+      "label": "Visits",
+      "height": "available",
+      "minHeight": 180
+    },
+    {
+      "id": "visits",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "sm",
+      "children": []
+    },
+    {
+      "id": "detail",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "lg",
+      "weight": 2,
+      "children": [
+        "record-card",
+        "support",
+        "chart-section"
+      ]
+    },
+    {
+      "id": "record-card",
+      "component": "CSurface",
+      "treatment": "outlined",
+      "tone": "accent",
+      "padding": "lg",
+      "child": "record-content"
+    },
+    {
+      "id": "record-content",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "md",
+      "children": [
+        "record-status",
+        "record-title",
+        "record-equipment",
+        "notes",
+        "photos",
+        "actions"
+      ]
+    },
+    {
+      "id": "record-status",
+      "component": "CBadge",
+      "text": {
+        "path": "/record/status"
+      },
+      "tone": "accent"
+    },
+    {
+      "id": "record-title",
+      "component": "CText",
+      "text": {
+        "path": "/record/customer"
+      },
+      "size": "title"
+    },
+    {
+      "id": "record-equipment",
+      "component": "CText",
+      "text": {
+        "path": "/record/equipment"
+      },
+      "tone": "muted"
+    },
+    {
+      "id": "notes",
+      "component": "CField",
+      "label": "Visit notes",
+      "value": {
+        "path": "/state/draft/notes"
+      },
+      "kind": "longText",
+      "maxLength": 4000,
+      "help": "The supporting view follows these notes. Save is explicit.",
+      "required": true
+    },
+    {
+      "id": "photos",
+      "component": "CAttachments",
+      "label": "New visit photos",
+      "value": {
+        "path": "/state/draft/attachments"
+      }
+    },
+    {
+      "id": "actions",
+      "component": "CStack",
+      "direction": "row",
+      "gap": "sm",
+      "children": [
+        "save"
+      ]
+    },
+    {
+      "id": "save",
+      "component": "Button",
+      "child": "save-label",
+      "variant": "primary",
+      "action": {
+        "event": {
+          "name": "save_visit"
+        }
+      }
+    },
+    {
+      "id": "save-label",
+      "component": "CText",
+      "text": "Save visit report"
+    },
+    {
+      "id": "support",
+      "component": "CReactiveRegion",
+      "label": "Suggested next step",
+      "status": {
+        "path": "/supportStatus"
+      },
+      "revision": {
+        "path": "/decision/label"
+      },
+      "child": "support-slot"
+    },
+    {
+      "id": "support-slot",
+      "component": "CStack",
+      "direction": "column",
+      "children": []
+    },
+    {
+      "id": "chart-section",
+      "component": "CSection",
+      "title": "Team workload",
+      "subtitle": "Visits by current status \u00b7 shared SQL data",
+      "child": "chart"
+    },
+    {
+      "id": "chart",
+      "component": "CVegaChart",
+      "spec": {
+        "path": "/chart"
+      },
+      "height": 220,
+      "description": "Visit counts by current status"
+    }
+  ],
+  "fragments": {
+    "visit": {
+      "root": "item",
+      "components": [
+        {
+          "id": "item",
+          "component": "CRecordItem",
+          "label": {
+            "item": "/customer"
+          },
+          "detail": {
+            "item": "/equipment"
+          },
+          "badge": {
+            "item": "/status"
+          },
+          "recordId": {
+            "item": "/id"
+          },
+          "selectedId": {
+            "path": "/state/selected"
+          },
+          "onSelect": "select_visit"
+        }
+      ]
+    },
+    "diagnose": {
+      "root": "surface",
+      "components": [
+        {
+          "id": "surface",
+          "component": "CSurface",
+          "treatment": "wash",
+          "tone": "cool",
+          "padding": "md",
+          "child": "content"
+        },
+        {
+          "id": "content",
+          "component": "CStack",
+          "direction": "column",
+          "gap": "sm",
+          "children": [
+            "title",
+            "body"
+          ]
+        },
+        {
+          "id": "title",
+          "component": "CText",
+          "text": "Investigate the symptom",
+          "size": "title"
+        },
+        {
+          "id": "body",
+          "component": "CText",
+          "text": "Keep measurements and observed conditions together before choosing a repair."
+        }
+      ]
+    },
+    "parts": {
+      "root": "surface",
+      "components": [
+        {
+          "id": "surface",
+          "component": "CSurface",
+          "treatment": "wash",
+          "tone": "warm",
+          "padding": "md",
+          "child": "content"
+        },
+        {
+          "id": "content",
+          "component": "CStack",
+          "direction": "column",
+          "gap": "sm",
+          "children": [
+            "title",
+            "body"
+          ]
+        },
+        {
+          "id": "title",
+          "component": "CText",
+          "text": "Coordinate a replacement",
+          "size": "title"
+        },
+        {
+          "id": "body",
+          "component": "CText",
+          "text": "Record the identified part and confirm availability before promising the next visit."
+        }
+      ]
+    },
+    "comeback": {
+      "root": "surface",
+      "components": [
+        {
+          "id": "surface",
+          "component": "CSurface",
+          "treatment": "wash",
+          "tone": "warm",
+          "padding": "md",
+          "child": "content"
+        },
+        {
+          "id": "content",
+          "component": "CStack",
+          "direction": "column",
+          "gap": "sm",
+          "children": [
+            "title",
+            "body"
+          ]
+        },
+        {
+          "id": "title",
+          "component": "CText",
+          "text": "Review the earlier repair",
+          "size": "title"
+        },
+        {
+          "id": "body",
+          "component": "CText",
+          "text": "Compare the current symptom with the previous visit before proceeding."
+        }
+      ]
+    },
+    "clarify": {
+      "root": "surface",
+      "components": [
+        {
+          "id": "surface",
+          "component": "CSurface",
+          "treatment": "wash",
+          "tone": "neutral",
+          "padding": "md",
+          "child": "content"
+        },
+        {
+          "id": "content",
+          "component": "CStack",
+          "direction": "column",
+          "gap": "sm",
+          "children": [
+            "title",
+            "body"
+          ]
+        },
+        {
+          "id": "title",
+          "component": "CText",
+          "text": "A little more context",
+          "size": "title"
+        },
+        {
+          "id": "body",
+          "component": "CText",
+          "text": "Describe the current symptom and what has already been checked."
+        }
+      ]
+    }
+  },
+  "repeat": {
+    "visits": {
+      "path": "/visits",
+      "key": "id",
+      "fragment": "visit"
+    }
+  },
+  "switch": {
+    "support-slot": {
+      "path": "/decision/label",
+      "cases": {
+        "diagnose": "diagnose",
+        "parts": "parts",
+        "comeback": "comeback",
+        "clarify": "clarify"
+      },
+      "default": "clarify"
+    }
+  },
+  "forms": [
+    {
+      "path": "/state/draft",
+      "source": "/record",
+      "key": "id"
+    }
+  ],
+  "navigation": {
+    "paths": [
+      "/state/selected"
+    ]
+  },
+  "watch": [
+    "/state/draft/notes"
+  ],
+  "events": {
+    "filter": {},
+    "select_visit": {
+      "set": {
+        "/state/selected": {
+          "path": "/context/id"
+        }
+      }
+    },
+    "save_visit": {
+      "action": "save_visit",
+      "inputs": {
+        "draft": {
+          "path": "/state/draft"
+        },
+        "key": {
+          "path": "/request/key"
+        }
+      },
+      "reset": [
+        "/state/draft"
+      ]
+    }
+  },
+  "queries": {
+    "visits": {
+      "sql": "SELECT id,customer,equipment,status,notes,version,'[]'::jsonb AS attachments FROM calliope_apps.demo_hvac_jobs WHERE customer ILIKE '%'||$1||'%' OR id ILIKE '%'||$1||'%' ORDER BY scheduled_date DESC,id LIMIT 30",
+      "params": [
+        {
+          "path": "/state/filter/search"
+        }
+      ],
+      "path": "/visits",
+      "limit": 30
+    },
+    "record": {
+      "sql": "SELECT id,customer,equipment,status,notes,version,'[]'::jsonb AS attachments FROM calliope_apps.demo_hvac_jobs WHERE id=$1",
+      "params": [
+        {
+          "path": "/state/selected"
+        }
+      ],
+      "path": "/record",
+      "shape": "first"
+    },
+    "workload": {
+      "sql": "SELECT status,count(*)::integer AS visits FROM calliope_apps.demo_hvac_jobs GROUP BY status ORDER BY status",
+      "path": "/chart/data/values"
+    },
+    "decision": {
+      "sql": "SELECT rvbbit.decision_tree(jsonb_build_object('job',$1::jsonb,'notes',$2::text),$3::jsonb,4) AS decision",
+      "params": [
+        {
+          "path": "/record"
+        },
+        {
+          "path": "/state/draft/notes"
+        },
+        {
+          "path": "/policy"
+        }
+      ],
+      "path": "/decision",
+      "shape": "value",
+      "dependsOn": [
+        "record"
+      ],
+      "cacheMs": 30000,
+      "timeoutMs": 8000
+    }
+  }
+}

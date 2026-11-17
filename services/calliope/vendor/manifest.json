@@ -1,0 +1,76 @@
+{
+  "libraries": {
+    "gridjs": {
+      "files": {
+        "gridjs.umd.js": {
+          "bytes": 60552,
+          "sha256": "16be7f9bed197c567d96f9e333dee7ae4a09aa8e5392b3fea1333810006aac28",
+          "url": "https://cdn.jsdelivr.net/npm/gridjs@5.0.2/dist/gridjs.umd.js"
+        },
+        "mermaid.min.css": {
+          "bytes": 7762,
+          "sha256": "1ab4ee41929f642c16a68d41fbdd0791d58fe6279df37aafd56d17fa1bcc37ff",
+          "url": "https://cdn.jsdelivr.net/npm/gridjs@5.0.2/dist/theme/mermaid.min.css"
+        }
+      },
+      "version": "5.0.2"
+    },
+    "mapbox-gl": {
+      "files": {
+        "mapbox-gl.css": {
+          "bytes": 37038,
+          "sha256": "9ca14d5415ae738f7371b9bc56fad0ca1df38e997c838bede85e96e1ba584d3e",
+          "url": "https://api.mapbox.com/mapbox-gl-js/v3.15.0/mapbox-gl.css"
+        },
+        "mapbox-gl.js": {
+          "bytes": 1619752,
+          "sha256": "ec0d6204b98db0fb19d1142b6edde2d2ffa2d7129b4d3efc6aeecc08e2951420",
+          "url": "https://api.mapbox.com/mapbox-gl-js/v3.15.0/mapbox-gl.js"
+        }
+      },
+      "version": "3.15.0"
+    },
+    "vega": {
+      "files": {
+        "vega.min.js": {
+          "bytes": 521123,
+          "sha256": "8f6a3587cf8d4f42c7e08120e3eb05d067e746d554e39d2dcf52acc0bd5ba28f",
+          "url": "https://cdn.jsdelivr.net/npm/vega@6.4.0/build/vega.min.js"
+        }
+      },
+      "version": "6.4.0"
+    },
+    "vega-embed": {
+      "files": {
+        "vega-embed.min.js": {
+          "bytes": 60077,
+          "sha256": "c36254270219eee58fb9b1d954decad954fb07bfc9ab780c5d4401bd445cd50c",
+          "url": "https://cdn.jsdelivr.net/npm/vega-embed@7.1.0/build/vega-embed.min.js"
+        }
+      },
+      "version": "7.1.0"
+    },
+    "vega-interpreter": {
+      "files": {
+        "vega-interpreter.js": {
+          "bytes": 9132,
+          "sha256": "c0bdb735a63f9276f136e8d90d7fdf5d8e9df8031eb069048fc9975c876fd7f9",
+          "url": "https://cdn.jsdelivr.net/npm/vega-interpreter@2.3.2/build/vega-interpreter.js"
+        }
+      },
+      "version": "2.3.2"
+    },
+    "vega-lite": {
+      "files": {
+        "vega-lite.min.js": {
+          "bytes": 250845,
+          "sha256": "35a9821df838825b05a6a73e9414b58747a1b18321583858ed903c66393a5c7e",
+          "url": "https://cdn.jsdelivr.net/npm/vega-lite@6.4.3/build/vega-lite.min.js"
+        }
+      },
+      "version": "6.4.3"
+    }
+  },
+  "route": "/vendor",
+  "schema": "rvbbit.vendor-assets.v1"
+}

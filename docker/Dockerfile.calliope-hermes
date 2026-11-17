@@ -1,0 +1,392 @@
+ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3
+FROM ${HERMES_BASE_IMAGE}
+
+USER root
+
+# Browser Use needs full Chromium, not chrome-headless-shell. Keep it in the
+# image: a fresh/migrated /opt/data volume must not disable browser automation.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium file jq \
+    && chromium --version \
+    && rm -rf /var/lib/apt/lists/*
+RUN uv pip install --python /opt/hermes/.venv/bin/python Pillow==12.0.0
+# Catalog-only backport; keep the pinned Hermes transport/auth implementation.
+# Provenance and scope: docker/calliope/hermes-subscription-model-catalog.md.
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-subscription-model-catalog.patch /run/calliope-build/test-hermes-subscription-model-catalog.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-subscription-model-catalog.patch \
+    && git apply /tmp/hermes-subscription-model-catalog.patch \
+    && python /tmp/test-hermes-subscription-model-catalog.py \
+    && rm /tmp/hermes-subscription-model-catalog.patch /tmp/test-hermes-subscription-model-catalog.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-nested-tool-ledger.py /tmp/apply-hermes-nested-tool-ledger.py \
+    && python /tmp/apply-hermes-nested-tool-ledger.py && rm /tmp/apply-hermes-nested-tool-ledger.py
+COPY docker/calliope/hermes-managed-images.py /opt/hermes/gateway/calliope_managed_images.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-managed-images.py /tmp/apply-hermes-managed-images.py \
+    && python /tmp/apply-hermes-managed-images.py && rm /tmp/apply-hermes-managed-images.py
+COPY services/calliope/media_ledger.py /opt/hermes/gateway/calliope_media_ledger.py
+COPY services/calliope/specialist_assignment.py /opt/hermes/gateway/calliope_specialist_assignment.py
+COPY services/calliope/tool_arguments.py \
+    services/calliope/stage_delivery.py \
+    /opt/hermes/
+ENV CALLIOPE_CHROMIUM_PATH=/usr/bin/chromium
+
+# A compact, pinned web-artifact toolchain. `calliope-web-check` gives Hermes
+# one quiet command for HTML structure plus embedded/browser JavaScript parsing
+# and linting; it avoids dumping a completed dashboard back into model context.
+RUN npm install --global --no-audit --no-fund \
+        prettier@3.9.6 \
+        eslint@10.8.1 \
+        html-validate@11.6.2 \
+    && prettier --version \
+    && eslint --version \
+    && html-validate --version \
+    && npm cache clean --force
+COPY docker/calliope/interaction-check/ /opt/hermes/calliope/interaction-check/
+COPY --chmod=0755 docker/calliope/bin/calliope-interaction-check /usr/local/bin/calliope-interaction-check
+RUN node --test /opt/hermes/calliope/interaction-check/test.cjs
+COPY docker/calliope/web-check/ /opt/hermes/calliope/web-check/
+COPY --chmod=0755 docker/calliope/bin/calliope-web-check /usr/local/bin/calliope-web-check
+
+# Small, reviewable overlay on the pinned upstream image. The patch forwards
+# verified Hermes session provenance only to explicitly opted-in first-party
+# MCP servers; secret values remain environment references in the config.
+COPY services/calliope/hermes-forward-session-identity.patch /tmp/hermes-forward-session-identity.patch
+COPY docker/calliope/hermes-run-context.py /opt/hermes/gateway/calliope_run_context.py
+COPY docker/calliope/hermes-idempotent-steer.patch \
+    docker/calliope/test-hermes-idempotent-steer.py \
+    docker/calliope/hermes-run-context.patch \
+    docker/calliope/hermes-skill-index.patch \
+    docker/calliope/hermes-progressive-sql-results.patch \
+    docker/calliope/hermes-runs-progressive-sql-results.patch \
+    docker/calliope/hermes-deepinfra-output-cap.patch \
+    docker/calliope/hermes-explicit-small-context.patch \
+    docker/calliope/hermes-profile-log-routing.patch \
+    docker/calliope/hermes-command-catalog.patch \
+    docker/calliope/hermes-auxiliary-tts-rewrite.patch \
+    docker/calliope/hermes-tool-result-wire-name.patch \
+    docker/calliope/hermes-deferred-tool-argument-unwrap.patch \
+    docker/calliope/hermes-shared-oauth-root-store.patch \
+    docker/calliope/hermes-silent-output-cap.patch \
+    docker/calliope/test-hermes-silent-output-cap.py \
+    docker/calliope/hermes-tool-baffles.patch \
+    docker/calliope/test-hermes-tool-baffles.py \
+    docker/calliope/hermes-pinned-tools.patch \
+    docker/calliope/hermes-image-tool-timeout.patch \
+    docker/calliope/test-hermes-image-tool-timeout.py \
+    docker/calliope/test-hermes-pinned-tools.py \
+    docker/calliope/test-hermes-shared-oauth-root-store.py \
+    docker/calliope/test-hermes-profile-log-routing.py \
+    docker/calliope/test-hermes-tool-result-wire-name.py \
+    docker/calliope/test-hermes-deferred-tool-argument-unwrap.py \
+    docker/calliope/apply-hermes-cron-execution-ledger.py \
+    docker/calliope/test-hermes-cron-execution-ledger.py \
+    /tmp/
+COPY docker/calliope/hermes-cron-cancellation.py /opt/hermes/cron/calliope_cancellation.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-cron-cancellation.py /run/calliope-build/test-hermes-cron-cancellation.py /run/calliope-build/apply-hermes-cron-timezones.py /run/calliope-build/test-hermes-cron-timezones.py /run/calliope-build/test-hermes-v021-upstream-contracts.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check --include=tools/mcp_tool_handlers.py /tmp/hermes-forward-session-identity.patch \
+    && git apply --include=tools/mcp_tool_handlers.py /tmp/hermes-forward-session-identity.patch \
+    && git apply --check --recount /tmp/hermes-run-context.patch \
+    && git apply --recount /tmp/hermes-run-context.patch \
+    && rm /tmp/hermes-run-context.patch \
+    && git apply --check --include=agent/prompt_builder.py /tmp/hermes-skill-index.patch \
+    && git apply --include=agent/prompt_builder.py /tmp/hermes-skill-index.patch \
+    && git apply --check --include=gateway/platforms/api_server.py /tmp/hermes-progressive-sql-results.patch \
+    && git apply --include=gateway/platforms/api_server.py /tmp/hermes-progressive-sql-results.patch \
+    && git apply --check --recount --include=gateway/platforms/api_server_runs.py /tmp/hermes-runs-progressive-sql-results.patch \
+    && git apply --recount --include=gateway/platforms/api_server_runs.py /tmp/hermes-runs-progressive-sql-results.patch \
+    && git apply --check /tmp/hermes-idempotent-steer.patch \
+    && git apply /tmp/hermes-idempotent-steer.patch \
+    && python3 /tmp/test-hermes-idempotent-steer.py \
+    && rm /tmp/hermes-idempotent-steer.patch /tmp/test-hermes-idempotent-steer.py \
+    && git apply --check --include=agent/model_metadata.py /tmp/hermes-deepinfra-output-cap.patch \
+    && git apply --include=agent/model_metadata.py /tmp/hermes-deepinfra-output-cap.patch \
+    && git apply --check --include=agent/agent_init.py /tmp/hermes-explicit-small-context.patch \
+    && git apply --include=agent/agent_init.py /tmp/hermes-explicit-small-context.patch \
+    && git apply --check --recount /tmp/hermes-profile-log-routing.patch \
+    && git apply --recount /tmp/hermes-profile-log-routing.patch \
+    && git apply --check --recount --include=gateway/platforms/api_server.py /tmp/hermes-command-catalog.patch \
+    && git apply --recount --include=gateway/platforms/api_server.py /tmp/hermes-command-catalog.patch \
+    && git apply --check --recount --include=gateway/platforms/api_server.py /tmp/hermes-auxiliary-tts-rewrite.patch \
+    && git apply --recount --include=gateway/platforms/api_server.py /tmp/hermes-auxiliary-tts-rewrite.patch \
+    && git apply --check --recount --include=agent/transports/chat_completions.py /tmp/hermes-tool-result-wire-name.patch \
+    && git apply --recount --include=agent/transports/chat_completions.py /tmp/hermes-tool-result-wire-name.patch \
+    && git apply --check --recount --include=tools/tool_search.py /tmp/hermes-deferred-tool-argument-unwrap.patch \
+    && git apply --recount --include=tools/tool_search.py /tmp/hermes-deferred-tool-argument-unwrap.patch \
+    && git apply --check --recount /tmp/hermes-shared-oauth-root-store.patch \
+    && git apply --recount /tmp/hermes-shared-oauth-root-store.patch \
+    && git apply --check --recount --include=agent/conversation_loop.py --include=agent/turn_truncation.py --include=agent/turn_tool_validation.py --include=agent/turn_tool_round.py /tmp/hermes-silent-output-cap.patch \
+    && git apply --recount --include=agent/conversation_loop.py --include=agent/turn_truncation.py --include=agent/turn_tool_validation.py --include=agent/turn_tool_round.py /tmp/hermes-silent-output-cap.patch \
+    && git apply --check --recount --include=agent/conversation_loop.py --include=agent/turn_truncation.py --include=agent/turn_tool_validation.py --include=agent/turn_tool_round.py /tmp/hermes-tool-baffles.patch \
+    && git apply --recount --include=agent/conversation_loop.py --include=agent/turn_truncation.py --include=agent/turn_tool_validation.py --include=agent/turn_tool_round.py /tmp/hermes-tool-baffles.patch \
+    && git apply --check --recount --include=tools/tool_search.py /tmp/hermes-pinned-tools.patch \
+    && git apply --recount --include=tools/tool_search.py /tmp/hermes-pinned-tools.patch \
+    && git apply --check /tmp/hermes-image-tool-timeout.patch \
+    && git apply /tmp/hermes-image-tool-timeout.patch \
+    && python /tmp/test-hermes-image-tool-timeout.py \
+    && rm /tmp/hermes-image-tool-timeout.patch /tmp/test-hermes-image-tool-timeout.py \
+    && python -m py_compile gateway/platforms/api_server.py gateway/platforms/api_server_runs.py \
+    && python /tmp/test-hermes-profile-log-routing.py \
+    && python /tmp/test-hermes-tool-result-wire-name.py \
+    && python /tmp/test-hermes-deferred-tool-argument-unwrap.py \
+    && python /tmp/test-hermes-shared-oauth-root-store.py \
+    && python /tmp/test-hermes-silent-output-cap.py \
+    && python /tmp/test-hermes-tool-baffles.py \
+    && python /tmp/test-hermes-pinned-tools.py \
+    && python /tmp/apply-hermes-cron-execution-ledger.py \
+    && python /tmp/test-hermes-cron-execution-ledger.py \
+    && python /tmp/apply-hermes-cron-cancellation.py \
+    && python /tmp/test-hermes-cron-cancellation.py \
+    && rm /tmp/apply-hermes-cron-cancellation.py /tmp/test-hermes-cron-cancellation.py \
+    && python /tmp/apply-hermes-cron-timezones.py \
+    && python /tmp/test-hermes-cron-timezones.py \
+    && rm /tmp/apply-hermes-cron-timezones.py /tmp/test-hermes-cron-timezones.py \
+    && python /tmp/test-hermes-v021-upstream-contracts.py \
+    && rm /tmp/hermes-forward-session-identity.patch /tmp/hermes-skill-index.patch /tmp/hermes-progressive-sql-results.patch /tmp/hermes-runs-progressive-sql-results.patch /tmp/hermes-deepinfra-output-cap.patch /tmp/hermes-explicit-small-context.patch /tmp/hermes-profile-log-routing.patch /tmp/hermes-command-catalog.patch /tmp/hermes-auxiliary-tts-rewrite.patch /tmp/hermes-tool-result-wire-name.patch /tmp/hermes-deferred-tool-argument-unwrap.patch /tmp/hermes-shared-oauth-root-store.patch /tmp/hermes-silent-output-cap.patch /tmp/test-hermes-silent-output-cap.py /tmp/hermes-tool-baffles.patch /tmp/test-hermes-tool-baffles.py /tmp/hermes-pinned-tools.patch /tmp/test-hermes-pinned-tools.py /tmp/test-hermes-shared-oauth-root-store.py /tmp/test-hermes-profile-log-routing.py /tmp/test-hermes-tool-result-wire-name.py /tmp/test-hermes-deferred-tool-argument-unwrap.py /tmp/apply-hermes-cron-execution-ledger.py /tmp/test-hermes-cron-execution-ledger.py /tmp/test-hermes-v021-upstream-contracts.py
+
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-typed-arguments.patch /run/calliope-build/test-hermes-typed-arguments.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-typed-arguments.patch \
+    && git apply /tmp/hermes-typed-arguments.patch \
+    && python /tmp/test-hermes-typed-arguments.py \
+    && rm /tmp/hermes-typed-arguments.patch /tmp/test-hermes-typed-arguments.py
+
+# Upstream's stage-two hook copies cli-config.yaml.example into a new data
+# volume. Existing volumes are intentionally preserved. The additional hook
+# seeds only Hindsight's provider config, also on first boot.
+COPY docker/calliope/hermes-config.yaml /opt/hermes/cli-config.yaml.example
+COPY docker/calliope/hindsight-config.json \
+    docker/calliope/SOUL.md \
+    /opt/hermes/calliope/
+COPY docker/calliope/hermes-profile.yaml /opt/hermes/calliope/profile.yaml
+COPY docker/calliope/reconcile-hermes-config.py \
+    docker/calliope/reconcile-hermes-specialists.py \
+    docker/calliope/test-hermes-specialist-context.py \
+    /opt/hermes/calliope/
+RUN cd /opt/hermes && python -B calliope/test-hermes-specialist-context.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/test-hermes-coordinator-delegation.py /tmp/test-hermes-coordinator-delegation.py \
+    && python /tmp/test-hermes-coordinator-delegation.py && rm /tmp/test-hermes-coordinator-delegation.py
+COPY docker/calliope/hermes-data-completion.py /opt/hermes/gateway/calliope_data_completion.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-data-completion.py /run/calliope-build/test-hermes-data-completion.py /tmp/ \
+    && python /tmp/apply-hermes-data-completion.py \
+    && python /tmp/test-hermes-data-completion.py \
+    && rm /tmp/apply-hermes-data-completion.py /tmp/test-hermes-data-completion.py
+# "Fork from here": copy a session up to a moment and keep the original open.
+COPY docker/calliope/hermes-session-fork.py /opt/hermes/gateway/calliope_session_fork.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-session-fork.py /run/calliope-build/test-hermes-session-fork.py /tmp/ \
+    && python /tmp/apply-hermes-session-fork.py \
+    && cd /opt/hermes && python /tmp/test-hermes-session-fork.py \
+    && rm /tmp/apply-hermes-session-fork.py /tmp/test-hermes-session-fork.py
+COPY docker/calliope/speech_bridge.py /usr/local/bin/speech_bridge.py
+COPY docker/calliope/reviewed_mail_bridge.py /usr/local/bin/reviewed_mail_bridge.py
+COPY docker/calliope/sms_bridge.py /usr/local/bin/sms_bridge.py
+COPY docker/calliope/test-sms-bridge-native.py /tmp/test-sms-bridge-native.py
+RUN python /tmp/test-sms-bridge-native.py && rm /tmp/test-sms-bridge-native.py
+COPY --chmod=0755 docker/calliope/hermes-gateway-supervisor.py /usr/local/bin/calliope-hermes-supervisor
+COPY docker/calliope/browser-origin.py /usr/local/bin/calliope_browser_origin.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-browser-navigation.py /tmp/apply-hermes-browser-navigation.py \
+    && python /tmp/apply-hermes-browser-navigation.py && rm /tmp/apply-hermes-browser-navigation.py
+COPY docker/calliope/hermes-specialists/ /opt/hermes/calliope/specialists/
+COPY docker/calliope/hermes-skills/ /opt/hermes/calliope/skills/
+COPY docker/calliope/hermes-specialist-skills/ /opt/hermes/calliope/specialist-skills/
+COPY --chmod=0755 docker/calliope/013-calliope-config /etc/cont-init.d/013-calliope-config
+
+# Google Chat remains opt-in; installing its pull transport does not enable
+# a platform or contact Google. Match the pinned upstream adapter's dependency
+# set, constraining shared protobuf/auth packages to the base image versions.
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/google-chat-requirements.txt /tmp/google-chat-requirements.txt \
+    && uv pip install --python /opt/hermes/.venv/bin/python --no-cache \
+        -r /tmp/google-chat-requirements.txt \
+    && rm /tmp/google-chat-requirements.txt
+COPY docker/calliope/test-hermes-google-chat.py /opt/hermes/calliope/test-hermes-google-chat.py
+RUN cd /opt/hermes && python -B calliope/test-hermes-google-chat.py
+
+# Claude Pro/Max subscription as a model provider (NousResearch's DirectSDK plugin,
+# vendored at docker/calliope/hermes-plugins/source.json's revision). Baked as a
+# BUNDLED model provider so it loads with no plugins.enabled entry and no data-volume
+# state; it drives the official Claude Code CLI per request, so the CLI is installed
+# at the version pinned in source.json and checked by the build gate. Credentials live in CLAUDE_CONFIG_DIR on
+# the data volume (one login serves the coordinator and every specialist profile);
+# the supervisor's paste-code login writes them, the plugin never touches them.
+COPY docker/calliope/hermes-plugins/claude-subscription-directsdk-experimental/ \
+     /opt/hermes/plugins/model-providers/claude-subscription-directsdk-experimental/
+RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.299 \
+    && npm cache clean --force \
+    && claude --version
+ENV CLAUDE_CONFIG_DIR=/opt/data/.claude
+# The appliance image owns the CLI version; updates ship with a new image.
+ENV DISABLE_AUTOUPDATER=1
+# Claude Code's telemetry, error reporting and feature-flag fetches stay off. The
+# plugin defaults them on since 0.3.1 but never removes a flag Hermes already has.
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    DISABLE_TELEMETRY=1 \
+    DISABLE_ERROR_REPORTING=1
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/test-hermes-claude-subscription-plugin.py /tmp/test-hermes-claude-subscription-plugin.py \
+    && cd /opt/hermes && python /tmp/test-hermes-claude-subscription-plugin.py \
+    && rm /tmp/test-hermes-claude-subscription-plugin.py
+
+# Match the CLI used by the pilot, but do not depend on uvx downloading it into
+# a customer's data volume at first use. Install apart from Hermes' dependencies.
+RUN UV_TOOL_DIR=/opt/calliope/browser-tools UV_TOOL_BIN_DIR=/usr/local/bin \
+      uv tool install --python /opt/hermes/.venv/bin/python browser-use==0.13.10 \
+    && chmod -R a+rX /opt/calliope/browser-tools
+
+# Reconnect recovery must restore every specialist adopting a shared MCP lane.
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-shared-mcp-recovery.patch /run/calliope-build/test-hermes-shared-mcp-recovery.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-shared-mcp-recovery.patch \
+    && git apply /tmp/hermes-shared-mcp-recovery.patch \
+    && python /tmp/test-hermes-shared-mcp-recovery.py \
+    && rm /tmp/hermes-shared-mcp-recovery.patch /tmp/test-hermes-shared-mcp-recovery.py
+
+# Saved MCP output must be readable even when terminal/code approvals are off.
+COPY docker/calliope/hermes-read-tool-result.py /opt/hermes/tools/calliope_result_reader.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-result-reader.patch /run/calliope-build/test-hermes-result-reader.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-result-reader.patch \
+    && git apply /tmp/hermes-result-reader.patch \
+    && python /tmp/test-hermes-result-reader.py \
+    && rm /tmp/hermes-result-reader.patch /tmp/test-hermes-result-reader.py
+
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-programmatic-reads.py /run/calliope-build/test-hermes-programmatic-reads.py /tmp/ \
+    && cd /opt/hermes \
+    && python /tmp/apply-hermes-programmatic-reads.py \
+    && python /tmp/test-hermes-programmatic-reads.py \
+    && rm /tmp/apply-hermes-programmatic-reads.py /tmp/test-hermes-programmatic-reads.py
+
+# Metadata-only run lifecycle ledger, independent of mutable provider prices.
+COPY docker/calliope/hermes-cache-affinity.py /opt/hermes/gateway/calliope_cache_affinity.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-cache-affinity.patch /run/calliope-build/test-hermes-cache-affinity.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-cache-affinity.patch \
+    && git apply /tmp/hermes-cache-affinity.patch \
+    && python /tmp/test-hermes-cache-affinity.py \
+    && rm /tmp/hermes-cache-affinity.patch /tmp/test-hermes-cache-affinity.py
+
+# Preserve live tool results across compaction and resolve deferred MCP tools
+# by exact session-scoped identity instead of fuzzy-matching another operation.
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-replay-and-tool-resolution.patch /run/calliope-build/test-hermes-replay-and-tool-resolution.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-replay-and-tool-resolution.patch \
+    && git apply /tmp/hermes-replay-and-tool-resolution.patch \
+    && python /tmp/test-hermes-replay-and-tool-resolution.py \
+    && rm /tmp/hermes-replay-and-tool-resolution.patch /tmp/test-hermes-replay-and-tool-resolution.py
+
+ARG CALLIOPE_REVISION=unknown
+ENV CALLIOPE_LEDGER_REVISION=${CALLIOPE_REVISION}
+COPY services/calliope/tool_outcomes.py /opt/hermes/tool_outcomes.py
+COPY docker/calliope/hermes-run-ledger.py /opt/hermes/gateway/calliope_ledger.py
+COPY scripts/appliance/export-run-ledger.py \
+    scripts/appliance/probe-prompt-cache.py \
+    /opt/hermes/calliope/
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-run-ledger.py /run/calliope-build/test-hermes-run-ledger.py /tmp/ \
+    && python /tmp/apply-hermes-run-ledger.py \
+    && python -m compileall -q /opt/hermes/gateway/calliope_ledger.py \
+       /opt/hermes/hermes_cli/lifecycle.py /opt/hermes/agent/turn_facade.py \
+       /opt/hermes/agent/api_request_hooks.py /opt/hermes/gateway/platforms/api_server_runs.py \
+    && cd /opt/hermes && PYTHONPATH=/opt/hermes python /tmp/test-hermes-run-ledger.py \
+    && rm /tmp/apply-hermes-run-ledger.py /tmp/test-hermes-run-ledger.py
+
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/test-hermes-nested-tool-ledger.py /run/calliope-build/test-hermes-managed-images.py /tmp/ \
+    && cd /opt/hermes \
+    && PYTHONPATH=/opt/hermes /opt/hermes/.venv/bin/python /tmp/test-hermes-nested-tool-ledger.py \
+    && PYTHONPATH=/opt/hermes /opt/hermes/.venv/bin/python /tmp/test-hermes-managed-images.py \
+    && rm /tmp/test-hermes-nested-tool-ledger.py /tmp/test-hermes-managed-images.py
+
+# Recover original session evidence after compaction; index new records asynchronously.
+COPY docker/calliope/hermes-session-context.py /opt/hermes/tools/calliope_session_context.py
+COPY docker/calliope/hermes-compaction-scope.py /opt/hermes/tools/calliope_compaction_scope.py
+COPY docker/calliope/hermes-middle-memory.py /opt/hermes/tools/calliope_middle_memory.py
+COPY docker/calliope/hermes-tool-deadlines.py /opt/hermes/agent/calliope_tool_deadlines.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-context-recall.py /run/calliope-build/test-hermes-context-recall.py /tmp/ \
+    && python /tmp/apply-hermes-context-recall.py \
+    && cd /opt/hermes && python /tmp/test-hermes-context-recall.py \
+    && rm /tmp/apply-hermes-context-recall.py /tmp/test-hermes-context-recall.py
+
+# Deliver each completed Stage output independently of a parallel tool batch.
+COPY docker/calliope/hermes-stage-events.py /opt/hermes/gateway/calliope_stage_events.py
+COPY services/calliope/artifact_progress.py /opt/hermes/artifact_progress.py
+COPY docker/calliope/hermes-artifact-progress.py /opt/hermes/gateway/calliope_artifact_progress.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-stage-events.py /run/calliope-build/test-hermes-stage-events.py /tmp/ \
+    && python /tmp/apply-hermes-stage-events.py \
+    && cd /opt/hermes && python /tmp/test-hermes-stage-events.py \
+    && rm /tmp/apply-hermes-stage-events.py /tmp/test-hermes-stage-events.py
+
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-artifact-progress.py /run/calliope-build/test-hermes-stage-events.py /run/calliope-build/test-hermes-artifact-progress.py /tmp/ \
+    && python /tmp/apply-hermes-artifact-progress.py \
+    && python -m compileall -q /opt/hermes/artifact_progress.py /opt/hermes/gateway/calliope_artifact_progress.py \
+    && cd /opt/hermes && python /tmp/test-hermes-artifact-progress.py \
+    && rm /tmp/apply-hermes-artifact-progress.py /tmp/test-hermes-stage-events.py /tmp/test-hermes-artifact-progress.py
+
+# Stop a delegation/question/SQL call whose streamed arguments never end, and end
+# the turn on it instead of retrying (CALLIOPE_BRIEF_TOOL_ARGS_MAX_CHARS).
+COPY docker/calliope/hermes-runaway-tool-arguments.py /opt/hermes/gateway/calliope_runaway_tool_arguments.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-runaway-tool-arguments.py /run/calliope-build/test-hermes-runaway-tool-arguments.py /tmp/ \
+    && python /tmp/apply-hermes-runaway-tool-arguments.py \
+    && python -m compileall -q /opt/hermes/gateway/calliope_runaway_tool_arguments.py \
+    && cd /opt/hermes && python /tmp/test-hermes-runaway-tool-arguments.py \
+    && rm /tmp/apply-hermes-runaway-tool-arguments.py /tmp/test-hermes-runaway-tool-arguments.py
+# Hindsight reads and writes what the person said, not Calliope's per-turn context,
+# and recall only returns memories everyone in the conversation could see.
+COPY docker/calliope/hermes-memory-scope.py /opt/hermes/gateway/calliope_memory_scope.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-memory-scope.py /run/calliope-build/test-hermes-memory-scope.py /tmp/ \
+    && python /tmp/apply-hermes-memory-scope.py \
+    && python -m compileall -q /opt/hermes/gateway/calliope_memory_scope.py \
+       /opt/hermes/gateway/platforms/api_server_runs.py /opt/hermes/agent/memory_manager.py \
+       /opt/hermes/plugins/memory/hindsight/__init__.py \
+    && cd /opt/hermes && python /tmp/test-hermes-memory-scope.py \
+    && rm /tmp/apply-hermes-memory-scope.py /tmp/test-hermes-memory-scope.py
+
+# Imports in build-time tests can create runtime files as root in HERMES_HOME.
+# Docker copies those into an empty named volume; root-owned logs then abort
+# upstream's first-boot setup before it seeds config.yaml. Ship an empty home
+# so only the normal cont-init hooks initialize a customer's durable state.
+RUN find /opt/data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + \
+    && chown hermes:hermes /opt/data \
+    && chmod 0700 /opt/data
+
+LABEL org.opencontainers.image.title="Calliope Hermes" \
+      org.opencontainers.image.description="Pinned Hermes Agent with Calliope defaults and first-party MCP provenance forwarding" \
+      org.opencontainers.image.base.name="nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3" \
+      org.opencontainers.image.base.revision="d337b736aa1e8ebecfab043842d13e4a2d2f48a3"
+
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/apply-hermes-managed-media.py /tmp/apply-hermes-managed-media.py \
+    && python3 /tmp/apply-hermes-managed-media.py && rm /tmp/apply-hermes-managed-media.py
+
+# Resolve capability-search receipts against the exact session tool scope. No
+# dynamic schema injection or model calls; preserve the cacheable tool prefix.
+COPY docker/calliope/hermes-capability-discovery.py /opt/hermes/tools/calliope_capability_discovery.py
+RUN --mount=type=bind,source=docker/calliope,target=/run/calliope-build,readonly \
+    cp /run/calliope-build/hermes-capability-discovery.patch /run/calliope-build/test-hermes-capability-discovery.py /tmp/ \
+    && cd /opt/hermes \
+    && git apply --check /tmp/hermes-capability-discovery.patch \
+    && git apply /tmp/hermes-capability-discovery.patch \
+    && python /tmp/test-hermes-capability-discovery.py \
+    && rm /tmp/hermes-capability-discovery.patch /tmp/test-hermes-capability-discovery.py
+
+# UI Studio is part of the shipping stack; no post-install docker cp step.
+COPY --chmod=0755 apps/calliope-canvas/business/studio_client.py /usr/local/bin/calliope-ui-studio

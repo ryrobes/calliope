@@ -1,0 +1,16 @@
+[
+  {"op":"press","id":"view-dispatch"},
+  {"op":"fill","id":"dispatch-start","value":"14:00"},
+  {"op":"fill","id":"dispatch-end","value":"16:00"},
+  {"op":"fill","id":"dispatch-reason","value":"Customer requested an afternoon appointment."},
+  {"op":"press","id":"dispatch-preview"},
+  {"op":"assert","id":"review-before-slot","equals":"08:00–10:00"},
+  {"op":"assert","id":"review-after-slot","equals":"14:00–16:00"},
+  {"op":"press","id":"dispatch-confirm"},
+  {"op":"assert","id":"dispatch-start","property":"value","equals":"14:00"},
+  {"op":"fill","id":"dispatch-reason","value":"Customer reverted the appointment."},
+  {"op":"press","id":"dispatch-undo"},
+  {"op":"assert","id":"review-after-slot","equals":"08:00–10:00"},
+  {"op":"press","id":"dispatch-confirm"},
+  {"op":"assert","id":"dispatch-start","property":"value","equals":"08:00"}
+]

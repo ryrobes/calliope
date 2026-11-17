@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light"><title>Calliope · Ops</title>
+<link rel="icon" href="/calliope/callie-favicon.png" type="image/png">
+<link rel="stylesheet" href="/theme/superior-fonts.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+<link rel="stylesheet" href="/floor/floor.css?v=__CALLIOPE_ASSET_VERSION__">
+<link rel="stylesheet" href="/theme/warehouse-theme.css">
+<script src="/theme/warehouse-theme.js"></script>
+<link rel="stylesheet" href="/ops/ops.css?v=__CALLIOPE_ASSET_VERSION__">
+<script src="/ops/ops.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+</head>
+<body data-warehouse-page="floor" class="ops-page">
+__CALLIOPE_BACKGROUND__
+<div class="floor-wash" aria-hidden="true"></div>
+<nav class="floor-rail" data-warehouse-header aria-label="Calliope navigation">
+  <a class="floor-brand" href="/floor"><span class="calliope-brand"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></span></a>
+  <div class="floor-rail-nav" aria-label="Workspace views">__CALLIOPE_WORKSPACE_NAV__</div>
+  <div class="floor-rail-actions"><span data-warehouse-theme-anchor></span>__CALLIOPE_ACCOUNT__</div>
+</nav>
+<main class="ops-main">
+  <header class="ops-heading"><div><p class="ops-eyebrow">Admin · work observed</p><h1>Business, in motion.</h1><p>The work your team is doing with Callie, with the evidence close at hand.</p></div><div class="ops-controls"><label for="ops-period">Recently active</label><select id="ops-period"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select><button id="ops-refresh" type="button">Refresh</button></div></header>
+  <div class="ops-totals" id="ops-totals" hidden></div>
+  <p class="ops-scope" id="ops-scope">Conversations you can access. Saved results are counted across each conversation’s history.</p>
+  <section class="ops-toolbar" aria-label="Filter observed work"><label for="ops-search">Find work</label><input type="search" id="ops-search" placeholder="A customer, decision, or piece of work…"><label class="ops-check"><input type="checkbox" id="ops-attention"> With open questions</label></section>
+  <p class="ops-status" id="ops-status" role="status" aria-live="polite">Loading the work record…</p>
+  <section id="ops-cards" class="ops-cards" aria-label="Observed work" aria-busy="true"></section>
+  <aside class="ops-foundation"><p class="ops-eyebrow">A first view</p><h2>From individual work to recurring practices.</h2><p>This view starts with conversation summaries and saved results. It includes ordinary chats as well as assigned work. Connecting related conversations into recurring business practices comes next.</p><p>These counts describe the work record. They do not claim completed orders, recovered revenue, or time saved.</p></aside>
+</main>
+<dialog id="ops-detail" class="ops-detail" aria-labelledby="ops-detail-title"><header><p class="ops-eyebrow">The evidence behind the work</p><button type="button" id="ops-close" aria-label="Close evidence">×</button></header><h2 id="ops-detail-title"></h2><div id="ops-detail-body"></div></dialog>
+</body></html>

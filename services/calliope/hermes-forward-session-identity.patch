@@ -1,0 +1,151 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/tools/mcp_tool_handlers.py b/tools/mcp_tool_handlers.py
+index b94122d..2c08b1b 100644
+--- a/tools/mcp_tool_handlers.py
++++ b/tools/mcp_tool_handlers.py
+@@ -357,7 +357,107 @@ async def _track_inflight_rpc(server: Any, server_name: str, op: str, *, retry_s
+             inflight.discard(task)
+ 
+ 
+-async def _call_tool_racing_stdio_death(server, server_name: str, tool_name: str, args: dict):
++_HERMES_CALLER_META_KEY = "rvbbit.ai/hermes-caller"
++
++
++def _forwarded_session_metadata(
++    config: dict,
++    *,
++    task_id: str = "",
++    session_id: str = "",
++) -> Optional[dict]:
++    """Capture bounded provenance for one opted-in MCP request.
++
++    Opt in with ``forward_session_identity: true`` on a trusted first-party
++    server only. Requests then carry bounded platform/session provenance as
++    MCP ``_meta``; native Google Chat turns additionally carry the
++    adapter-verified sender email. None of this is added to public tool
++    arguments.
++
++    This runs in the agent/caller thread before the coroutine crosses onto the
++    dedicated MCP loop, because task-local gateway ContextVars intentionally do
++    not leak across that scheduling boundary. Google Chat additionally forwards
++    the adapter-verified sender email. API-server and cron requests deliberately
++    forward no human identity; their session IDs let a trusted first-party MCP
++    server correlate the request with its own durable records.
++    """
++    if not isinstance(config, dict) or config.get("forward_session_identity") is not True:
++        return None
++    try:
++        from gateway.session_context import get_session_env
++    except Exception:
++        return None
++    platform = str(get_session_env("HERMES_SESSION_PLATFORM", "") or "").strip().lower()
++    platform = platform.replace("-", "_")
++    context_session_id = str(
++        get_session_env("HERMES_SESSION_ID", "") or session_id or task_id or ""
++    ).strip()[:240]
++    if not platform and context_session_id.startswith("cron_"):
++        platform = "cron"
++    if platform == "gchat":
++        platform = "google_chat"
++    if platform not in {"google_chat", "api_server", "cron"}:
++        return None
++    envelope = {
++        "source": "hermes",
++        "platform": platform,
++    }
++    if context_session_id:
++        envelope["session_id"] = context_session_id
++    elif platform != "google_chat":
++        # A platform label alone cannot correlate an API/automation request and
++        # would turn every unscoped Hermes call into low-value telemetry.
++        return None
++    if platform == "api_server":
++        from gateway.calliope_run_context import current_run_id
++        run_id = current_run_id()
++        if run_id:
++            envelope["run_id"] = run_id[:240]
++    if platform == "google_chat":
++        user_id = str(get_session_env("HERMES_SESSION_USER_ID", "") or "").strip().lower()
++        if not user_id or len(user_id) > 254 or "@" not in user_id:
++            return None
++        envelope["user_id"] = user_id
++    return {_HERMES_CALLER_META_KEY: envelope}
++
++
++async def _call_tool_with_metadata(session, name: str, arguments: dict, metadata: Optional[dict]):
++    """Call a tool with MCP ``_meta`` while retaining SDK result validation."""
++    if not metadata:
++        return await session.call_tool(name, arguments=arguments)
++    try:
++        from mcp import types as mcp_types
++
++        params = mcp_types.CallToolRequestParams(
++            name=name,
++            arguments=arguments,
++            **{"_meta": metadata},
++        )
++        # MCP 2.x exposes ClientRequest as a PEP 604 union type rather than a
++        # constructible RootModel. ClientSession.send_request accepts the
++        # concrete request model directly (and MCP 1.x accepts it too).
++        request = mcp_types.CallToolRequest(method="tools/call", params=params)
++    except (AttributeError, ImportError, TypeError) as exc:
++        # Older optional MCP SDKs may not expose the low-level request types.
++        # Preserve tool availability, but make the attribution downgrade
++        # visible to operators rather than failing the user's request.
++        logger.warning("MCP session identity metadata unavailable: %s", exc)
++        return await session.call_tool(name, arguments=arguments)
++    send_request = getattr(session, "send_request", None)
++    if not callable(send_request):
++        logger.warning("MCP session identity metadata unavailable: client has no send_request")
++        return await session.call_tool(name, arguments=arguments)
++    # Do not catch failures after the request is sent: retrying through
++    # call_tool here could duplicate a successful mutating server operation.
++    result = await send_request(request, mcp_types.CallToolResult)
++    validate = getattr(session, "_validate_tool_result", None)
++    if not mcp_field(result, "is_error", "isError", False) and callable(validate):
++        await validate(name, result)
++    return result
++
++
++async def _call_tool_racing_stdio_death(server, server_name: str, tool_name: str, args: dict,
++                                        request_metadata: Optional[dict] = None):
+     """``session.call_tool`` that fails fast when the stdio child is/gets dead: pre-call (a dead
+     child must not hold the slot for the full timeout) and mid-call (race against
+     ``_watch_stdio_children``). Both raise :class:`_StdioChildExited` for the respawn path, which
+@@ -371,7 +471,12 @@ async def _call_tool_racing_stdio_death(server, server_name: str, tool_name: str
+             f"MCP stdio subprocess for '{server_name}' had already exited when the call was dispatched",
+             in_flight=False,
+         )
+-    _call_coro = server.session.call_tool(tool_name, arguments=args)
++    # Opted-in servers receive the caller provenance captured on the agent thread
++    # as MCP ``_meta``; everyone else gets the plain SDK call.
++    _call_coro = (
++        _call_tool_with_metadata(server.session, tool_name, args, request_metadata)
++        if request_metadata else server.session.call_tool(tool_name, arguments=args)
++    )
+     _watch_children = getattr(server, "_watch_stdio_children", None)
+     if not (inspect.iscoroutinefunction(_watch_children) and asyncio.iscoroutine(_call_coro)):
+         # Stubbed sessions return a non-awaitable, or there is no child-watcher to race: plain await.
+@@ -547,12 +652,21 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
+         # Only a tool annotated readOnlyHint=True is replayed after session expiry; a 401 is always
+         # pre-dispatch so the auth recoverer keeps its retry for every tool.
+         read_only = _tool_is_read_only(server_name, tool_name)
++        # Capture while still in the gateway turn's ContextVar scope. The MCP
++        # coroutine runs on a dedicated loop whose task context is intentionally
++        # isolated from concurrent messaging sessions.
++        request_metadata = _forwarded_session_metadata(
++            getattr(server, "_config", None),
++            task_id=str(kwargs.get("task_id") or ""),
++            session_id=str(kwargs.get("session_id") or ""),
++        )
+ 
+         async def _call():
+             async with server._rpc_lock, _track_inflight_rpc(server, server_name, op, retry_safe=read_only):
+                 server._pending_call_context = contextvars.copy_context()  # for the elicitation callback
+                 try:
+-                    result = await _call_tool_racing_stdio_death(server, server_name, tool_name, args)
++                    result = await _call_tool_racing_stdio_death(
++                        server, server_name, tool_name, args, request_metadata)
+                 finally:
+                     server._pending_call_context = None
+             if getattr(server, "_mark_session_proven", None) is not None:  # round-trip done: transport healthy

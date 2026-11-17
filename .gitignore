@@ -1,0 +1,34 @@
+target/
+target-bookworm/
+results/
+*.swp
+.DS_Store
+.idea/
+.vscode/
+.env
+.rvbbit/
+bench/.venv/
+__pycache__/
+*.pyc
+dist/
+bench/columnar_comparison/data/hits.parquet
+bench/**/*.parquet
+bench/**/*.db
+bench/**/_SUCCESS
+test_runs
+.firecrawl/
+/target-*/
+
+# Playwright MCP test artifacts (screenshots / page snapshots / console logs)
+.playwright-mcp/
+# Generated/downloaded benchmark data — never commit (GitHub 100MB limit;
+# tpch.duckdb at sf1 alone is ~250MB). *.duckdb isn't caught by *.db above.
+bench/**/*.duckdb
+bench/columnar_comparison/data/
+examples/bigfoot/bigfoot_sightings.csv
+
+# personal scratch + local dev-loop output
+scratch/
+kg-console.log
+local_rebuild*.sh
+cb-*.txt

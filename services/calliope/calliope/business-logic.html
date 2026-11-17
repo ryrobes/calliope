@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">
+<title>Calliope · Business logic</title><link rel="icon" href="/calliope/callie-favicon.png" type="image/png">
+<link rel="stylesheet" href="/theme/superior-fonts.css"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+<link rel="stylesheet" href="/meaning/meaning.css?v=__LOGIC_VERSION__"><link rel="stylesheet" href="/theme/warehouse-theme.css"><link rel="stylesheet" href="/meaning/logic/business-logic.css?v=__LOGIC_VERSION__">
+<script src="/theme/warehouse-theme.js"></script><script type="module" src="/meaning/logic/business-logic.js?v=__LOGIC_VERSION__"></script>
+</head><body class="meaning-page" data-warehouse-page="meaning">
+__CALLIOPE_BACKGROUND__
+<nav class="meaning-rail" data-warehouse-header aria-label="Calliope navigation">
+<a class="calliope-brand" href="/calliope?view=zen" aria-label="Open Calliope"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></a>
+<div class="meaning-nav" aria-label="Workspace views">__CALLIOPE_WORKSPACE_NAV__</div>
+<div class="meaning-account"><span data-warehouse-theme-anchor></span>__CALLIOPE_ACCOUNT__</div>
+</nav>
+<main class="logic-studio">
+<header class="studio-heading">
+ <div class="studio-identity"><div class="studio-breadcrumb"><a href="/meaning">Meaning</a><span>/</span><button id="toggle-library" aria-expanded="false">Business logic ▾</button><span id="save-status"></span></div>
+ <input id="decision-name" aria-label="Decision name" placeholder="Name this decision" maxlength="160"><input id="decision-topic" aria-label="Topic" placeholder="Topic" maxlength="160"></div>
+ <div class="studio-actions"><details class="studio-examples"><summary>Examples <span aria-hidden="true">▾</span></summary><div><button id="load-example">HVAC service desk</button><button id="load-classifier-example">Sighting classifier</button><button id="load-action-example">Decision with an action</button></div></details><button id="undo-tree" disabled>Undo</button><button id="toggle-capability">Use with Callie</button><button id="toggle-json">Definition</button><button id="save-decision" class="accent-button">Save version</button></div>
+</header>
+<aside id="logic-library" class="studio-popover" hidden aria-label="Saved decisions"><header><strong>Business logic</strong><button id="new-decision">+ New decision</button></header><input id="find-decision" type="search" aria-label="Find a decision" placeholder="Find a decision or topic…"><div id="decision-list"></div><label>Saved version <select id="version-select" aria-label="Saved version"><option>Not saved yet</option></select></label></aside>
+<div class="execution-bar"><div><button id="show-sql" class="function-name">rvbbit.decision_tree( row, tree ) ↗</button><span>Same judgments as SQL choose() / truth(). Only visited nodes run.</span></div><div class="canvas-controls"><span id="tree-count"></span><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-reset" aria-label="Reset zoom">100%</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-fit">Fit</button></div></div>
+<div class="row-lens"><button id="previous-row" aria-label="Previous row">←</button><select id="row-select" aria-label="Row to inspect"></select><button id="next-row" aria-label="Next row">→</button><span id="row-outcome" role="status">Run the source rows to see their paths.</span><button id="row-cost" hidden title="Inspect decision costs"></button><button id="reset-row" hidden>Reset what-if</button><button id="inspect-receipt" hidden>View receipt ↗</button><label class="live-toggle"><input id="live-preview" type="checkbox" checked>Live preview</label><button id="execute-row" class="accent-button">Execute selected row</button><button id="run-row">Run this row</button></div>
+<div id="logic-workspace" class="logic-workspace" data-dock="bottom">
+<div id="graph-viewport" aria-label="Editable decision graph" tabindex="0"><div id="graph-size"><div id="decision-graph"></div></div></div>
+<div id="sql-divider" class="sql-divider" role="separator" tabindex="0" aria-label="Resize SQL panel" aria-controls="sql-workbench" aria-orientation="horizontal" aria-valuemin="15" aria-valuemax="80" aria-valuenow="32" title="Drag to resize · arrow keys to adjust"></div>
+<section id="sql-workbench" class="sql-workbench" aria-label="SQL and source rows">
+ <header class="workbench-heading"><div class="workbench-tabs" role="tablist" aria-label="SQL workbench"><button role="tab" id="tab-rows" aria-controls="panel-rows" aria-selected="true" data-tab="rows">Rows &amp; outcomes <span id="row-count"></span></button><button role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" data-tab="source">Source SQL</button><button role="tab" id="tab-sql" aria-controls="panel-sql" aria-selected="false" data-tab="sql">Use in SQL</button></div><div class="query-actions"><button id="dock-sql" aria-label="Dock SQL panel on right">Dock right →</button><button id="toggle-data" aria-expanded="true">Hide rows ↓</button><label title="Uses the same row limit as Calliope SQL: __LOGIC_ROW_LIMIT__ rows. Source SQL may return fewer rows. Batches have up to 10 minutes to finish.">Up to <input id="row-limit" aria-label="SQL row limit" type="number" min="1" max="__LOGIC_ROW_LIMIT__" step="1" required value="__LOGIC_DEFAULT_ROWS__" list="row-limit-presets"> rows</label><datalist id="row-limit-presets"></datalist><span id="query-status"></span><button id="run-sql" class="accent-button">Run SQL</button></div></header>
+ <div id="panel-rows" role="tabpanel" aria-labelledby="tab-rows"><div id="rows-hint">Fictional example rows. Run SQL to evaluate them in PostgreSQL, then select a row to follow it through the graph.</div><div id="batch-cost" hidden></div><div id="row-table"></div></div>
+ <div id="panel-source" role="tabpanel" aria-labelledby="tab-source" hidden><div class="sql-caption">Return named columns from any SELECT you can access. <code>to_jsonb(source_rows)</code> packs each row into the scalar call. Drag a column header onto a question to bind it.</div><div id="source-sql" class="logic-code-editor"></div></div>
+ <div id="panel-sql" role="tabpanel" aria-labelledby="tab-sql" hidden>
+  <div id="sql-name-prompt" class="sql-caption">Publish this flow to add a short, named SQL call. <button id="setup-sql-name">Set up SQL name</button></div>
+  <div class="sql-examples">
+   <section id="named-sql-example" class="sql-example" aria-labelledby="named-sql-heading" hidden>
+    <header class="sql-example-heading"><h3 id="named-sql-heading">Named SQL</h3><select id="sql-view" aria-label="Named SQL version"><option value="latest">Latest published</option><option value="pinned">Pinned version</option></select><button id="copy-sql">Copy named SQL</button></header>
+    <p id="sql-usage-note" class="sql-usage-note"></p>
+    <div id="named-sql" class="logic-code-editor"></div>
+   </section>
+   <section class="sql-example" aria-labelledby="inline-sql-heading">
+    <header class="sql-example-heading"><h3 id="inline-sql-heading">Inline SQL</h3><button id="copy-inline-sql">Copy inline SQL</button></header>
+    <p class="sql-usage-note">The full tree currently open in the editor, including draft edits, with the current Source SQL and row limit. Ready to run.</p>
+    <div id="inline-sql" class="logic-code-editor"></div>
+   </section>
+  </div>
+  <details id="sql-preview"><summary>Full source query &amp; row limit</summary><div class="sql-example-heading"><p class="sql-usage-note">The exact query used by Run SQL.</p><button id="copy-preview-sql">Copy full query</button></div><div id="composed-sql" class="logic-code-editor"></div></details>
+ </div>
+</section>
+</div>
+<dialog id="definition-dialog"><header><strong>Decision definition</strong><button id="close-definition">Close</button></header><p>The graph edits this versioned definition. PostgreSQL interprets it; it is not a prompt sent wholesale to Jev.</p><div id="tree-json" class="logic-code-editor"></div><footer><button id="apply-json" class="accent-button">Update graph</button></footer></dialog>
+<dialog id="capability-dialog" class="logic-detail-dialog"><header><div><small>One rule · SQL and tools</small><h2>Use with Callie</h2></div><button id="close-capability">Close</button></header>
+ <div class="capability-fields"><label>Stable rule key<input id="rule-key" placeholder="hvac.service_triage" maxlength="100"></label><label>Use this when…<textarea id="rule-description" rows="2" maxlength="1200" placeholder="Classify an incoming service request using its message and previous visit notes."></textarea></label></div>
+ <h3>Evidence to gather</h3><p class="quiet">Field bindings define which evidence each step reads. Only fields on the visited path are required; null is a supplied value.</p><div id="rule-inputs"></div>
+ <h3>What the outcomes mean</h3><div id="rule-outcomes"></div>
+ <div class="capability-publication"><label><input type="checkbox" id="rule-available"> Available to Callie</label><span id="publication-status"></span><button id="publish-revision">Publish this version</button></div>
+ <p class="quiet">Saving edits keeps the published version stable. Availability uses the rule’s existing access policy; new rules are private to you.</p>
+ <div class="capability-examples"><section><h3>Inline SQL</h3><div id="rule-sql-example" class="logic-code-editor"></div></section><section><h3>Standalone tool</h3><div id="rule-tool-example" class="logic-code-editor"></div></section></div>
+ <footer><button id="test-published-rule">Run published rule on selected row</button><button id="save-rule-metadata" class="accent-button">Save metadata</button></footer>
+</dialog>
+<dialog id="usage-dialog" class="logic-detail-dialog"><header><div><small>Decision accounting · USD</small><h2 id="usage-title">Decision costs</h2></div><button id="close-usage">Close</button></header><div id="usage-content"></div></dialog>
+<dialog id="receipt-dialog" class="logic-detail-dialog"><header><div><small>Frozen execution receipt</small><h2 id="receipt-title">Business logic</h2></div><button id="close-receipt">Close</button></header><div id="receipt-content"></div></dialog>
+</main><div id="logic-notice" role="status" hidden></div>
+</body></html>

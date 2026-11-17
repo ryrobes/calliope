@@ -1,0 +1,35 @@
+/* Match the Data Explorer worksheet. Only host tokens and containment differ. */
+:host{display:block;height:100%;min-height:0;color:var(--ink);font:14px/1.45 var(--font);--workspace-font:var(--font);--workspace-mono:var(--mono);--workspace-text:var(--ink);--workspace-bright:var(--ink);--workspace-muted:var(--muted);--workspace-line:var(--line);--workspace-line-hot:var(--accent);--workspace-bg:var(--panel);--workspace-raised:var(--panel);--workspace-accent:var(--accent);--workspace-inset:color-mix(in oklch,var(--panel) 88%,#000);--workspace-wash:color-mix(in srgb,var(--accent) 9%,transparent);--workspace-radius:7px;--workspace-control-height:32px;--workspace-control-font:500 12px/1.3 var(--font);--main:var(--accent);--foreground:var(--ink);--chrome-text:var(--muted);--chrome-border:var(--line);--chrome-bg:var(--panel);--doc-bg:var(--panel);--background:var(--page);--data-font:var(--font);--font-mono:var(--mono);--success:var(--rvbbit-success,#69bca6);--chart-3:var(--accent)}
+.meaning-pivot-surface{height:100%;min-width:0;min-height:0;container:meaning-worksheet / inline-size}
+.cube-workbench{height:100%;grid-template-columns:250px minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);grid-template-areas:'toolbar toolbar' 'sidebar columns' 'sidebar rows' 'sidebar result';column-gap:20px}
+.cube-toolbar{min-height:36px;padding:0 0 6px;flex-wrap:wrap}
+.meaning-worksheet-hint{margin-left:auto;color:var(--workspace-muted);font-size:11px}
+.cube-sidebar{grid-area:sidebar;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:visible}
+.cube-fields{display:flex;flex-direction:column;min-height:0;max-height:none;flex:0 1 auto;padding-top:4px;padding-bottom:14px}
+.cube-field-catalog{overflow:auto;max-height:none}.cube-field-list{flex-direction:column;align-items:stretch}.cube-field{width:100%;font-size:12px;padding:5px 9px}
+.cube-toolbar .cube-fields-toggle,.cube-fields-close{display:none}
+.cube-lane{min-height:36px;padding:6px 0;align-self:start;width:100%}
+.cube-lane-label{font-size:12px;line-height:24px;width:56px}.cube-pills>.relative>.group{font-size:11px;padding:3px 8px;max-width:100%}
+.cube-sidebar .cube-lane{flex:none;flex-direction:column;gap:5px;padding:12px 0}
+.cube-sidebar .cube-pills{flex-direction:column;align-items:flex-start;width:100%}
+.cube-sidebar .cube-shelf-foot{margin-top:auto;flex:none}
+.cube-result{border-left:1px solid var(--workspace-line);padding-left:16px;min-width:0;min-height:0}
+.cube-result .meaning-result{margin:0;flex:1;min-height:0;border:0;overflow:hidden;background:var(--workspace-bg)}
+.meaning-result>.flex{min-height:0;flex:1}.meaning-result .result-grid-scrollport{min-height:0}
+.meaning-result-toolbar{display:flex;gap:12px;align-items:center;flex:none;border-bottom:1px solid var(--workspace-line);min-height:40px}
+.meaning-result-toolbar [role=tablist]{display:flex;gap:6px;flex:1;min-width:0;flex-wrap:wrap}
+.meaning-result-toolbar button{padding:10px 6px;border-bottom:2px solid transparent;color:var(--workspace-muted);font-size:12px}
+.meaning-result-toolbar button[aria-selected=true]{border-color:var(--main);color:var(--workspace-text)}
+.meaning-result-toolbar>span{font:11px var(--workspace-mono);color:var(--workspace-muted);white-space:nowrap}
+.meaning-result-footer{display:flex;align-items:center;gap:8px;flex:none;min-height:30px;padding:5px 0;border-top:1px solid var(--workspace-line);color:var(--workspace-muted);font-size:11px;flex-wrap:wrap}
+.meaning-result-footer>span{flex:1}.meaning-result-footer button,.meaning-row-selection button{padding:4px 7px;color:var(--main);border:1px solid var(--workspace-line);border-radius:4px;white-space:nowrap}
+.meaning-row-selection{display:flex;gap:8px;align-items:center;flex:none;padding:8px 0;font:11px var(--workspace-mono)}.meaning-row-selection>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.meaning-grid-empty{padding:24px;color:var(--workspace-muted)}.meaning-grid-error{color:var(--danger);font-size:12px;padding:8px 0}
+.cube-pills .absolute,.cube-shelf-foot .absolute{max-width:min(300px,calc(100cqw - 24px));z-index:60}
+@container meaning-worksheet (max-width:680px){
+ .cube-workbench{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto auto auto minmax(220px,1fr) auto;grid-template-areas:'toolbar' 'fields' 'columns' 'rows' 'values' 'filters' 'result' 'options';column-gap:0}
+ .cube-sidebar{display:contents}.cube-fields{display:none;max-height:240px}.cube-fields-open{display:flex}.cube-toolbar .cube-fields-toggle,.cube-fields-close{display:inline-flex}
+ .cube-field-list{flex-direction:row;flex-wrap:wrap}.cube-field{width:auto}.cube-lane-values,.cube-lane-filters,.cube-sidebar .cube-lane{flex-direction:row;gap:8px;padding:6px 0}
+ .cube-sidebar .cube-pills{flex-direction:row;align-items:center}.cube-result{border:0;padding:0}.cube-shelf-foot{margin:0}.meaning-worksheet-hint{display:none}
+ .cube-lane-values .absolute,.cube-lane-filters .absolute{left:0;bottom:auto;top:100%}
+}

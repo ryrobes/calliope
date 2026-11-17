@@ -1,0 +1,80 @@
+{
+  "api_version": "rvbbit.capability/v1",
+  "kind": "hf_backend",
+  "name": "clover_analytics",
+  "description": "CPU clustering using the installed Clover embedding space, plus portable sklearn anomaly models.",
+  "source": {
+    "provider": "builtin",
+    "model": "clover/cpu-analytics",
+    "revision": "v1-sklearn-1.6.1"
+  },
+  "runtime": {
+    "template": "clover-analytics",
+    "device": "cpu",
+    "base_image": "python:3.12-slim",
+    "port": 8080,
+    "env": {
+      "RVBBIT_CLOVER_BASE_URL": "${RVBBIT_CLOVER_BASE_URL:-http://clover:8090}",
+      "RVBBIT_CLOVER_KEY": "${RVBBIT_CLOVER_KEY:-}",
+      "ANALYTICS_THREADS": "2"
+    }
+  },
+  "backend": {
+    "name": "clover_analytics",
+    "transport": "rvbbit",
+    "batch_size": 4,
+    "max_concurrent": 1,
+    "timeout_ms": 300000
+  },
+  "operators": [
+    {
+      "name": "clover_analytics",
+      "arg_names": [
+        "operation",
+        "payload"
+      ],
+      "arg_types": [
+        "text",
+        "text"
+      ],
+      "return_type": "jsonb",
+      "parser": "json",
+      "model": "clover-cpu-analytics-v1/sklearn-1.6.1",
+      "inputs": {
+        "operation": "{{ inputs.operation }}",
+        "payload": "{{ inputs.payload }}"
+      },
+      "description": "CPU analytics: cluster, anomaly_fit, anomaly_score. Payload is a JSON object. Existing clover_cluster/anomaly SQL functions can route through Clover to this worker.",
+      "cache_policy": "never",
+      "tests": [
+        {
+          "name": "portable_anomaly_model",
+          "sql": "SELECT length(rvbbit.clover_analytics('anomaly_fit','{\"X\":[[0,0],[1,1],[2,2],[3,3],[20,20]],\"algorithm\":\"isolation_forest\"}')->>'blob_b64') > 100",
+          "expect": {
+            "type": "exact",
+            "value": "true"
+          },
+          "description": "Fit a real CPU anomaly model and require its portable model payload."
+        }
+      ]
+    }
+  ],
+  "smoke": {
+    "inputs": [
+      {
+        "operation": "health",
+        "payload": {}
+      }
+    ],
+    "sql": [
+      "SELECT rvbbit.clover_analytics('health','{}')->>'device';"
+    ]
+  },
+  "warren": {
+    "container_port": 8080,
+    "health_path": "/health"
+  },
+  "resources": {
+    "gpu": false
+  }
+}

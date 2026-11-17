@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+FROM rust:1.98.0-trixie AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang cmake pkg-config libxkbcommon-dev libxkbcommon-x11-dev \
+    libfontconfig1-dev libfreetype-dev libvulkan-dev libxcb1-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/calliope-canvas
+COPY apps/calliope-canvas/Cargo.toml apps/calliope-canvas/Cargo.lock ./
+COPY apps/calliope-canvas/vendor ./vendor
+COPY apps/calliope-canvas/src ./src
+COPY apps/calliope-canvas/assets ./assets
+COPY apps/calliope-canvas/business/catalog.json ./business/catalog.json
+COPY apps/calliope-canvas/business/assets/neighborhood.png ./business/assets/neighborhood.png
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/opt/calliope-canvas/target \
+    cargo build --release --locked -j 4 && cp target/release/calliope-canvas /usr/local/bin/calliope-canvas
+
+FROM debian:trixie-slim
+ARG REVISION=development
+LABEL org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/ryrobes/calliope" \
+      org.opencontainers.image.title="Calliope UI Studio"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-venv ca-certificates xvfb xdotool imagemagick mesa-vulkan-drivers \
+    libxkbcommon0 libxkbcommon-x11-0 libxcb1 libfontconfig1 libfreetype6 \
+    libegl1 libgl1 libvulkan1 fonts-dejavu-core fonts-liberation \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 studio
+WORKDIR /opt/calliope-canvas
+COPY --from=builder /usr/local/bin/calliope-canvas /usr/local/bin/calliope-canvas
+COPY apps/calliope-canvas/business ./business
+COPY services/calliope/ui_charts.py services/calliope/ui_chart_worker.py ./business/
+COPY services/calliope/ui_apps.py services/calliope/ui_app_preview.py services/calliope/ui_composition.py services/calliope/ui_records.py services/calliope/ui_app_files.py services/calliope/app_actions.py services/calliope/workspace_sql.py ./business/app_contract/
+COPY services/calliope/app_revisions.py ./business/app_contract/
+COPY apps/calliope-canvas/business/catalog.json ./business/app_contract/ui_app_assets/catalog.json
+COPY services/calliope/examples/workspace-task-app.html ./business/app_contract/examples/workspace-task-app.html
+RUN python3 -m venv /opt/contract-env && /opt/contract-env/bin/pip install --no-cache-dir 'psycopg[binary]>=3.2,<4' 'pglast>=7,<8'
+COPY services/calliope/theme/fonts/LTSuperior-Regular.otf services/calliope/theme/fonts/LTSuperiorSerif-Regular.otf services/calliope/theme/fonts/LTSuperiorMono-Regular.otf /usr/local/share/fonts/calliope/
+RUN python3 business/install-vega.py && rm local/vega/*.zip
+ENV CALLIOPE_CANVAS_BINARY=/usr/local/bin/calliope-canvas \
+    PATH=/opt/contract-env/bin:$PATH STUDIO_REVISION=$REVISION \
+    CALLIOPE_CHART_FONT_DIR=/usr/local/share/fonts/calliope \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    STUDIO_ROOT=/var/lib/calliope-ui-studio XDG_RUNTIME_DIR=/tmp/studio-runtime
+RUN python3 -c "import sys; sys.path.insert(0, 'business'); import studio_service; assert studio_service.run({'op':'catalog'})['starter']"
+RUN mkdir -p /var/lib/calliope-ui-studio /tmp/studio-runtime \
+    && chown studio:studio /var/lib/calliope-ui-studio /tmp/studio-runtime \
+    && chmod 700 /tmp/studio-runtime
+USER studio
+EXPOSE 18456
+CMD ["python3", "business/studio_service.py"]

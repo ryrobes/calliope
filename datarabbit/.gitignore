@@ -1,0 +1,53 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+build/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# misc
+.DS_Store
+*.pem
+.vscode
+.idea
+.firecrawl
+
+# debug
+*.log
+
+# local env
+.env*.local
+.env
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# os
+.swp
+
+# playwright-mcp dev artifacts + screenshots used during interactive testing
+.playwright-mcp/
+*.png
+*.jpeg
+*.jpg
+
+# Lens homebase (server SQLite store)
+.lens-data/
+
+scratch/
+
+# electron packaging output
+/dist/
+/build/app-server.tar.gz
+/build/icon.icns
+/build/icon.iconset/

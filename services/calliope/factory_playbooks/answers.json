@@ -1,0 +1,96 @@
+{
+  "name": "playbook.answers",
+  "title": "Answers",
+  "contract": {
+    "method": [
+      "Treat this as ordinary work without a playbook. Look things up, run governed queries, use tables, argue with the user, take thirty minutes of back and forth if that is what the question needs. Do not rush a takeaway to look like the playbook fired.",
+      "Use the Team when it would actually improve the answer: red-team a consequential claim, check meaning, hunt a change, pull Brain, or cover a domain you should not bluff. Integrate their work. Do not spawn specialists as decoration, and do not wait on them for a question you can already answer well.",
+      "Do not turn the chat into a dashboard, a Decision memo, or a What Changed briefing unless the user explicitly switches playbooks.",
+      "The playbook cares about the final presentation, not the path. Only when a final answer to the lead question exists — not an interim status, not a clarifying question, not a first-pass that still needs red-team — write one plain-text sentence that is a very compressed version of that answer.",
+      "Publish that sentence with publish_answer. Max 320 characters. No Markdown or HTML. Qualifications that change the conclusion belong in the sentence itself; a short caveat is optional and must not smuggle the real answer. That sentence is the bow.",
+      "Attach evidence_refs to real Stage surfaces from this chat when they exist. Do not invent refs. Repeated publish_answer calls in the same turn revise one block.",
+      "Charts are optional and earned. Zero is the default. Publish at most two, and only when the question has a shape a chart can show: a trend, ranking, share, gap, comparison, or distribution. A single number, a lookup, a list of names, or fewer than three points is never a chart.",
+      "If a chart is warranted, title it with the claim, back it with the same rows the sentence cites, and use live SQL-backed Stage charts. No charts for charts' sake. No second chart that repeats the first.",
+      "Chat stays the working conversation, including specialist rounds. The Stage answer block is the compressed takeaway of the finished work. Follow-ups on the same question revise the same answer; a new lead question gets a new sentence."
+    ],
+    "outcome": "The user gets the same quality of work they would get without a playbook — including as much back-and-forth, Team help, and red-teaming as the question deserves — plus a bow: one compressed sentence on Stage via publish_answer when the lead question is actually answered. Charts appear only when they materially help that same question, never as decoration. Speed is not the point.",
+    "triggers": [
+      "Use the Answers playbook.",
+      "Answers:",
+      "Just answer this.",
+      "Put the answer on Stage.",
+      "What's the short version?",
+      "Give me the takeaway."
+    ],
+    "fallbacks": [
+      "If the lead question is still unlocked (grain, window, which metric), ask first and do not publish_answer until it is locked.",
+      "If a specialist is busy or unavailable, keep working 1:1 rather than stalling the answer.",
+      "If there is no warehouse evidence, say so in the sentence rather than hedging in a long caveat.",
+      "If a chart would be nice but the data is a single number or two points, skip the chart.",
+      "If they then ask why it moved, switch to What Changed.",
+      "If they then ask to pick an action, switch to Decision.",
+      "If they then ask for a durable page, switch to Dashboards.",
+      "If they ask to revise the takeaway, republish the same answer block rather than stacking a second one."
+    ],
+    "guardrails": [
+      "Do not skip publish_answer once a final answer to the lead question exists.",
+      "Do not force a quick answer. Speed is not a completion criterion. A long red-team is success if the final sentence is better.",
+      "Do not publish_answer for greetings, clarifications, progress, specialist drafts, or blocked questions.",
+      "Do not write an essay into the answer block: one sentence, compressed, plain text.",
+      "Do not use Vega, dashboard HTML, or chart titles as the answer. The sentence is publish_answer.",
+      "Do not publish charts that do not change what someone would believe about the lead question.",
+      "Do not dump more than two charts. Do not start a dashboard, mock, or live HTML page.",
+      "Do not invent numbers in the sentence that no Stage evidence shows.",
+      "Do not treat a proposed Business Context metric as promoted.",
+      "Do not delegate as ceremony. Use the Team when it would change the answer; integrate their work into one takeaway.",
+      "Keep artifacts private until the user approves sharing."
+    ],
+    "deliverable": "The same work you would do without a playbook — including Team and as much back-and-forth as the question needs — plus a bow: one Stage answer block, a compressed plain-text sentence from publish_answer. Optionally one or two claim charts if they add value; otherwise none. Supporting tables as usual.",
+    "when_to_use": [
+      "The user framed the chat as Answers, or asked to use the Answers playbook.",
+      "The work is ordinary Q&A that should end with a short, citable takeaway on Stage — however long the path takes.",
+      "They want the same work as without a playbook, plus a Stage answer block, not a dashboard, not a decision control, and not a what-changed decomposition."
+    ],
+    "when_not_to_use": [
+      "The user asked for a durable dashboard, mock, or live HTML page — that is Dashboards.",
+      "The user is choosing among actions and needs a real choice control — that is Decision.",
+      "The user asked why a named metric moved in a locked window and wants a delta plus mix — that is What Changed.",
+      "A greeting, process question, or lookup with no lead question that will ever need a bow.",
+      "Data-quality, freshness, or warehouse repair as the primary ask."
+    ],
+    "context_to_gather": [
+      "The lead question — the one that, if answered well, would satisfy the work. It may take several turns to lock.",
+      "Whether Business Context or a governed metric already defines the thing being asked.",
+      "Whether the answer is a number, ranking, share, gap, trend, or definition — that decides if a chart earns its place.",
+      "Whether a specialist would materially improve the answer: Cassandra to red-team a consequential claim, Athena for meaning, Argus for what moved, Demeter for Brain, Iris only if they switch to a dashboard.",
+      "Stage evidence already in this chat that the sentence should cite.",
+      "Whether grain, population, or window would change the sentence; if so, lock it or ask before publishing."
+    ],
+    "completion_criteria": [
+      "The lead question was actually worked: evidence gathered, challenged if the claim was consequential, and answered in conversation — not a plan to answer later, and not a rushed first draft treated as final.",
+      "When a final answer exists, publish_answer was called with one compressed sentence (max 320 characters) that states that takeaway.",
+      "No answer block was published for interim progress, clarifying questions, or mid-red-team drafts.",
+      "Charts: zero unless the question had a real visual shape; at most two; each titled with the claim and backed by the cited rows.",
+      "No dashboard, mock, or HTML was started unless the user switched playbooks.",
+      "If blocked on a choice that would change the sentence, a question was asked instead of publishing a guessed answer."
+    ],
+    "optional_capabilities": [
+      "A second claim chart only when it shows a different shape that the first does not.",
+      "publish_map only when the lead question is geographic and a map is the claim, not a chart.",
+      "What Changed, Decision, or Dashboards if the user explicitly switches.",
+      "Company Brain when the lead question is documentary rather than warehouse."
+    ],
+    "required_capabilities": [
+      "publish_answer for the compressed Stage takeaway at the end.",
+      "Ordinary chat tools: governed SQL, data search, Business Context as needed to actually answer."
+    ],
+    "preferred_capabilities": [
+      "The Team (Roundtable specialists) when a second mind would change the answer: Cassandra for red-team, Athena for meaning, Argus for what moved, Demeter for Brain, others by actual domain.",
+      "Stage tables for ordinary evidence the sentence can cite.",
+      "Live SQL-backed Stage charts (publish_chart) when a chart earns its place.",
+      "Library search so this Playbook is loaded for Answers-style takeaways rather than Dashboards or Decision."
+    ]
+  },
+  "synopsis": "Same work as without a playbook — Team, back-and-forth, and red-teaming included — then a bow: one compressed Stage sentence via publish_answer. Charts only when they carry the claim. Do not rush.",
+  "readiness": "ready"
+}

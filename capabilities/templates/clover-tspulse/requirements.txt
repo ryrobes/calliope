@@ -1,0 +1,8 @@
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
+numpy==2.2.6
+pandas==2.2.3
+scikit-learn==1.6.1
+transformers==4.56.0
+granite-tsfm @ https://github.com/ibm-granite/granite-tsfm/archive/refs/tags/v0.3.2.tar.gz#sha256=f79e1b25e77f7916c8492314d0958b994bb2a9b532b3d7750ce4e50227616f63

@@ -1,0 +1,16 @@
+# Optional Postgres ledger overlay, after clover-selfhosted.yml.
+# First run scripts/clover/ledger.py prepare and apply ledger-bootstrap.sql to
+# the Calliope database as its administrator. Never use the admin DSN in Clover.
+services:
+  clover:
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR}/ledger.env
+        format: raw
+    # Postgres mode never creates a SQLite DB; no telemetry volume needed.
+    # Keep the credentials mount: OPENROUTER_API_KEY_FILE still points into it,
+    # and Hutch fails closed on a configured key file that is missing.
+    volumes: !override
+      - ${CLOVER_CONFIG_DIR}/hutch.json:/etc/hutch/hutch.json:ro
+      - ${CLOVER_CONFIG_DIR}/tenants.json:/etc/hutch/tenants.json:ro
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials:ro
+    stop_grace_period: 30s

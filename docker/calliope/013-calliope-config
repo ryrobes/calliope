@@ -1,0 +1,130 @@
+#!/command/with-contenv sh
+set -eu
+
+hermes_home="${HERMES_HOME:-/opt/data}"
+hindsight_dir="${hermes_home}/hindsight"
+hindsight_config="${hindsight_dir}/config.json"
+seed_state_dir="${hermes_home}/.calliope-seeds"
+
+mkdir -p "$hindsight_dir"
+
+# Claude Code CLI credentials for the Claude subscription provider plugin. The CLI,
+# run by the supervisor's paste-code login as the hermes user, writes
+# .credentials.json (0600) here; the image sets CLAUDE_CONFIG_DIR to this path.
+# Never seeded and never read by Calliope; one login serves every profile.
+claude_config_dir="${CLAUDE_CONFIG_DIR:-$hermes_home/.claude}"
+mkdir -p "$claude_config_dir"
+chmod 700 "$claude_config_dir"
+chown hermes:hermes "$claude_config_dir"
+/opt/hermes/.venv/bin/python /opt/hermes/calliope/reconcile-hermes-config.py \
+    "${hermes_home}/config.yaml"
+if [ ! -s "$hindsight_config" ]; then
+    install -o hermes -g hermes -m 0600 \
+        /opt/hermes/calliope/hindsight-config.json "$hindsight_config"
+    echo "[calliope] seeded pinned local-external Hindsight memory config"
+fi
+# Recall runs live against the current message: the API server builds a fresh
+# agent per request, so the default background prefetch never reached a turn.
+# 1000 tokens keeps the recalled block under Hermes' 10K-char spill and stays
+# small, since each turn's block is replayed with the history. Existing configs
+# gain the keys once; explicit values are kept.
+/opt/hermes/.venv/bin/python - "$hindsight_config" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as handle:
+        config = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+added = {key: value for key, value in (("recall_sync", True), ("recall_max_tokens", 1000))
+         if isinstance(config, dict) and key not in config}
+if added:
+    config.update(added)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(config, indent=2) + "\n")
+    print("[calliope] Hindsight recall now runs with each turn: " + ", ".join(sorted(added)))
+PY
+
+soul_path="${hermes_home}/SOUL.md"
+soul_source="/opt/hermes/calliope/SOUL.md"
+soul_marker="${seed_state_dir}/SOUL.sha256"
+mkdir -p "$seed_state_dir"
+soul_source_hash="$(sha256sum "$soul_source" | awk '{print $1}')"
+soul_target_hash="$(sha256sum "$soul_path" 2>/dev/null | awk '{print $1}' || true)"
+soul_prior_hash="$(cat "$soul_marker" 2>/dev/null || true)"
+if [ ! -s "$soul_path" ] || cmp -s "$soul_path" /opt/hermes/docker/SOUL.md \
+   || { [ -n "$soul_prior_hash" ] && [ "$soul_target_hash" = "$soul_prior_hash" ]; }; then
+    install -o hermes -g hermes -m 0660 "$soul_source" "$soul_path"
+    printf '%s\n' "$soul_source_hash" > "$soul_marker"
+    chown hermes:hermes "$soul_marker"
+    echo "[calliope] installed managed Calliope identity and personality"
+elif [ "$soul_target_hash" = "$soul_source_hash" ]; then
+    printf '%s\n' "$soul_source_hash" > "$soul_marker"
+    chown hermes:hermes "$soul_marker"
+else
+    echo "[calliope] preserved locally customized Calliope identity and personality"
+fi
+
+tree_hash() (
+    cd "$1"
+    find . -type f -print | LC_ALL=C sort | while IFS= read -r file; do
+        sha256sum "$file"
+    done | sha256sum | awk '{print $1}'
+)
+
+seed_skill() {
+    skill_name="$1"
+    source_dir="/opt/hermes/calliope/skills/${skill_name}"
+    target_dir="${hermes_home}/skills/productivity/${skill_name}"
+    marker="${seed_state_dir}/${skill_name}.sha256"
+    source_hash="$(tree_hash "$source_dir")"
+
+    if [ ! -d "$target_dir" ]; then
+        mkdir -p "$target_dir"
+        cp -a "$source_dir/." "$target_dir/"
+        chown -R hermes:hermes "$target_dir"
+        chmod 0700 "$target_dir"
+        printf '%s\n' "$source_hash" > "$marker"
+        chown hermes:hermes "$marker"
+        echo "[calliope] seeded Hermes skill ${skill_name}"
+        return
+    fi
+
+    target_hash="$(tree_hash "$target_dir")"
+    prior_hash="$(cat "$marker" 2>/dev/null || true)"
+    if [ "$target_hash" = "$source_hash" ]; then
+        printf '%s\n' "$source_hash" > "$marker"
+        chown hermes:hermes "$marker"
+    elif [ -n "$prior_hash" ] && [ "$target_hash" = "$prior_hash" ]; then
+        rm -rf "$target_dir"
+        mkdir -p "$target_dir"
+        cp -a "$source_dir/." "$target_dir/"
+        chown -R hermes:hermes "$target_dir"
+        chmod 0700 "$target_dir"
+        printf '%s\n' "$source_hash" > "$marker"
+        chown hermes:hermes "$marker"
+        echo "[calliope] updated unmodified Hermes skill ${skill_name}"
+    else
+        echo "[calliope] preserved locally learned Hermes skill ${skill_name}"
+    fi
+}
+
+mkdir -p "$seed_state_dir" "${hermes_home}/skills/productivity"
+chown hermes:hermes "$seed_state_dir" "${hermes_home}/skills" "${hermes_home}/skills/productivity"
+chmod 0700 "$seed_state_dir"
+seed_skill calliope-hosted-setup
+seed_skill calliope-hosted-operations
+seed_skill calliope-live-dashboards
+seed_skill calliope-native-apps
+
+/opt/hermes/.venv/bin/python /opt/hermes/calliope/reconcile-hermes-specialists.py \
+    "$hermes_home"
+
+# The specialists reconciler just refreshed the generated-specialists cache;
+# re-run the config reconcile so the multiplex allowlist picks up any
+# factory-minted profile in the SAME boot (the first pass at the top of this
+# script read the previous boot's cache).
+/opt/hermes/.venv/bin/python /opt/hermes/calliope/reconcile-hermes-config.py \
+    "${hermes_home}/config.yaml"

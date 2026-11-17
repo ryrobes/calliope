@@ -1,0 +1,323 @@
+{
+  "source": "Completed trial bigfoot-ufo-v5-solo1-sol6, 2026-09-29. Public tool descriptions only; shortened for replay.",
+  "searches": [
+    {
+      "query": "built-in Mapbox maps in HTML live apps dashboard template mapbox bridge; create live app",
+      "matches": [
+        {
+          "kind": "cap_playbook",
+          "name": "playbook.dashboards",
+          "score": 1.0,
+          "doc": "capability playbook.dashboards\nkind: cap_playbook\nplaybook kind: method\ntitle: Dashboards\nsignature: read_calliope_playbook('playbook.dashboards')\nversion: 2\nreadiness: ready\nCurated dashboard creation: the user names what they want; Calliope settles governed "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "dashboard_template",
+          "score": 0.984,
+          "doc": "capability dashboard_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nReturn the proven drop-in boilerplate for a LIVE dashboard (Cowork artifact + hosted). In a hosted "
+        },
+        {
+          "kind": "cap_skill",
+          "name": "calliope-live-dashboards",
+          "score": 0.968,
+          "doc": "capability calliope-live-dashboards\nkind: cap_skill\nsignature: skill_view(name => 'calliope-live-dashboards')\ncost: free\ntags: skill, procedure, productivity\nHermes procedural skill in category productivity. Build, revise, publish, and verify live Calliope/RVB"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_map",
+          "score": 0.953,
+          "doc": "capability publish_map\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a declarative SQL-backed Mapbox map directly to the Stage. No HTML, JS or token required. queries "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "create_live_app",
+          "score": 0.938,
+          "doc": "capability create_live_app\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nCreate a versioned RVBBIT live app. HTML apps are hosted immediately at /d/<slug> and call rvbbitQuery"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "tanstack_chart_template",
+          "score": 0.924,
+          "doc": "capability tanstack_chart_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nGet RVBBIT's EXPERIMENTAL, opt-in TanStack Charts starter. It preserves the normal standalone "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_dashboard",
+          "score": 0.91,
+          "doc": "capability publish_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPersist a dashboard so it lives + works OUTSIDE Cowork (a shareable URL + the lens app). Build `html"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "live_app_template",
+          "score": 0.897,
+          "doc": "capability live_app_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nReturn a starter live-app contract. Use html for immediately hosted apps; use python-fastapi to scaf"
+        }
+      ]
+    },
+    {
+      "query": "mapbox rvbbitMaps hosted page maps interface filter layers mapbox gl",
+      "matches": [
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_map",
+          "score": 1.0,
+          "doc": "capability publish_map\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a declarative SQL-backed Mapbox map directly to the Stage. No HTML, JS or token required. queries "
+        },
+        {
+          "kind": "cap_operator",
+          "name": "layout_grid",
+          "score": 0.984,
+          "doc": "capability layout_grid\nkind: cap_operator\nsignature: rvbbit.layout_grid(layout text, title text, rows text, mode text) \u2192 jsonb\ncost: cheap\ntags: operator, rowset\nPipeline meta stage: emit a statement-grid layout artifact for multi-statement UI composition."
+        },
+        {
+          "kind": "cap_pack",
+          "name": "maps",
+          "score": 0.968,
+          "doc": "capability maps\nkind: cap_pack\nsignature: capability pack (mcp) \u2014 status: available\ncost: varies\ntags: geocoding, location, maps, mcp, places, pack, available\nGoogle Maps. Google Maps Platform \u2014 geocode/reverse-geocode/places/distance-matrix/directions/timezon"
+        },
+        {
+          "kind": "cap_skill",
+          "name": "calliope-live-dashboards",
+          "score": 0.953,
+          "doc": "capability calliope-live-dashboards\nkind: cap_skill\nsignature: skill_view(name => 'calliope-live-dashboards')\ncost: free\ntags: skill, procedure, productivity\nHermes procedural skill in category productivity. Build, revise, publish, and verify live Calliope/RVB"
+        },
+        {
+          "kind": "cap_operator",
+          "name": "filter_control",
+          "score": 0.938,
+          "doc": "capability filter_control\nkind: cap_operator\nsignature: rvbbit.filter_control(field text, kind text, title text, operator text, default text, value text, default_value text) \u2192 jsonb\ncost: cheap\ntags: operator, rowset\nPipeline control stage: emit a parameter-pu"
+        },
+        {
+          "kind": "cap_operator",
+          "name": "tile_name",
+          "score": 0.924,
+          "doc": "capability tile_name\nkind: cap_operator\nsignature: rvbbit.tile_name(name text, title text) \u2192 jsonb\ncost: cheap\ntags: operator, rowset\nPipeline meta stage: attach a stable layout alias to the current UI artifact statement."
+        },
+        {
+          "kind": "cap_operator",
+          "name": "bind_filter",
+          "score": 0.91,
+          "doc": "capability bind_filter\nkind: cap_operator\nsignature: rvbbit.bind_filter(target text, field text, operator text, title text) \u2192 jsonb\ncost: cheap\ntags: operator, rowset\nPipeline meta stage: bind a control artifact to a named target tile for cross-filtering."
+        },
+        {
+          "kind": "cap_operator",
+          "name": "line_chart",
+          "score": 0.897,
+          "doc": "capability line_chart\nkind: cap_operator\nsignature: rvbbit.line_chart(x text, y text, title text, color text) \u2192 jsonb\ncost: cheap\ntags: operator, rowset\nPipeline visual stage: emit a Vega-Lite line-chart UI artifact from the current resultset."
+        }
+      ]
+    },
+    {
+      "query": "hosted HTML dashboard template mapbox runtime maps supported API",
+      "matches": [
+        {
+          "kind": "cap_playbook",
+          "name": "playbook.dashboards",
+          "score": 1.0,
+          "doc": "capability playbook.dashboards\nkind: cap_playbook\nplaybook kind: method\ntitle: Dashboards\nsignature: read_calliope_playbook('playbook.dashboards')\nversion: 2\nreadiness: ready\nCurated dashboard creation: the user names what they want; Calliope settles governed "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "dashboard_template",
+          "score": 0.984,
+          "doc": "capability dashboard_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nReturn the proven drop-in boilerplate for a LIVE dashboard (Cowork artifact + hosted). In a hosted "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_map",
+          "score": 0.968,
+          "doc": "capability publish_map\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a declarative SQL-backed Mapbox map directly to the Stage. No HTML, JS or token required. queries "
+        },
+        {
+          "kind": "cap_skill",
+          "name": "calliope-live-dashboards",
+          "score": 0.953,
+          "doc": "capability calliope-live-dashboards\nkind: cap_skill\nsignature: skill_view(name => 'calliope-live-dashboards')\ncost: free\ntags: skill, procedure, productivity\nHermes procedural skill in category productivity. Build, revise, publish, and verify live Calliope/RVB"
+        },
+        {
+          "kind": "cap_pack",
+          "name": "maps",
+          "score": 0.938,
+          "doc": "capability maps\nkind: cap_pack\nsignature: capability pack (mcp) \u2014 status: available\ncost: varies\ntags: geocoding, location, maps, mcp, places, pack, available\nGoogle Maps. Google Maps Platform \u2014 geocode/reverse-geocode/places/distance-matrix/directions/timezon"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "tanstack_chart_template",
+          "score": 0.924,
+          "doc": "capability tanstack_chart_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nGet RVBBIT's EXPERIMENTAL, opt-in TanStack Charts starter. It preserves the normal standalone "
+        },
+        {
+          "kind": "cap_pack",
+          "name": "openweather",
+          "score": 0.91,
+          "doc": "capability openweather\nkind: cap_pack\nsignature: capability pack (mcp) \u2014 status: available\ncost: varies\ntags: forecast, geocoding, mcp, weather, pack, available\nOpenWeatherMap. OpenWeatherMap \u2014 current/forecast/hourly/daily/alerts/air-pollution + geocoding. Ne"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_dashboard",
+          "score": 0.897,
+          "doc": "capability publish_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPersist a dashboard so it lives + works OUTSIDE Cowork (a shareable URL + the lens app). Build `html"
+        }
+      ]
+    },
+    {
+      "query": "live app template query bridge composePayload Mapbox runtime",
+      "matches": [
+        {
+          "kind": "cap_playbook",
+          "name": "playbook.dashboards",
+          "score": 1.0,
+          "doc": "capability playbook.dashboards\nkind: cap_playbook\nplaybook kind: method\ntitle: Dashboards\nsignature: read_calliope_playbook('playbook.dashboards')\nversion: 2\nreadiness: ready\nCurated dashboard creation: the user names what they want; Calliope settles governed "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "capture_live_app",
+          "score": 0.984,
+          "doc": "capability capture_live_app\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nCapture a PNG screenshot of a live app. Omit path for normal use. path is an OUTPUT IMAGE FILENAME (."
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "create_live_app",
+          "score": 0.968,
+          "doc": "capability create_live_app\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nCreate a versioned RVBBIT live app. HTML apps are hosted immediately at /d/<slug> and call rvbbitQuery"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "dashboard_template",
+          "score": 0.953,
+          "doc": "capability dashboard_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nReturn the proven drop-in boilerplate for a LIVE dashboard (Cowork artifact + hosted). In a hosted "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_map",
+          "score": 0.938,
+          "doc": "capability publish_map\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a declarative SQL-backed Mapbox map directly to the Stage. No HTML, JS or token required. queries "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "list_live_apps",
+          "score": 0.924,
+          "doc": "capability list_live_apps\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nList versioned live apps with runtime kind, health, dependency counts, and URLs. Compact rows by defaul"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "get_live_app",
+          "score": 0.91,
+          "doc": "capability get_live_app\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nFetch a live app's metadata, manifest, versioned source, dependencies, and recent query calls. part='sour"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_dashboard",
+          "score": 0.897,
+          "doc": "capability publish_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPersist a dashboard so it lives + works OUTSIDE Cowork (a shareable URL + the lens app). Build `html"
+        }
+      ]
+    },
+    {
+      "query": "dashboard_template",
+      "matches": [
+        {
+          "kind": "cap_mcp_tool",
+          "name": "dashboard_template",
+          "score": 1.0,
+          "doc": "capability dashboard_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nReturn the proven drop-in boilerplate for a LIVE dashboard (Cowork artifact + hosted). In a hosted "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_dashboard",
+          "score": 0.948,
+          "doc": "capability publish_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPersist a dashboard so it lives + works OUTSIDE Cowork (a shareable URL + the lens app). Build `html"
+        },
+        {
+          "kind": "cap_playbook",
+          "name": "playbook.dashboards",
+          "score": 0.504,
+          "doc": "capability playbook.dashboards\nkind: cap_playbook\nplaybook kind: method\ntitle: Dashboards\nsignature: read_calliope_playbook('playbook.dashboards')\nversion: 2\nreadiness: ready\nCurated dashboard creation: the user names what they want; Calliope settles governed "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "tanstack_chart_template",
+          "score": 0.488,
+          "doc": "capability tanstack_chart_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nGet RVBBIT's EXPERIMENTAL, opt-in TanStack Charts starter. It preserves the normal standalone "
+        },
+        {
+          "kind": "cap_skill",
+          "name": "calliope-live-dashboards",
+          "score": 0.48,
+          "doc": "capability calliope-live-dashboards\nkind: cap_skill\nsignature: skill_view(name => 'calliope-live-dashboards')\ncost: free\ntags: skill, procedure, productivity\nHermes procedural skill in category productivity. Build, revise, publish, and verify live Calliope/RVB"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "get_dashboard",
+          "score": 0.473,
+          "doc": "capability get_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nFetch a dashboard's metadata, source, and data dependencies (to inspect or fork it). part='source' retur"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "update_dashboard",
+          "score": 0.466,
+          "doc": "capability update_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a new version of an existing dashboard (by slug). PREFERRED for revisions: edits=[{\"find\": ex"
+        },
+        {
+          "kind": "cap_skill",
+          "name": "architecture-diagram",
+          "score": 0.459,
+          "doc": "capability architecture-diagram\nkind: cap_skill\nsignature: skill_view(name => 'architecture-diagram')\ncost: free\ntags: skill, procedure, creative\nHermes procedural skill in category creative. Dark-themed SVG architecture/cloud/infra diagrams as HTML. Load only"
+        }
+      ]
+    },
+    {
+      "query": "dashboard_template mapbox maps",
+      "matches": [
+        {
+          "kind": "cap_mcp_tool",
+          "name": "dashboard_template",
+          "score": 1.0,
+          "doc": "capability dashboard_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nReturn the proven drop-in boilerplate for a LIVE dashboard (Cowork artifact + hosted). In a hosted "
+        },
+        {
+          "kind": "cap_playbook",
+          "name": "playbook.dashboards",
+          "score": 0.984,
+          "doc": "capability playbook.dashboards\nkind: cap_playbook\nplaybook kind: method\ntitle: Dashboards\nsignature: read_calliope_playbook('playbook.dashboards')\nversion: 2\nreadiness: ready\nCurated dashboard creation: the user names what they want; Calliope settles governed "
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "publish_map",
+          "score": 0.968,
+          "doc": "capability publish_map\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a declarative SQL-backed Mapbox map directly to the Stage. No HTML, JS or token required. queries "
+        },
+        {
+          "kind": "cap_skill",
+          "name": "calliope-live-dashboards",
+          "score": 0.953,
+          "doc": "capability calliope-live-dashboards\nkind: cap_skill\nsignature: skill_view(name => 'calliope-live-dashboards')\ncost: free\ntags: skill, procedure, productivity\nHermes procedural skill in category productivity. Build, revise, publish, and verify live Calliope/RVB"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "tanstack_chart_template",
+          "score": 0.938,
+          "doc": "capability tanstack_chart_template\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nGet RVBBIT's EXPERIMENTAL, opt-in TanStack Charts starter. It preserves the normal standalone "
+        },
+        {
+          "kind": "cap_pack",
+          "name": "maps",
+          "score": 0.924,
+          "doc": "capability maps\nkind: cap_pack\nsignature: capability pack (mcp) \u2014 status: available\ncost: varies\ntags: geocoding, location, maps, mcp, places, pack, available\nGoogle Maps. Google Maps Platform \u2014 geocode/reverse-geocode/places/distance-matrix/directions/timezon"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "get_dashboard",
+          "score": 0.91,
+          "doc": "capability get_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nFetch a dashboard's metadata, source, and data dependencies (to inspect or fork it). part='source' retur"
+        },
+        {
+          "kind": "cap_mcp_tool",
+          "name": "update_dashboard",
+          "score": 0.897,
+          "doc": "capability update_dashboard\nkind: cap_mcp_tool\nsignature: Warehouse MCP connector tool (external agents)\ncost: varies\ntags: mcp, external, warehouse-connector\nPublish a new version of an existing dashboard (by slug). PREFERRED for revisions: edits=[{\"find\": ex"
+        }
+      ]
+    }
+  ]
+}

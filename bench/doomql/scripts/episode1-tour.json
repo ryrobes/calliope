@@ -1,0 +1,7656 @@
+{
+  "format": "doomql-session-v1",
+  "recorded_at": "2026-07-14T16:13:32+00:00",
+  "settings": {
+    "world": "episode1",
+    "wad": "~/doom/DOOM1.WAD",
+    "map_name": "E1M1",
+    "maps": "E1M1,E1M2,E1M3,E1M4,E1M5,E1M6,E1M7,E1M8,E1M9",
+    "grid_scale": 16,
+    "table": "doomql_episode1",
+    "parquet": "bench/doomql/data/doomql_episode1_5000000.parquet",
+    "width": 212,
+    "height": 65,
+    "draw_distance": 96,
+    "turn_degrees": 15,
+    "render_type": "ansi-half",
+    "movement_step": 2,
+    "capture_system": "auto"
+  },
+  "commands": [
+    {
+      "index": 0,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 1,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 2,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 3,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 82,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 4,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 82,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 84,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 5,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 84,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 86,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 6,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 86,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 88,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 7,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 88,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 90,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 8,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 90,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 92,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 9,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 92,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 94,
+        "z": 33,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 10,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 94,
+        "z": 33,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 92,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 11,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 92,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 90,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 12,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 90,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 88,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 13,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 88,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 86,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 14,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 86,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 84,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 15,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 84,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 82,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 16,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 82,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 17,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 18,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 76,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 19,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 76,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 20,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 78,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 21,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 80,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 82,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 22,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 82,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 84,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 23,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 84,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 86,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 24,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 86,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 88,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 25,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 88,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 90,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 26,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 90,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 92,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 27,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 92,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 94,
+        "z": 33,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 28,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 94,
+        "z": 33,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 29,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 30,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 120,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 31,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 120,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 135,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 32,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 135,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 150,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 33,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 150,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 34,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 96,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 112,
+        "y": 97,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 35,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 112,
+        "y": 97,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 110,
+        "y": 98,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 36,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 110,
+        "y": 98,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 108,
+        "y": 99,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 37,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 108,
+        "y": 99,
+        "z": 25,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 106,
+        "y": 100,
+        "z": 33,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 38,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 106,
+        "y": 100,
+        "z": 33,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 106,
+        "y": 100,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 39,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 106,
+        "y": 100,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 104,
+        "y": 100,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 40,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 104,
+        "y": 100,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 102,
+        "y": 100,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 41,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 102,
+        "y": 100,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 100,
+        "y": 100,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 42,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 100,
+        "y": 100,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 100,
+        "y": 100,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 43,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 100,
+        "y": 100,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 98,
+        "y": 101,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 44,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 98,
+        "y": 101,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 96,
+        "y": 102,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 45,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 96,
+        "y": 102,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 94,
+        "y": 103,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 46,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 94,
+        "y": 103,
+        "z": 41,
+        "heading": 165,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 94,
+        "y": 103,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 47,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 94,
+        "y": 103,
+        "z": 41,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 92,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 48,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 92,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 90,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 49,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 90,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 88,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 50,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 88,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 86,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 51,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 86,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 84,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 52,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 84,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 82,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 53,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 82,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 80,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 54,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 80,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 78,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 55,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 78,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 76,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 56,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 76,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 74,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 57,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 74,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 72,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 58,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 72,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 70,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 59,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 70,
+        "y": 103,
+        "z": 33,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 68,
+        "y": 103,
+        "z": 49,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 60,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 68,
+        "y": 103,
+        "z": 49,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 66,
+        "y": 103,
+        "z": 65,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 61,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 66,
+        "y": 103,
+        "z": 65,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 64,
+        "y": 103,
+        "z": 81,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 62,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 64,
+        "y": 103,
+        "z": 81,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 62,
+        "y": 103,
+        "z": 97,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 63,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 62,
+        "y": 103,
+        "z": 97,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 60,
+        "y": 103,
+        "z": 113,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 64,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 60,
+        "y": 103,
+        "z": 113,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 58,
+        "y": 103,
+        "z": 129,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 65,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 58,
+        "y": 103,
+        "z": 129,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 56,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 66,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 56,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 54,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 67,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 54,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 52,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 68,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 52,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 50,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 69,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 50,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 48,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 70,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 48,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 46,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 71,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 46,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 44,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 72,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 44,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 42,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 73,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 42,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 74,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 180,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 195,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 75,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 195,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 210,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 76,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 210,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 225,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 77,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 225,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 240,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 78,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 240,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 255,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 79,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 255,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 270,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 80,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 270,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 285,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 81,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 285,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 300,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 82,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 300,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 83,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 330,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 84,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 330,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 85,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 86,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 40,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 42,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 87,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 42,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 44,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 88,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 44,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 46,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 89,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 46,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 48,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 90,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 48,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 50,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 91,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 50,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 52,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 92,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 52,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 54,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 93,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 54,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 56,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 94,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 56,
+        "y": 103,
+        "z": 145,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 58,
+        "y": 103,
+        "z": 129,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 95,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 58,
+        "y": 103,
+        "z": 129,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 60,
+        "y": 103,
+        "z": 113,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 96,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 60,
+        "y": 103,
+        "z": 113,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 62,
+        "y": 103,
+        "z": 97,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 97,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 62,
+        "y": 103,
+        "z": 97,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 64,
+        "y": 103,
+        "z": 81,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 98,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 64,
+        "y": 103,
+        "z": 81,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 66,
+        "y": 103,
+        "z": 65,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 99,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 66,
+        "y": 103,
+        "z": 65,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 68,
+        "y": 103,
+        "z": 49,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 100,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 68,
+        "y": 103,
+        "z": 49,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 70,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 101,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 70,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 72,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 102,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 72,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 74,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 103,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 74,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 76,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 104,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 76,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 78,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 105,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 78,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 80,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 106,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 80,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 82,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 107,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 82,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 84,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 108,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 84,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 86,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 109,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 86,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 88,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 110,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 88,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 90,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 111,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 90,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 92,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 112,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 92,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 94,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 113,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 94,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 96,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 114,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 96,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 98,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 115,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 98,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 100,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 116,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 100,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 102,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 117,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 102,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 104,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 118,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 104,
+        "y": 103,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 106,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 119,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 106,
+        "y": 103,
+        "z": 33,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 108,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 120,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 108,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 110,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 121,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 110,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 112,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 122,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 112,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 114,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 123,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 114,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 116,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 124,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 116,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 118,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 125,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 118,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 120,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 126,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 120,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 122,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 127,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 122,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 124,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 128,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 124,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 126,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 129,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 126,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 128,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 130,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 128,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 131,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": true
+    },
+    {
+      "index": 132,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": true
+    },
+    {
+      "index": 133,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": true
+    },
+    {
+      "index": 134,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": true
+    },
+    {
+      "index": 135,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 136,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 137,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 138,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 139,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 140,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 141,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 142,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 120,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 143,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 120,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 144,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 145,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 103,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 105,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 146,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 105,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 107,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 147,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 107,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 109,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 148,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 109,
+        "z": 25,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 111,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 149,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 111,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 113,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 150,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 113,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 115,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 151,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 115,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 117,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 152,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 117,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 119,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 153,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 119,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 121,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 154,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 121,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 123,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 155,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 123,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 125,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 156,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 125,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 127,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 157,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 127,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 129,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 158,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 129,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 131,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 159,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 131,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 133,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 160,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 133,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 135,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 161,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 135,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 137,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 162,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 137,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 139,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 163,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 139,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 141,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 164,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 130,
+        "y": 141,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 141,
+        "z": 41,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 165,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 130,
+        "y": 141,
+        "z": 41,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 130,
+        "y": 141,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 166,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 130,
+        "y": 141,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 131,
+        "y": 143,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 167,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 131,
+        "y": 143,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 131,
+        "y": 143,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 168,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 131,
+        "y": 143,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 132,
+        "y": 144,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 169,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 132,
+        "y": 144,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 132,
+        "y": 144,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 170,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 132,
+        "y": 144,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 134,
+        "y": 145,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 171,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 134,
+        "y": 145,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 136,
+        "y": 146,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 172,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 136,
+        "y": 146,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 173,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 174,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 175,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 176,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 138,
+        "y": 147,
+        "z": 41,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 177,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "blocked": false
+    },
+    {
+      "index": 178,
+      "key": " ",
+      "action": "toggle_door",
+      "before": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": []
+      },
+      "after": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 179,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 180,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 140,
+        "y": 146,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 142,
+        "y": 147,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 181,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 142,
+        "y": 147,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 144,
+        "y": 148,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 182,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 144,
+        "y": 148,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 146,
+        "y": 149,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 183,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 146,
+        "y": 149,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 148,
+        "y": 150,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 184,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 148,
+        "y": 150,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 150,
+        "y": 151,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 185,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 150,
+        "y": 151,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 150,
+        "y": 151,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": true
+    },
+    {
+      "index": 186,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 150,
+        "y": 151,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 150,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 187,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 150,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 152,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 188,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 152,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 154,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 189,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 154,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 156,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 190,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 156,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 191,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 192,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 193,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 194,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 195,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 158,
+        "y": 151,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 159,
+        "y": 153,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 196,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 159,
+        "y": 153,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 197,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 198,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 199,
+      "key": "a",
+      "action": "turn_left",
+      "before": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 200,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 160,
+        "y": 155,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 159,
+        "y": 157,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 201,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 159,
+        "y": 157,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 158,
+        "y": 159,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 202,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 158,
+        "y": 159,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 157,
+        "y": 161,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 203,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 157,
+        "y": 161,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 156,
+        "y": 163,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 204,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 156,
+        "y": 163,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 155,
+        "y": 165,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 205,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 155,
+        "y": 165,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 154,
+        "y": 167,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 206,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 154,
+        "y": 167,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 207,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": true
+    },
+    {
+      "index": 208,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 105,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 209,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 90,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 210,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 75,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 211,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 60,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 212,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 45,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 213,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 30,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 214,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 15,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 215,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 0,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 216,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 345,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 330,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 217,
+      "key": "d",
+      "action": "turn_right",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 330,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 218,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 153,
+        "y": 169,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 154,
+        "y": 168,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 219,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 154,
+        "y": 168,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 155,
+        "y": 167,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 220,
+      "key": "w",
+      "action": "forward",
+      "before": {
+        "x": 155,
+        "y": 167,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 156,
+        "y": 166,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 221,
+      "key": "s",
+      "action": "backward",
+      "before": {
+        "x": 156,
+        "y": 166,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 155,
+        "y": 167,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    },
+    {
+      "index": 222,
+      "key": "q",
+      "action": "quit",
+      "before": {
+        "x": 155,
+        "y": 167,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "after": {
+        "x": 155,
+        "y": 167,
+        "z": 41,
+        "heading": 315,
+        "draw_distance": 96,
+        "map_name": "E1M1",
+        "open_doors": [
+          4
+        ]
+      },
+      "blocked": false
+    }
+  ],
+  "frames": [
+    {
+      "x": 114,
+      "y": 78,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 80,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 78,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 80,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 82,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 84,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 86,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 88,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 90,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 92,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 94,
+      "z": 33,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 92,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 90,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 88,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 86,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 84,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 82,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 80,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 78,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 76,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 78,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 80,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 82,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 84,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 86,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 88,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 90,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 92,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 94,
+      "z": 33,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 25,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 25,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 25,
+      "heading": 120,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 25,
+      "heading": 135,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 25,
+      "heading": 150,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 96,
+      "z": 25,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 112,
+      "y": 97,
+      "z": 25,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 110,
+      "y": 98,
+      "z": 25,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 108,
+      "y": 99,
+      "z": 25,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 106,
+      "y": 100,
+      "z": 33,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 106,
+      "y": 100,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 104,
+      "y": 100,
+      "z": 41,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 102,
+      "y": 100,
+      "z": 41,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 100,
+      "y": 100,
+      "z": 41,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 100,
+      "y": 100,
+      "z": 41,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 98,
+      "y": 101,
+      "z": 41,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 96,
+      "y": 102,
+      "z": 41,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 94,
+      "y": 103,
+      "z": 41,
+      "heading": 165,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 94,
+      "y": 103,
+      "z": 41,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 92,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 90,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 88,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 86,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 84,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 82,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 80,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 78,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 76,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 74,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 72,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 70,
+      "y": 103,
+      "z": 33,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 68,
+      "y": 103,
+      "z": 49,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 66,
+      "y": 103,
+      "z": 65,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 64,
+      "y": 103,
+      "z": 81,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 62,
+      "y": 103,
+      "z": 97,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 60,
+      "y": 103,
+      "z": 113,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 58,
+      "y": 103,
+      "z": 129,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 56,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 54,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 52,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 50,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 48,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 46,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 44,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 42,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 180,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 195,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 210,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 225,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 240,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 255,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 270,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 285,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 300,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 315,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 330,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 345,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 40,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 42,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 44,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 46,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 48,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 50,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 52,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 54,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 56,
+      "y": 103,
+      "z": 145,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 58,
+      "y": 103,
+      "z": 129,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 60,
+      "y": 103,
+      "z": 113,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 62,
+      "y": 103,
+      "z": 97,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 64,
+      "y": 103,
+      "z": 81,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 66,
+      "y": 103,
+      "z": 65,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 68,
+      "y": 103,
+      "z": 49,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 70,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 72,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 74,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 76,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 78,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 80,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 82,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 84,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 86,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 88,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 90,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 92,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 94,
+      "y": 103,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 96,
+      "y": 103,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 98,
+      "y": 103,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 100,
+      "y": 103,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 102,
+      "y": 103,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 104,
+      "y": 103,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 106,
+      "y": 103,
+      "z": 33,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 108,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 110,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 112,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 114,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 116,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 118,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 120,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 122,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 124,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 126,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 128,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 45,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 75,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 120,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 103,
+      "z": 25,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 105,
+      "z": 25,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 107,
+      "z": 25,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 109,
+      "z": 25,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 111,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 113,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 115,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 117,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 119,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 121,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 123,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 125,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 127,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 129,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 131,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 133,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 135,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 137,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 139,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 141,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 141,
+      "z": 41,
+      "heading": 75,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 130,
+      "y": 141,
+      "z": 41,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 131,
+      "y": 143,
+      "z": 41,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 131,
+      "y": 143,
+      "z": 41,
+      "heading": 45,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 132,
+      "y": 144,
+      "z": 41,
+      "heading": 45,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 132,
+      "y": 144,
+      "z": 41,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 134,
+      "y": 145,
+      "z": 41,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 136,
+      "y": 146,
+      "z": 41,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 138,
+      "y": 147,
+      "z": 41,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 138,
+      "y": 147,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 138,
+      "y": 147,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 138,
+      "y": 147,
+      "z": 41,
+      "heading": 345,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 140,
+      "y": 146,
+      "z": 41,
+      "heading": 345,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 140,
+      "y": 146,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": []
+    },
+    {
+      "x": 140,
+      "y": 146,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 140,
+      "y": 146,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 142,
+      "y": 147,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 144,
+      "y": 148,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 146,
+      "y": 149,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 148,
+      "y": 150,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 150,
+      "y": 151,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 150,
+      "y": 151,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 150,
+      "y": 151,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 152,
+      "y": 151,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 154,
+      "y": 151,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 156,
+      "y": 151,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 158,
+      "y": 151,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 158,
+      "y": 151,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 158,
+      "y": 151,
+      "z": 41,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 158,
+      "y": 151,
+      "z": 41,
+      "heading": 45,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 158,
+      "y": 151,
+      "z": 41,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 159,
+      "y": 153,
+      "z": 41,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 160,
+      "y": 155,
+      "z": 41,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 160,
+      "y": 155,
+      "z": 41,
+      "heading": 75,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 160,
+      "y": 155,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 160,
+      "y": 155,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 159,
+      "y": 157,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 158,
+      "y": 159,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 157,
+      "y": 161,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 156,
+      "y": 163,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 155,
+      "y": 165,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 154,
+      "y": 167,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 105,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 90,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 75,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 60,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 45,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 30,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 15,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 0,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 345,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 330,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 153,
+      "y": 169,
+      "z": 41,
+      "heading": 315,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 154,
+      "y": 168,
+      "z": 41,
+      "heading": 315,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 155,
+      "y": 167,
+      "z": 41,
+      "heading": 315,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 156,
+      "y": 166,
+      "z": 41,
+      "heading": 315,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    },
+    {
+      "x": 155,
+      "y": 167,
+      "z": 41,
+      "heading": 315,
+      "draw_distance": 96,
+      "map_name": "E1M1",
+      "open_doors": [
+        4
+      ]
+    }
+  ],
+  "summary": {
+    "commands": 223,
+    "frames": 223,
+    "unique_cameras": 195,
+    "blocked_movements": 6,
+    "interactive_queries": 427
+  }
+}

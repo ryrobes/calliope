@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">
+<title>Calliope · App improvements</title><link rel="icon" href="/calliope/callie-favicon.png">
+<link rel="stylesheet" href="/theme/superior-fonts.css"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+<link rel="stylesheet" href="/theme/warehouse-theme.css"><link rel="stylesheet" href="/theme/workspace-page.css"><link rel="stylesheet" href="/api/apps/review.css?v=__REVIEW_VERSION__">
+<script src="/theme/warehouse-theme.js"></script>
+</head><body class="workspace-page review-page" data-warehouse-page="app-improvements">
+__CALLIOPE_BACKGROUND__
+__CALLIOPE_HEADER__
+<main class="review-page-content">
+<header class="review-heading page-heading"><div><a class="eyebrow" href="/gallery">Gallery / Feedback & updates</a><h1>App <em>improvements.</em></h1><p class="subheading">Feedback on company apps and dashboards. Review a request, try an update, and follow it through.</p></div></header>
+<div class="review-tools"><input id="review-search" type="search" aria-label="Find a request" placeholder="Find an app or request…">
+<select id="review-filter" aria-label="Request filter"><option value="all">All requests</option><option value="attention">Needs attention</option><option value="owner">Apps I own</option><option value="mine">My requests</option><option value="fixed">Confirmed fixed</option></select><span id="review-count" role="status">Loading requests…</span>
+<button class="icon-button" id="review-refresh" aria-label="Refresh requests" title="Refresh requests"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.7 7a7 7 0 0 1 11.6-1L20 9M4 15l2.7 3A7 7 0 0 0 18.3 17"/></svg></button></div>
+<p id="review-notice" role="status" hidden></p>
+<div class="review-workspace"><aside id="review-list" aria-label="Improvement requests" aria-busy="true"></aside><section id="review-detail" aria-label="Selected request"><div class="review-empty"><h2>Loading requests…</h2></div></section></div>
+</main><script type="application/json" id="review-boot">__REVIEW_BOOT__</script><script type="module" src="/api/apps/review.js?v=__REVIEW_VERSION__"></script>
+</body></html>

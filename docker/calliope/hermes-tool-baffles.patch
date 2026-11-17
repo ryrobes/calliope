@@ -1,0 +1,258 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+index aeb29aa..37d1b53 100644
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
+ from agent.codex_responses_adapter import _summarize_user_message_for_log
+ from agent.fast_mode import begin_turn as begin_fast_mode_turn
+ from agent.message_metadata import append_message
+-from agent.message_sanitization import _repair_tool_call_arguments, _sanitize_surrogates
++from agent.message_sanitization import _repair_tool_call_arguments, _sanitize_surrogates, coalesce_tool_call_id
+ from agent.model_metadata import MINIMUM_CONTEXT_LENGTH, _estimate_tools_tokens_rough
+ from agent.process_bootstrap import _install_safe_stdio
+ from agent.prompt_builder import RUNTIME_ENVIRONMENT_END, RUNTIME_ENVIRONMENT_HEADING
+@@ -886,6 +886,176 @@ def _note_silent_output_clamp(agent: Any, observed: int) -> tuple:
+     return ceiling, budget, corroborated
+ 
+ 
++# ── Tool-loop baffles (Calliope, 2026-09-10) ─────────────────────────────
++# Two redirections, neither a stop. Measured on the pilot's session mirror:
++# reasoning tokens were 0.1–4% of spend; the burn was call count × replayed
++# context. Gemini ran 126 SQL calls in one session with 142 of 152 assistant
++# turns silent (one runaway of 913 silent turns); grok re-issued the same
++# search_data call 14 times. Well-behaved models rarely make a THIRD identical
++# read (astra 6%, grok-4.6 7%), so serving that from the session costs them
++# nothing, and a status paragraph every 30 silent tool turns touches sol two
++# or three times a day.
++# The loop-level seams live in agent/turn_tool_round.py since 0.21.4 (lazy import).
++_ECHO_BAFFLE_THIRD_CALL = 3
++_ECHO_BAFFLE_READ_ONLY_RE = re.compile(
++    r"run_sql|validate_sql|search_data|capability_search|describe_table|tool_describe|"
++    r"tool_search|hindsight_recall|list_metrics|get_metric|metric_history|"
++    r"search_business_context|session_search|get_live_app|list_live_apps|"
++    r"list_calliope_specialists|skill_view|read_file|search_files|"
++    r"(?:^|__)metric$|metric_catalog",
++    re.IGNORECASE,
++)
++_ECHO_BAFFLE_NOTE = (
++    "[Echo baffle] This is identical call #{count} to {name} in this session. "
++    "The result below is the one you already received, unchanged — it was not "
++    "re-run. Use it; if you need something different, change the arguments or "
++    "say what you are looking for."
++)
++_NARRATION_NUDGE_EVERY = 30
++_NARRATION_NUDGE_PREFIX = _LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX
++
++
++def _echo_canonical_args(raw: Any) -> str:
++    """Stable text for a tool's arguments: parsed JSON re-dumped with sorted keys."""
++    if isinstance(raw, (dict, list)):
++        return json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
++    text = "" if raw is None else str(raw).strip()
++    if not text:
++        return "{}"
++    try:
++        return json.dumps(json.loads(text), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
++    except (TypeError, ValueError):
++        return text
++
++
++def _echo_key(tool_call: Any) -> tuple[str, str] | None:
++    """(name, canonical args) — the deferred ``tool_call`` wrapper is unwrapped so a
++    wrapped and a direct call to the same tool share one key."""
++    function = getattr(tool_call, "function", None)
++    name = str(getattr(function, "name", "") or "").strip()
++    if not name:
++        return None
++    args = _echo_canonical_args(getattr(function, "arguments", None))
++    if name == "tool_call":
++        try:
++            parsed = json.loads(args)
++        except (TypeError, ValueError):
++            parsed = None
++        if isinstance(parsed, dict):
++            inner = str(parsed.get("name") or parsed.get("tool") or "").strip()
++            if inner:
++                inner_args = parsed.get("arguments", parsed.get("args", {}))
++                return inner, _echo_canonical_args(inner_args)
++    return name, args
++
++
++def _echo_is_read_only(tool_call: Any) -> bool:
++    key = _echo_key(tool_call)
++    if key is None:
++        return False
++    return bool(_ECHO_BAFFLE_READ_ONLY_RE.search(key[0]))
++
++
++def _echo_baffle_state(agent: Any) -> dict:
++    state = getattr(agent, "_echo_baffle", None)
++    if not isinstance(state, dict):
++        state = {"counts": {}, "results": {}}
++        try:
++            agent._echo_baffle = state
++        except Exception:
++            pass
++    return state
++
++
++def _echo_baffle_split(agent: Any, tool_calls: list) -> tuple[list, list]:
++    """Partition a turn's calls into (served, execute).
++
++    A read-only call seen ``_ECHO_BAFFLE_THIRD_CALL`` or more times whose
++    earlier result is known is served from it. Any non-read call clears the
++    session's echo state first: after a write the world may have changed, so
++    the next identical read runs for real."""
++    state = _echo_baffle_state(agent)
++    served: list = []
++    execute: list = []
++    for tool_call in tool_calls or []:
++        if not _echo_is_read_only(tool_call):
++            state["counts"].clear()
++            state["results"].clear()
++            execute.append(tool_call)
++            continue
++        key = _echo_key(tool_call)
++        count = state["counts"].get(key, 0) + 1
++        state["counts"][key] = count
++        cached = state["results"].get(key)
++        if count >= _ECHO_BAFFLE_THIRD_CALL and isinstance(cached, str) and cached:
++            note = _ECHO_BAFFLE_NOTE.format(count=count, name=key[0])
++            served.append((tool_call, f"{note}\n\n{cached}"))
++        else:
++            execute.append(tool_call)
++    return served, execute
++
++
++def _echo_baffle_record(agent: Any, tool_calls: list, messages: list) -> int:
++    """Remember the results the executed read-only calls just produced."""
++    state = _echo_baffle_state(agent)
++    wanted: dict[str, tuple[str, str]] = {}
++    for tool_call in tool_calls or []:
++        if not _echo_is_read_only(tool_call):
++            continue
++        key = _echo_key(tool_call)
++        call_id = str(coalesce_tool_call_id(tool_call) or "")
++        if key is not None and call_id:
++            wanted[call_id] = key
++    if not wanted:
++        return 0
++    stored = 0
++    for message in reversed(messages[-(2 * len(wanted) + 8):]):
++        if not isinstance(message, dict) or message.get("role") != "tool":
++            continue
++        key = wanted.get(str(message.get("tool_call_id") or ""))
++        if key is None:
++            continue
++        content = message.get("content")
++        if isinstance(content, list):
++            content = "\n".join(
++                str(part.get("text", "")) if isinstance(part, dict) else str(part)
++                for part in content
++            )
++        if isinstance(content, str) and content and not content.startswith("[Echo baffle]"):
++            state["results"][key] = content
++            stored += 1
++    return stored
++
++
++def _narration_streak_update(agent: Any, silent: bool, api_call_count: int = 0) -> int:
++    """Consecutive assistant turns that carried tool calls and no visible text."""
++    streak = int(getattr(agent, "_narration_silent_turns", 0) or 0)
++    if api_call_count <= 1:
++        streak = 0
++    streak = streak + 1 if silent else 0
++    try:
++        agent._narration_silent_turns = streak
++    except Exception:
++        pass
++    return streak
++
++
++def _narration_nudge_due(streak: int) -> bool:
++    return streak >= _NARRATION_NUDGE_EVERY and streak % _NARRATION_NUDGE_EVERY == 0
++
++
++def _narration_nudge_text(streak: int) -> str:
++    # Starts with the compressor-recognized prefix so the context compressor
++    # treats it as ephemeral scaffolding (see _LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX).
++    return (
++        f"{_NARRATION_NUDGE_PREFIX}streak has reached {streak} consecutive turns "
++        "with no words to the user. Before the next tool call, write one short "
++        "paragraph: what you have established so far, what remains, and whether "
++        "the original ask could be answered now or handed to a specialist. Then "
++        "continue.]"
++    )
++
++
+ def _last_message_is_replan_nudge(messages: Any) -> bool:
+     tail = messages[-1] if messages else None
+     return (
+diff --git a/agent/turn_tool_round.py b/agent/turn_tool_round.py
+index f5bbb7c..9a0fa2f 100644
+--- a/agent/turn_tool_round.py
++++ b/agent/turn_tool_round.py
+@@ -152,7 +152,31 @@ def run_tool_round(
+         with suppress(Exception):
+             agent.stream_delta_callback(None)
+ 
+-    agent._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
++    # ── Echo baffle: a third identical read-only call in this session is served
++    # from the result the model already has (agent.conversation_loop, Calliope).
++    from agent.conversation_loop import (
++        _echo_baffle_record, _echo_baffle_split, _narration_nudge_due, _narration_nudge_text,
++        _narration_streak_update,
++    )
++    _echo_served, _echo_execute = _echo_baffle_split(agent, assistant_message.tool_calls)
++    for _echo_tc, _echo_content in _echo_served:
++        append_message(messages, {
++            "role": "tool",
++            "name": _echo_tc.function.name,
++            "tool_call_id": coalesce_tool_call_id(_echo_tc),
++            "content": _echo_content,
++        })
++    if _echo_served:
++        agent._buffer_vprint(
++            f"↩︎ Echo baffle served {len(_echo_served)} repeated call(s) "
++            "from this session instead of re-running them"
++        )
++    if _echo_execute:
++        assistant_message.tool_calls = _echo_execute
++        agent._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
++        _echo_baffle_record(agent, _echo_execute, messages)
++    else:
++        assistant_message.tool_calls = []
+ 
+     if getattr(agent, "_incremental_persistence_failed", False):
+         # Tool result could not be made canonical: never send the in-memory result to
+@@ -183,6 +207,28 @@ def run_tool_round(
+     # Defer the paragraph break: _fire_stream_delta() prepends one "\n\n" when real
+     # text arrives, so tool iterations don't stack blank lines.
+     agent._stream_needs_break = True
++
++    # ── Narration baffle: after 30 consecutive tool-only turns, ask for one
++    # paragraph of what is established before the next call. A nudge with the
++    # compressor-recognized prefix, never a stop. ``assistant_msg`` carries the
++    # staged content (a bare tool-call marker was already blanked as silent).
++    _silent_streak = _narration_streak_update(
++        agent,
++        not agent._has_content_after_think_block(assistant_msg.get("content") or ""),
++        api_call_count,
++    )
++    if _narration_nudge_due(_silent_streak):
++        append_message(messages, {
++            "role": "user",
++            "content": _narration_nudge_text(_silent_streak),
++            "_narration_nudge": True,
++        })
++        agent._session_messages = messages
++        agent._buffer_vprint(
++            f"🗣 Narration baffle: {_silent_streak} silent tool turns — "
++            "asked for a status paragraph before continuing"
++        )
++
+     # Refund the iteration when the ONLY tool was execute_code (programmatic tool
+     # calling) — cheap RPC-style calls shouldn't eat the budget.
+     if {tc.function.name for tc in assistant_message.tool_calls} == {"execute_code"}:

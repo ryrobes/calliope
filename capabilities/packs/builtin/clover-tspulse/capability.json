@@ -1,0 +1,84 @@
+{
+  "api_version": "rvbbit.capability/v1",
+  "kind": "hf_backend",
+  "name": "clover_tspulse",
+  "description": "Pinned TSPulse CPU anomaly detection, imputation, embeddings and similarity. Preserves Clover Zoo v2 windows and outputs.",
+  "source": {
+    "provider": "huggingface",
+    "model": "ibm-granite/granite-timeseries-tspulse-r1",
+    "revision": "2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2"
+  },
+  "runtime": {
+    "template": "clover-tspulse",
+    "device": "cpu",
+    "base_image": "python:3.12-slim",
+    "port": 8080,
+    "env": {
+      "MODEL_THREADS": "2"
+    },
+    "volumes": [
+      {
+        "name": "model_cache",
+        "mount": "/models"
+      }
+    ]
+  },
+  "backend": {
+    "name": "clover_tspulse",
+    "transport": "rvbbit",
+    "batch_size": 8,
+    "max_concurrent": 1,
+    "timeout_ms": 300000
+  },
+  "operators": [
+    {
+      "name": "clover_tspulse",
+      "arg_names": [
+        "operation",
+        "payload"
+      ],
+      "arg_types": [
+        "text",
+        "text"
+      ],
+      "return_type": "jsonb",
+      "parser": "json",
+      "model": "clover-tspulse-v2-cpu/2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2/b12164578f7b893ada0028c00d292ba10383d25a/tsfm-0.3.2",
+      "inputs": {
+        "operation": "{{ inputs.operation }}",
+        "payload": "{{ inputs.payload }}"
+      },
+      "description": "Pinned TSPulse CPU anomaly detection, imputation, embeddings and similarity. Preserves Clover Zoo v2 windows and outputs.",
+      "cache_policy": "never",
+      "tests": [
+        {
+          "name": "series_embedding",
+          "sql": "WITH r AS MATERIALIZED (SELECT rvbbit.clover_tspulse('timeseries_embed',jsonb_build_object('values',(SELECT jsonb_agg(sin(i/10.0)) FROM generate_series(1,512) i))::text) AS v) SELECT ((v->>'dimension')::int > 0 AND jsonb_array_length(v->'embedding')=(v->>'dimension')::int) FROM r",
+          "expect": {
+            "type": "exact",
+            "value": "true"
+          },
+          "description": "Run a 512-point series through TSPulse and verify the embedding dimension."
+        }
+      ]
+    }
+  ],
+  "smoke": {
+    "inputs": [
+      {
+        "operation": "health",
+        "payload": {}
+      }
+    ],
+    "sql": [
+      "SELECT rvbbit.clover_tspulse('health','{}');"
+    ]
+  },
+  "warren": {
+    "container_port": 8080,
+    "health_path": "/health"
+  },
+  "resources": {
+    "gpu": false
+  }
+}

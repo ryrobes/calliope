@@ -1,0 +1,21 @@
+psycopg[binary]>=3.2
+# The 2.x SDK removed mcp.server.fastmcp, which this service uses.
+mcp>=1.12.4,<2
+jsonschema>=4.18,<5  # Typed tool argument repair, with offline local schema refs
+pyjwt>=2.8       # signs OAuth access tokens (WAREHOUSE_PUBLIC_URL mode)
+fastapi>=0.115
+uvicorn[standard]>=0.32
+httpx>=0.27
+websockets>=15,<18  # Revocable Computer viewer gateway; same API as hosted runtime
+sqlglot>=28.10,<29
+pglast>=7,<8    # Native PostgreSQL batch parsing for the agent data workspace
+python-multipart>=0.0.18
+playwright>=1.49,<1.65  # 1.65 bundles a Node that needs libatomic1, absent from python:3.12-slim
+cryptography>=42
+PyYAML>=6,<7
+numpy>=2.0,<3
+pillow>=10       # Briarpatch avatar thumbnails (circular-masked sketch chips)
+qrcode>=8,<9     # Local company-app connection QR codes; no external service
+openpyxl>=3.1,<4 # Local Excel source ingestion (cached values, no macro execution)
+
+vl-convert-python==1.9.0 # Shared native chart PNG + picking geometry

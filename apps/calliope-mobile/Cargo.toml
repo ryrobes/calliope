@@ -1,0 +1,64 @@
+[package]
+name = "calliope-mobile"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[workspace]
+members = ["renderer"]
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false }
+gpui-kit = { git = "https://github.com/Bombatomica64/gpui-kit", rev = "11a7beb93292051a7fcc009f34bf93a00f167b4c", default-features = false, features = ["component", "assets"] }
+gpui-component = { git = "https://github.com/Bombatomica64/gpui-kit", rev = "11a7beb93292051a7fcc009f34bf93a00f167b4c" }
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/Bombatomica64/gpui-mobile", rev = "431d8cd075fb69fe2c62d382700d80a9163ca54d", default-features = false }
+a2ui-gpui = { package = "calliope-mobile-renderer", path = "renderer" }
+a2ui-base = { git = "https://github.com/liangdi/a2ui.git", rev = "97391988e41052240c36c27442912420903f13a8" }
+anyhow = "1"
+base64 = "0.22"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smol = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart"] }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+android_logger = "0.15"
+android-activity = { version = "0.6", features = ["native-activity"] }
+jni = "0.22"
+ndk = { version = "0.9", features = ["nativewindow"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# The pinned iOS platform_view references both modules even when unused by an app.
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/Bombatomica64/gpui-mobile", rev = "431d8cd075fb69fe2c62d382700d80a9163ca54d", default-features = false, features = ["camera", "video_player"] }
+# backtrace 0.3.76 still uses dyld declarations removed for iOS in libc 0.2.190.
+libc = "=0.2.186"
+# Security.framework uses the device's certificate trust, including installed CAs.
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+
+[patch.crates-io]
+gpui-pre = { git = "https://github.com/Bombatomica64/gpui-pre", rev = "7d7b9a828c864a28a9d005b2b83205763d5473cf" }
+# core-video imports this on iOS; its desktop CGL helper must stay macOS-only.
+io-surface = { path = "vendor/io-surface" }
+
+[patch."https://github.com/Bombatomica64/gpui-mobile"]
+# Same pinned source, with iOS PlatformWindow keyboard hooks (see CALLIOPE.md).
+gpui-pre-mobile = { path = "vendor/gpui-mobile" }
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+codegen-units = 8
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+debug = 0
+panic = "abort"

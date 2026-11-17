@@ -1,0 +1,165 @@
+api_version: rvbbit.pack/v1
+id: memory/hindsight-slim
+name: hindsight_slim
+title: Hindsight Memory Service
+description: Hindsight API service for agent long-term memory, backed by a dedicated schema in the RVBBIT Postgres database and RVBBIT-compatible embedding config where possible.
+license: provider
+catalog_visibility: public
+system_runtime: false
+capability_role: system_runtime
+tags:
+- memory
+- agent-memory
+- hindsight
+- hermes
+- warren
+- postgres
+- embeddings
+- cpu
+capability: capability.yaml
+source:
+  provider: builtin
+  model: vectorize-io/hindsight-api-slim
+  url: https://github.com/vectorize-io/hindsight
+runtime:
+  mode: image
+  image: ghcr.io/vectorize-io/hindsight-api:latest-slim
+  handler: custom
+  device: cpu
+  port: 8888
+  publish_host_port: true
+  host_bind: 127.0.0.1
+  host_port: 8888
+  host_port_env: RVBBIT_HINDSIGHT_PORT
+  health_path: /health
+exports:
+  runtime: hindsight_default
+  operators:
+  - hindsight_memory_status
+  - hindsight_memory_retain
+  - hindsight_memory_recall
+  - hindsight_memory_reflect
+install:
+  mode: image
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+    gpu: false
+  tests:
+  - name: hindsight_pgvector_ready
+    description: Assert pgvector and the Hindsight schema exist in the current database.
+    sql: |
+      DO $$
+      BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+              RAISE EXCEPTION 'Hindsight requires the pgvector extension (CREATE EXTENSION vector)';
+          END IF;
+          IF to_regnamespace('hindsight') IS NULL THEN
+              RAISE EXCEPTION 'Hindsight schema hindsight was not created in database %', current_database();
+          END IF;
+      END
+      $$;
+  - name: hindsight_registered_ready
+    description: Assert Hindsight is registered as a ready memory service, and Warren inventory is coherent when Warren owns it.
+    sql: |
+      DO $$
+      DECLARE
+          source text;
+      BEGIN
+          SELECT service_source
+          INTO source
+          FROM rvbbit.memory_services
+          WHERE name = 'hindsight_default'
+            AND provider = 'hindsight'
+            AND status = 'ready'
+            AND endpoint_url IS NOT NULL
+            AND endpoint_url <> '';
+
+          IF source IS NULL THEN
+              RAISE EXCEPTION 'hindsight_default memory service is not registered as ready';
+          END IF;
+
+          IF source = 'warren' AND NOT EXISTS (
+              SELECT 1
+              FROM rvbbit.warren_inventory
+              WHERE runtime_name = 'hindsight_default'
+                AND deployment_status = 'running'
+          ) THEN
+              RAISE EXCEPTION 'hindsight_default deployment is not running in Warren inventory';
+          END IF;
+      END
+      $$;
+  - name: hindsight_sql_status
+    description: Assert the SQL wrapper can resolve and probe the registered Hindsight service.
+    sql: |
+      DO $$
+      DECLARE
+          probe jsonb;
+          started timestamptz := clock_timestamp();
+          last_error text;
+      BEGIN
+          IF to_regprocedure('rvbbit.hindsight_status(text)') IS NULL THEN
+              RAISE EXCEPTION 'rvbbit.hindsight_status(text) is not installed; redeploy pg_rvbbit 2.7.0+ and run SELECT rvbbit.migrate() before installing hindsight_slim';
+          END IF;
+
+          LOOP
+              BEGIN
+                  SELECT rvbbit.hindsight_status('hindsight_default') INTO probe;
+                  EXIT WHEN probe IS NOT NULL;
+                  last_error := 'rvbbit.hindsight_status returned NULL';
+              EXCEPTION WHEN OTHERS THEN
+                  last_error := SQLERRM;
+              END;
+
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'rvbbit.hindsight_status did not become ready within 2 minutes: %',
+                      coalesce(last_error, 'unknown error');
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+      END
+      $$;
+  - name: hindsight_operator_wrappers
+    description: Assert Hindsight SQL operator wrappers are installed and the status wrapper can probe the service.
+    sql: |
+      DO $$
+      DECLARE
+          missing text[];
+          probe jsonb;
+      BEGIN
+          SELECT array_agg(expected.name ORDER BY expected.name)
+          INTO missing
+          FROM (VALUES
+              ('hindsight_memory_status'),
+              ('hindsight_memory_retain'),
+              ('hindsight_memory_recall'),
+              ('hindsight_memory_reflect')
+          ) AS expected(name)
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM rvbbit.operators op
+              WHERE op.name = expected.name
+                AND op.cache_policy = 'never'
+          );
+
+          IF missing IS NOT NULL THEN
+              RAISE EXCEPTION 'missing Hindsight memory operators: %', missing;
+          END IF;
+
+          SELECT rvbbit.hindsight_memory_status('hindsight_default') INTO probe;
+          IF probe IS NULL THEN
+              RAISE EXCEPTION 'rvbbit.hindsight_memory_status returned NULL';
+          END IF;
+
+          -- Non-idempotent and user-data-bearing wrappers are validated by catalog
+          -- presence here; exercising them would mutate an acceptance-test bank.
+          IF false THEN
+              PERFORM rvbbit.hindsight_memory_retain('__acceptance__', 'noop', '{}'::jsonb, 'hindsight_default', true);
+              PERFORM rvbbit.hindsight_memory_recall('__acceptance__', 'noop', '{}'::jsonb, 'hindsight_default');
+              PERFORM rvbbit.hindsight_memory_reflect('__acceptance__', 'noop', '{}'::jsonb, 'hindsight_default');
+          END IF;
+      END
+      $$;

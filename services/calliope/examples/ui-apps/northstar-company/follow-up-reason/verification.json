@@ -1,0 +1,233 @@
+{
+  "verified_at": "2026-10-11",
+  "request_id": "691f3641-16c8-41c8-a1d0-047d7b9ceffc",
+  "author_session": "1afe33c6-c818-405e-9b66-d66d20afac55",
+  "published": {
+    "northstar-my-visits": {
+      "version": 3,
+      "kind": "a2ui",
+      "notes": "Adds an optional follow-up reason to newly submitted reports. Empty reasons remain Not recorded. Existing visit-keyed notes, evidence, idempotent submissions and v2 pending drafts stay compatible.",
+      "requests": [
+        "691f3641-16c8-41c8-a1d0-047d7b9ceffc"
+      ],
+      "owner": "admin@example.com",
+      "definition_sha256": "d3a385f57d470b690a3f1a93183783566d310f9da8328be3351c27688005c1b4"
+    },
+    "northstar-dispatch": {
+      "version": 3,
+      "kind": "a2ui",
+      "notes": "Adds a dispatcher-authorized read-only reason breakdown over all saved reports, including superseded reports and accepted visits, for the existing HTML companion. Assignment action unchanged.",
+      "requests": [
+        "691f3641-16c8-41c8-a1d0-047d7b9ceffc"
+      ],
+      "owner": "admin@example.com",
+      "definition_sha256": "ab7a49101c68b5a6b56831d30126eaca92bf1f8e2b607523b05a70cf8a70daab"
+    },
+    "northstar-analysis": {
+      "version": 2,
+      "kind": "html",
+      "notes": "Adds follow-up reason breakdown over all saved reports, an explicit Not recorded category, reason filtering, and a host Suggest improvement button; retains separate active-work analysis.",
+      "requests": [
+        "691f3641-16c8-41c8-a1d0-047d7b9ceffc"
+      ],
+      "owner": "admin@example.com",
+      "html_sha256": "ed7f4a534acfb7657e253defcba46108a8bccb1ae749cad951fd6b40aa993dbf"
+    },
+    "northstar-review": {
+      "version": 1,
+      "kind": "a2ui",
+      "notes": null,
+      "requests": [],
+      "owner": "admin@example.com",
+      "definition_sha256": "bccebe5318c13adc3e4609987147c4e7597ef4f00b9ac48700dc4fb8b73367e9"
+    }
+  },
+  "captures": {
+    "preview": {
+      "schema": "calliope.preview.v1",
+      "definition_sha256": "d3a385f57d470b690a3f1a93183783566d310f9da8328be3351c27688005c1b4",
+      "data_sha256": "c7b7d7ef76076c4a3840574bf4dd292d1d32cb4c67242191100cfc1a755f4ed0",
+      "mode": "supplied",
+      "actions": "simulated",
+      "observed_at": 1791712751.565341,
+      "ready": true,
+      "errors": {}
+    },
+    "captures": {
+      "web-desktop": {
+        "renderer": "Web",
+        "platform": "chromium-isolated",
+        "viewport": {
+          "preset": "desktop",
+          "width": 1440,
+          "height": 1000
+        },
+        "renderer_build": "63aaaca82eb57cd70cc6cf4c0a0cdb07c4e11e8a42fc7283ec3e80dffa51fd7c",
+        "theme_sha256": "1f910bbd5f99598408623945263ef44ed7fd37c82d6648ed5ebd646980c6eec5",
+        "preview": {
+          "schema": "calliope.preview.v1",
+          "definition_sha256": "d3a385f57d470b690a3f1a93183783566d310f9da8328be3351c27688005c1b4",
+          "data_sha256": "c7b7d7ef76076c4a3840574bf4dd292d1d32cb4c67242191100cfc1a755f4ed0",
+          "mode": "supplied",
+          "actions": "simulated",
+          "observed_at": 1791712751.565341,
+          "ready": true,
+          "errors": {}
+        },
+        "ready": true,
+        "page_errors": [],
+        "chart_errors": []
+      },
+      "web-phone": {
+        "renderer": "Web",
+        "platform": "chromium-isolated",
+        "viewport": {
+          "preset": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "renderer_build": "63aaaca82eb57cd70cc6cf4c0a0cdb07c4e11e8a42fc7283ec3e80dffa51fd7c",
+        "theme_sha256": "1f910bbd5f99598408623945263ef44ed7fd37c82d6648ed5ebd646980c6eec5",
+        "preview": {
+          "schema": "calliope.preview.v1",
+          "definition_sha256": "d3a385f57d470b690a3f1a93183783566d310f9da8328be3351c27688005c1b4",
+          "data_sha256": "c7b7d7ef76076c4a3840574bf4dd292d1d32cb4c67242191100cfc1a755f4ed0",
+          "mode": "supplied",
+          "actions": "simulated",
+          "observed_at": 1791712751.565341,
+          "ready": true,
+          "errors": {}
+        },
+        "ready": true,
+        "page_errors": [],
+        "chart_errors": []
+      },
+      "native-desktop": {
+        "renderer": "GPUI",
+        "width": 1440,
+        "height": 1000,
+        "ready": true,
+        "pending_charts": [],
+        "chart_errors": {},
+        "unmeasured_charts": [],
+        "mime": "image/png",
+        "sha256": "4ceb8dfa7df0a4afdebdb123f61990fc319cbbb90cae950e98901f8f405fd816",
+        "viewport": {
+          "preset": "desktop",
+          "width": 1440,
+          "height": 1000
+        },
+        "platform": "linux-isolated",
+        "renderer_build": "connected-company-apps-20261011",
+        "preview": {
+          "schema": "calliope.preview.v1",
+          "definition_sha256": "d3a385f57d470b690a3f1a93183783566d310f9da8328be3351c27688005c1b4",
+          "data_sha256": "c7b7d7ef76076c4a3840574bf4dd292d1d32cb4c67242191100cfc1a755f4ed0",
+          "mode": "supplied",
+          "actions": "simulated",
+          "observed_at": 1791712751.565341,
+          "ready": true,
+          "errors": {}
+        },
+        "theme_sha256": "1f910bbd5f99598408623945263ef44ed7fd37c82d6648ed5ebd646980c6eec5"
+      },
+      "native-phone": {
+        "renderer": "GPUI",
+        "width": 390,
+        "height": 844,
+        "ready": true,
+        "pending_charts": [],
+        "chart_errors": {},
+        "unmeasured_charts": [],
+        "mime": "image/png",
+        "sha256": "f301b0deddf2f69ec4aa744e15af66323755a41de0b41022f360ce0d7b8088a4",
+        "viewport": {
+          "preset": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "platform": "linux-isolated",
+        "renderer_build": "connected-company-apps-20261011",
+        "preview": {
+          "schema": "calliope.preview.v1",
+          "definition_sha256": "d3a385f57d470b690a3f1a93183783566d310f9da8328be3351c27688005c1b4",
+          "data_sha256": "c7b7d7ef76076c4a3840574bf4dd292d1d32cb4c67242191100cfc1a755f4ed0",
+          "mode": "supplied",
+          "actions": "simulated",
+          "observed_at": 1791712751.565341,
+          "ready": true,
+          "errors": {}
+        },
+        "theme_sha256": "1f910bbd5f99598408623945263ef44ed7fd37c82d6648ed5ebd646980c6eec5"
+      }
+    },
+    "ready": true
+  },
+  "browser": {
+    "web_record_pair": true,
+    "native_record_pair": true,
+    "web_unsent_context_and_idempotent_retry": true,
+    "html_context": true
+  },
+  "html": {
+    "desktop": {
+      "reports": 8,
+      "not_recorded": 7,
+      "return_diagnostic": 1,
+      "filter_reset": true,
+      "feedback_context": true,
+      "horizontal_overflow": false
+    },
+    "phone": {
+      "reports": 8,
+      "not_recorded": 7,
+      "return_diagnostic": 1,
+      "filter_reset": true,
+      "feedback_context": true,
+      "horizontal_overflow": false
+    }
+  },
+  "access": {
+    "admin": {
+      "shared_requests": 1,
+      "visible_releases": [
+        "northstar-my-visits",
+        "northstar-dispatch",
+        "northstar-analysis"
+      ]
+    },
+    "technician": {
+      "shared_requests": 1,
+      "visible_releases": [
+        "northstar-my-visits"
+      ]
+    },
+    "dispatcher": {
+      "shared_requests": 0,
+      "visible_releases": []
+    }
+  },
+  "device": {
+    "platform": "physical Galaxy S23 Ultra",
+    "retained_v2_draft": true,
+    "blocked_dirty_update": true,
+    "old_version_submit_after_publication": true,
+    "adopted_v3_after_submit": true,
+    "v3_reason_saved": "Return diagnostic visit",
+    "record": "NS-2004",
+    "business_version": 6,
+    "report_count": 3,
+    "other_five_visits_unchanged": true
+  },
+  "ios": "Built and installed on named iPhone Simulator; contextual improvement mode visually verified; adopted published v3 with no drafts. No physical iPhone test in this slice.",
+  "deployment": {
+    "server.py": "bebae48be4981a614b8e8dbab1097a176f44d7a98dcb8e612398628730cf9e8d",
+    "calliope.py": "999ad93792a3f680e504c2e82c4b50d7bbc4fc632032f11bcc9c340a624edaa5",
+    "ui_apps.py": "7183ce24734940da363a46aaa45d74c3ff718e19851df1ef994614a63f5fcfaa",
+    "ui_app_context.py": "497f83675a42eb947e8328a8ee322e6c8cf7eb927ea89c8e2599caebdea9361c",
+    "app_revisions.py": "1e8e499713c63a44c058397a0c515cdb526be4641c1fbda0723b8658ee2dc7ac",
+    "app-feedback.js": "3a620d358055457aafac610bd80558f539593b234bf09825b525047cb5d9d557",
+    "published.html": "5491907bfaffe71e13678d5de119f3017b1d83ce3b3cd2a54e9162dbfea6ce0a",
+    "image": "sha256:7c4604d80589fe199fb4d8eee92c63eb444ff03d8654b7aee879fb92c5c9cb02"
+  }
+}

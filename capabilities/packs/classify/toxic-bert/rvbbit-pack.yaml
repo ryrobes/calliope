@@ -1,0 +1,96 @@
+api_version: rvbbit.pack/v1
+id: classify/toxic-bert
+name: toxic_bert
+title: Toxicity Classifier
+description: Multi-label toxicity classifier for moderation, support triage, and data quality workflows.
+license: apache-2.0
+tags:
+- classify
+- toxicity
+- moderation
+- multilabel
+- tabular
+- row
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: unitary/toxic-bert
+  url: https://huggingface.co/unitary/toxic-bert
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 437975136
+    vram_required_bytes: 547468920
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: classify_toxic_bert
+  operators:
+  - classify_toxicity
+  - classify_row_toxicity
+  - toxicity
+  - toxicity_score
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: moderation_sample_shape
+    description: Run a moderation-oriented comment through toxic-bert and assert score-bearing JSON.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          label text;
+          score float8;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.classify_toxicity('you are awful and nobody wants you here') INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'classify_toxicity returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected toxicity result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'toxicity score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.classify_row_toxicity(
+              '{"comment":"you are awful and nobody wants you here","channel":"support_chat"}'::jsonb
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected row toxicity result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'row toxicity score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.toxicity('you are awful and nobody wants you here') INTO label;
+          IF coalesce(btrim(label), '') = '' THEN
+              RAISE EXCEPTION 'bundled toxicity operator returned empty label';
+          END IF;
+
+          SELECT rvbbit.toxicity_score('you are awful and nobody wants you here') INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled toxicity_score out of range: %', score;
+          END IF;
+      END
+      $$;

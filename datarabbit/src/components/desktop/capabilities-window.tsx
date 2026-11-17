@@ -1,0 +1,1496 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  AlertTriangle,
+  Boxes,
+  CheckCircle2,
+  ChevronDown,
+  Cpu,
+  Globe,
+  Package,
+  Plug,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Rocket,
+  Sparkles,
+  Search,
+  Table2,
+  Tag,
+  X,
+  type LucideIcon,
+} from "@/lib/icons"
+import { cn } from "@/lib/utils"
+import {
+  capabilityTypeTone,
+  capabilityCatalogRefreshDue,
+  capabilityCatalogRefreshUrl,
+  classifyCatalogCapabilityType,
+  fetchCatalog,
+  fetchBackendCallSeries,
+  fetchInstalledBackends,
+  fetchInstalledRuntimes,
+  flagsToStates,
+  importCapabilityCatalogUrl,
+  joinCatalogToInstalled,
+  refreshCapabilityCatalogEntry,
+  searchCapabilities,
+  type CatalogDoc,
+  type InstalledBackend,
+  type InstalledRuntime,
+  type JoinedCatalogEntry,
+} from "@/lib/rvbbit/capabilities"
+import {
+  fetchWarrenAvailability,
+  fetchWarrenInventory,
+  nodeFitsVram,
+  nodeIsEligible,
+  uniqueNodesFromInventory,
+  type WarrenAvailability,
+  type WarrenInventoryRow,
+} from "@/lib/rvbbit/warren"
+import { Sparkline } from "./sparkline"
+import { RvbbitLogo } from "./rvbbit-logo"
+import { OperatorChips, type OpChip } from "./capability-operators"
+import {
+  fmtAgo,
+  fmtCount,
+  fmtMs,
+  InstallStateBadgeGroup,
+} from "./instruments"
+import {
+  CapabilityTypeChip,
+  CapabilityTypeWash,
+  capabilityTypeStyle,
+} from "./capability-type-visuals"
+import { usePolling } from "@/lib/desktop/use-polling"
+
+interface CapabilitiesWindowProps {
+  activeConnectionId: string | null
+  hasRvbbit: boolean
+  initialTag?: string | null
+  onOpenCapability: (catalogId: string) => void
+  onOpenWarren?: () => void
+  onOpenHfDeploy?: () => void
+}
+
+const REFRESH_OPTIONS_MS = [
+  { ms: 2000, label: "2s" },
+  { ms: 5000, label: "5s" },
+  { ms: 10_000, label: "10s" },
+  { ms: 30_000, label: "30s" },
+]
+
+type CapabilitiesView = "card" | "list"
+
+const CAPABILITIES_VIEW_STORAGE_KEY = "rvbbit-lens:capabilities-view"
+
+function loadCapabilitiesView(): CapabilitiesView {
+  try {
+    return typeof window !== "undefined" &&
+      window.localStorage.getItem(CAPABILITIES_VIEW_STORAGE_KEY) === "list"
+      ? "list"
+      : "card"
+  } catch {
+    return "card"
+  }
+}
+
+function saveCapabilitiesView(view: CapabilitiesView): void {
+  try {
+    window.localStorage.setItem(CAPABILITIES_VIEW_STORAGE_KEY, view)
+  } catch {
+    /* ignore quota / disabled storage */
+  }
+}
+
+/**
+ * The capability catalog browser — front door to the install/discovery
+ * layer over `rvbbit.backends`. Reads catalog.json from disk (via the
+ * /api/rvbbit/capabilities route) once on mount, polls
+ * `rvbbit.backend_health` on the configured interval to keep
+ * install-state badges fresh.
+ *
+ * Entries group by (matching tags + matching search query); clicking a
+ * card or list row opens its Capability Detail window.
+ */
+export function CapabilitiesWindow({
+  activeConnectionId,
+  hasRvbbit,
+  initialTag,
+  onOpenCapability,
+  onOpenWarren,
+  onOpenHfDeploy,
+}: CapabilitiesWindowProps) {
+  const [catalog, setCatalog] = useState<CatalogDoc | null>(null)
+  const [installed, setInstalled] = useState<InstalledBackend[]>([])
+  const [callSeries, setCallSeries] = useState<Map<string, number[]>>(new Map())
+  const [runtimes, setRuntimes] = useState<InstalledRuntime[]>([])
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [installedError, setInstalledError] = useState<string | null>(null)
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(
+    () => new Set(initialTag ? [initialTag] : []),
+  )
+  const [search, setSearch] = useState("")
+  const [viewMode, setViewModeState] = useState<CapabilitiesView>(loadCapabilitiesView)
+  // Semantic re-rank layer (Tier A): id -> similarity score for the current
+  // query. Blended *under* the substring matches, so exact keyword hits stay on
+  // top and semantically-related capabilities surface below. Empty when the
+  // query is short or the embed backend is offline (→ silent substring-only).
+  const [semanticScores, setSemanticScores] = useState<Map<string, number>>(new Map())
+  const [paused, setPaused] = useState(false)
+  const [intervalMs, setIntervalMs] = useState(5000)
+  const [updatedAt, setUpdatedAt] = useState(0)
+  const [warrenAvail, setWarrenAvail] = useState<WarrenAvailability | null>(null)
+  const [warrenInventory, setWarrenInventory] = useState<WarrenInventoryRow[]>([])
+  const [catalogOrigin, setCatalogOrigin] = useState<"db" | "db+file" | "file" | null>(null)
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(() => new Set())
+  const [importOpen, setImportOpen] = useState(false)
+  const [importUrl, setImportUrl] = useState("")
+  const [importSource, setImportSource] = useState("")
+  const [importPrune, setImportPrune] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importStatus, setImportStatus] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
+  const autoRefreshAttempts = useRef(new Set<string>())
+  const loadingCatalog = catalog == null && catalogError == null
+
+  const setViewMode = useCallback((view: CapabilitiesView) => {
+    setViewModeState(view)
+    saveCapabilitiesView(view)
+  }, [])
+
+  const loadCatalog = useCallback(async () => {
+    const r = await fetchCatalog(activeConnectionId)
+    setCatalog(r.doc)
+    setCatalogError(r.error ?? null)
+    setCatalogOrigin(r.source ?? null)
+  }, [activeConnectionId])
+
+  const pollInstalled = useCallback(async () => {
+    if (!activeConnectionId || !hasRvbbit) return
+    const [b, rt, series] = await Promise.all([
+      fetchInstalledBackends(activeConnectionId),
+      fetchInstalledRuntimes(activeConnectionId),
+      fetchBackendCallSeries(activeConnectionId),
+    ])
+    setInstalled(b.backends)
+    setRuntimes(rt.runtimes)
+    setCallSeries(series)
+    setInstalledError(b.error ?? null)
+    setUpdatedAt(Date.now())
+  }, [activeConnectionId, hasRvbbit])
+
+  const pollWarrenInventory = useCallback(async () => {
+    if (!activeConnectionId || !hasRvbbit) return
+    const inv = await fetchWarrenInventory(activeConnectionId)
+    setWarrenInventory(inv.rows)
+  }, [activeConnectionId, hasRvbbit])
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (cancelled) return
+      await loadCatalog()
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [loadCatalog])
+
+  useEffect(() => {
+    autoRefreshAttempts.current.clear()
+  }, [activeConnectionId])
+
+  // URL-backed managed packs are seeded from a shipped snapshot, then
+  // refreshed opportunistically. Group by authority so a catalog containing
+  // several managed packs is fetched once. Failure is deliberately silent:
+  // the existing DB snapshot remains the browse/install fallback.
+  useEffect(() => {
+    if (!activeConnectionId || !hasRvbbit || !catalog) return
+    const dueBySource = new Map<string, (typeof catalog.capabilities)[number]>()
+    for (const entry of catalog.capabilities) {
+      if (entry.kind !== "managed" || !capabilityCatalogRefreshDue(entry)) continue
+      const url = capabilityCatalogRefreshUrl(entry)
+      if (!url) continue
+      const key = `${entry.catalog_source}|${url}`
+      if (!autoRefreshAttempts.current.has(key)) dueBySource.set(key, entry)
+    }
+    if (dueBySource.size === 0) return
+
+    let cancelled = false
+    const run = async () => {
+      let refreshed = false
+      for (const [key, entry] of dueBySource) {
+        autoRefreshAttempts.current.add(key)
+        const result = await refreshCapabilityCatalogEntry(activeConnectionId, entry)
+        refreshed ||= result.ok
+      }
+      if (!cancelled && refreshed) await loadCatalog()
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [activeConnectionId, hasRvbbit, catalog, loadCatalog])
+
+  useEffect(() => {
+    if (!activeConnectionId || !hasRvbbit) return
+    let cancelled = false
+    const run = async () => {
+      if (cancelled) return
+      await pollInstalled()
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [activeConnectionId, hasRvbbit, pollInstalled])
+
+  usePolling(pollInstalled, intervalMs, {
+    enabled: !!activeConnectionId && !!hasRvbbit && !paused,
+    resetKey: activeConnectionId,
+  })
+
+  // ── warren availability (light probe, longer interval) ──
+  const probeWarren = useCallback(async () => {
+    if (!activeConnectionId) return
+    const [r, inv] = await Promise.all([
+      fetchWarrenAvailability(activeConnectionId),
+      fetchWarrenInventory(activeConnectionId),
+    ])
+    setWarrenAvail(r)
+    setWarrenInventory(inv.rows)
+  }, [activeConnectionId])
+  usePolling(probeWarren, 15_000, {
+    enabled: !!activeConnectionId && !!hasRvbbit,
+    resetKey: activeConnectionId,
+  })
+
+  usePolling(pollWarrenInventory, intervalMs, {
+    enabled: !!activeConnectionId && !!hasRvbbit && !paused,
+    resetKey: activeConnectionId,
+  })
+
+  // ── semantic re-rank: debounced embed-and-rank for the current query ──
+  useEffect(() => {
+    if (!activeConnectionId || !hasRvbbit) return
+    const q = search.trim()
+    let cancelled = false
+    const t = window.setTimeout(async () => {
+      if (q.length < 3) {
+        if (!cancelled) setSemanticScores(new Map())
+        return
+      }
+      // Scores cluster tightly (~0.5–0.7) so a floor doesn't discriminate well;
+      // the *ranking* is what's meaningful, so cap to a small top-k — the "related"
+      // tag stays a signal, not the whole catalog.
+      const { scores } = await searchCapabilities(activeConnectionId, q, 8)
+      if (!cancelled) setSemanticScores(scores)
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [search, activeConnectionId, hasRvbbit])
+
+  // ── derive ──
+  const join = useMemo(() => {
+    if (!catalog) return null
+    return joinCatalogToInstalled(catalog.capabilities, installed, runtimes)
+  }, [catalog, installed, runtimes])
+
+  const allTags = useMemo<[string, number][]>(() => {
+    if (!catalog) return []
+    const counts = new Map<string, number>()
+    for (const e of catalog.capabilities) {
+      for (const t of e.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  }, [catalog])
+
+  const allSources = useMemo<[string, number][]>(() => {
+    if (!catalog) return []
+    const counts = new Map<string, number>()
+    for (const e of catalog.capabilities) {
+      const source = e.catalog_source || "unknown"
+      counts.set(source, (counts.get(source) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  }, [catalog])
+
+  // Tag chip "running counts" — how many *currently visible* entries
+  // would match if you toggled this tag. Lets the user see the impact
+  // of each chip before clicking.
+  const liveTagCounts = useMemo(() => {
+    if (!catalog) return new Map<string, number>()
+    const m = new Map<string, number>()
+    const visibleBeforeTag = filterBySearchOnly(
+      catalog.capabilities.map((c) => ({ catalog: c })),
+      search,
+    )
+    for (const e of visibleBeforeTag) {
+      for (const t of e.catalog.tags ?? []) m.set(t, (m.get(t) ?? 0) + 1)
+    }
+    return m
+  }, [catalog, search])
+
+  const searchResult = useMemo(() => {
+    const empty = {
+      entries: [] as JoinedCatalogEntry[],
+      semanticOnlyIds: new Set<string>(),
+    }
+    if (!join) return empty
+    // Tag + source filters apply to both exact and semantic candidates.
+    let pool = join.entries
+    if (selectedTags.size > 0) {
+      // OR semantics — keep an entry if it carries any of the selected tags.
+      pool = pool.filter((e) => {
+        const tags = new Set(e.catalog.tags ?? [])
+        for (const t of selectedTags) if (tags.has(t)) return true
+        return false
+      })
+    }
+    if (selectedSources.size > 0) {
+      pool = pool.filter((e) => selectedSources.has(e.catalog.catalog_source || "unknown"))
+    }
+    // sort: installed-and-used first, then registered, then catalog-only.
+    const byInstall = (a: JoinedCatalogEntry, b: JoinedCatalogEntry) => {
+      const order = (e: JoinedCatalogEntry) =>
+        (e.flags.used ? 0 : e.flags.registered ? 1 : 2) * 1000 -
+        (e.installed?.n_calls ?? 0)
+      const r = order(a) - order(b)
+      return r !== 0 ? r : a.catalog.title.localeCompare(b.catalog.title)
+    }
+    if (search.trim().length === 0) {
+      // Default browse: gateway-served (managed) entries lead within each install
+      // tier — the storefront's front shelf. Search results below stay
+      // strictly relevance-ordered; curation never outranks intent.
+      const byShelf = (a: JoinedCatalogEntry, b: JoinedCatalogEntry) => {
+        const tier = (e: JoinedCatalogEntry) =>
+          e.flags.used ? 0 : e.flags.registered ? 1 : 2
+        const t = tier(a) - tier(b)
+        if (t !== 0) return t
+        const managed = (e: JoinedCatalogEntry) => (e.catalog.kind === "managed" ? 0 : 1)
+        const m = managed(a) - managed(b)
+        if (m !== 0) return m
+        const calls = (b.installed?.n_calls ?? 0) - (a.installed?.n_calls ?? 0)
+        return calls !== 0 ? calls : a.catalog.title.localeCompare(b.catalog.title)
+      }
+      return { entries: [...pool].sort(byShelf), semanticOnlyIds: new Set<string>() }
+    }
+    // Exact substring matches stay on top (install-sorted); semantically-related
+    // entries the substring filter missed are appended, ranked by similarity.
+    const exact = (filterBySearchOnly(pool, search) as JoinedCatalogEntry[]).sort(byInstall)
+    const exactIds = new Set(exact.map((e) => e.catalog.id))
+    const semantic = pool
+      .filter((e) => !exactIds.has(e.catalog.id) && semanticScores.has(e.catalog.id))
+      .sort(
+        (a, b) =>
+          (semanticScores.get(b.catalog.id) ?? 0) - (semanticScores.get(a.catalog.id) ?? 0),
+      )
+    return {
+      entries: [...exact, ...semantic],
+      semanticOnlyIds: new Set(semantic.map((e) => e.catalog.id)),
+    }
+  }, [join, selectedTags, selectedSources, search, semanticScores])
+  const visible = searchResult.entries
+  const semanticOnlyIds = searchResult.semanticOnlyIds
+
+  // Heaviest VRAM reservation among the visible packs — the gauge on each
+  // card is normalized to this, so the bars read as relative "weight".
+  const maxVram = useMemo(
+    () => visible.reduce((m, e) => Math.max(m, e.catalog.vram_required_bytes ?? 0), 0),
+    [visible],
+  )
+
+  const totalCatalog = catalog?.capabilities.length ?? 0
+  const totalRegistered = join?.entries.filter((e) => e.flags.registered).length ?? 0
+  const totalUsed = join?.entries.filter((e) => e.flags.used).length ?? 0
+  const totalErrors = join?.entries.filter((e) => e.flags.errorSeen).length ?? 0
+  const totalExternal = join?.external.length ?? 0
+
+  const handleImportCatalog = useCallback(async () => {
+    if (!activeConnectionId || importUrl.trim().length === 0) return
+    setImporting(true)
+    setImportStatus(null)
+    const result = await importCapabilityCatalogUrl({
+      connectionId: activeConnectionId,
+      url: importUrl.trim(),
+      catalogSource: importSource.trim() || undefined,
+      prune: importPrune,
+    })
+    setImporting(false)
+    if (!result.ok) {
+      setImportStatus({
+        ok: false,
+        message: result.error ?? "catalog import failed",
+      })
+      return
+    }
+    setImportStatus({
+      ok: true,
+      message: `imported ${result.imported ?? 0} pack${(result.imported ?? 0) === 1 ? "" : "s"} into ${result.catalogSource ?? "catalog"}`,
+    })
+    await loadCatalog()
+    await pollInstalled()
+  }, [activeConnectionId, importUrl, importSource, importPrune, loadCatalog, pollInstalled])
+
+  if (!hasRvbbit) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center text-[12px] text-chrome-text/70">
+        <div>
+          <Package className="mx-auto mb-2 h-6 w-6 text-chrome-text/40" />
+          This connection has no <span className="font-mono">pg_rvbbit</span> extension —
+          capabilities require it to register backends.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col text-[12px] text-chrome-text">
+      {/* live/paused header bar */}
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-chrome-border bg-chrome-bg/40 px-3 py-1.5">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider",
+            paused ? "bg-foreground/[0.05] text-chrome-text" : "bg-success/10 text-success",
+          )}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              paused ? "bg-chrome-text" : "animate-pulse bg-success",
+            )}
+          />
+          {paused ? "paused" : "live"}
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-foreground">
+          <Package className="h-3.5 w-3.5 text-brand-capability" />
+          {loadingCatalog ? "loading…" : `${totalCatalog} packs`}
+        </span>
+        {catalogOrigin ? (
+          <span
+            className="rounded bg-foreground/[0.05] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-chrome-text/60"
+            title={
+              catalogOrigin === "db"
+                ? "Browsing rvbbit.capability_catalog"
+                : catalogOrigin === "db+file"
+                  ? "Browsing rvbbit.capability_catalog plus packaged catalog.json entries missing from the DB"
+                  : "Fallback catalog.json"
+            }
+          >
+            {catalogOrigin}
+          </span>
+        ) : null}
+        {!loadingCatalog ? (
+          <>
+            <span className="text-chrome-text/40">·</span>
+            <span>
+              <span className="font-medium text-brand-capability">{totalRegistered}</span>{" "}
+              registered
+            </span>
+            <span className="text-chrome-text/40">·</span>
+            <span>
+              <span className="font-medium tabular-nums text-rvbbit-accent">
+                {fmtCount(totalUsed)}
+              </span>{" "}
+              in use
+            </span>
+            {totalErrors > 0 ? (
+              <>
+                <span className="text-chrome-text/40">·</span>
+                <span className="text-danger">{totalErrors} with errors</span>
+              </>
+            ) : null}
+            {totalExternal > 0 ? (
+              <>
+                <span className="text-chrome-text/40">·</span>
+                <span
+                  className="cursor-help text-chrome-text/55"
+                  title="Backends installed outside the curated catalog"
+                >
+                  {totalExternal} external
+                </span>
+              </>
+            ) : null}
+          {onOpenHfDeploy ? (
+              <button
+                type="button"
+                onClick={onOpenHfDeploy}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-capability/40 bg-brand-capability/10 px-2 py-0.5 text-[10px] text-brand-capability hover:bg-brand-capability/15"
+                title="Deploy any Hugging Face model by id — no per-model pack needed"
+              >
+                <Sparkles className="h-3 w-3" />
+                Hugging Face
+              </button>
+            ) : null}
+          {warrenAvail?.available && onOpenWarren ? (
+              <button
+                type="button"
+                onClick={onOpenWarren}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-warren/40 bg-brand-warren/10 px-2 py-0.5 text-[10px] text-brand-warren hover:bg-brand-warren/15"
+                title={
+                  warrenAvail.readyNodes > 0
+                    ? `${warrenAvail.readyNodes} warren node(s) ready — deploys can go remote`
+                    : "Warren tables present but no nodes ready"
+                }
+              >
+                <Rocket className="h-3 w-3" />
+                {warrenAvail.readyNodes > 0
+                  ? `${warrenAvail.readyNodes} warren${warrenAvail.readyNodes === 1 ? "" : "s"} ready`
+                  : `${warrenAvail.totalNodes} warren${warrenAvail.totalNodes === 1 ? "" : "s"}`}
+              </button>
+            ) : null}
+            {activeConnectionId ? (
+              <button
+                type="button"
+                onClick={() => setImportOpen((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-capability/40 bg-brand-capability/10 px-2 py-0.5 text-[10px] text-brand-capability hover:bg-brand-capability/15"
+                title="Import an external capability catalog URL into rvbbit.capability_catalog"
+              >
+                <Globe className="h-3 w-3" />
+                catalog URL
+              </button>
+            ) : null}
+          </>
+        ) : null}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          {updatedAt > 0 ? (
+            <span className="text-[10px] text-chrome-text/45">{fmtAgo(updatedAt)}</span>
+          ) : null}
+          <select
+            value={intervalMs}
+            onChange={(e) => setIntervalMs(Number(e.target.value))}
+            title="Refresh interval"
+            className="h-6 rounded border border-chrome-border bg-secondary-background px-1.5 text-[11px] text-foreground outline-none focus:ring-2 focus:ring-ring"
+          >
+            {REFRESH_OPTIONS_MS.map((o) => (
+              <option key={o.ms} value={o.ms}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setPaused((p) => !p)}
+            title={paused ? "Resume polling" : "Pause polling"}
+            className="grid h-6 w-6 place-items-center rounded text-chrome-text/70 hover:bg-foreground/[0.08] hover:text-foreground"
+          >
+            {paused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void loadCatalog()
+              void pollInstalled()
+            }}
+            title="Reload"
+            className="grid h-6 w-6 place-items-center rounded text-chrome-text/70 hover:bg-foreground/[0.08] hover:text-foreground"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {catalogError ? (
+        <div className="flex items-start gap-1.5 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-[11px] text-warning">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span className="break-words">{catalogError}</span>
+        </div>
+      ) : null}
+      {installedError ? (
+        <div className="flex items-start gap-1.5 border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-[11px] text-danger">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span className="break-words">backend_health: {installedError}</span>
+        </div>
+      ) : null}
+      {importOpen ? (
+        <div className="border-b border-chrome-border bg-chrome-bg/25 px-3 py-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[260px] flex-1">
+              <div className="mb-0.5 text-[9px] uppercase tracking-wider text-chrome-text/55">
+                catalog url
+              </div>
+              <input
+                type="url"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                placeholder="https://example.com/rvbbit-capability-seed.json"
+                className="h-7 w-full rounded border border-chrome-border bg-secondary-background px-2 font-mono text-[11px] text-foreground outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div className="w-[210px]">
+              <div className="mb-0.5 text-[9px] uppercase tracking-wider text-chrome-text/55">
+                source label
+              </div>
+              <input
+                type="text"
+                value={importSource}
+                onChange={(e) => setImportSource(e.target.value)}
+                placeholder="url:team-capabilities"
+                className="h-7 w-full rounded border border-chrome-border bg-secondary-background px-2 font-mono text-[11px] text-foreground outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <label className="flex h-7 items-center gap-1.5 rounded border border-chrome-border bg-secondary-background px-2 text-[10px] text-chrome-text">
+              <input
+                type="checkbox"
+                checked={importPrune}
+                onChange={(e) => setImportPrune(e.target.checked)}
+                className="h-3.5 w-3.5 accent-brand-capability"
+              />
+              prune missing
+            </label>
+            <button
+              type="button"
+              onClick={() => void handleImportCatalog()}
+              disabled={importing || !activeConnectionId || importUrl.trim().length === 0}
+              className="inline-flex h-7 items-center gap-1 rounded border border-brand-capability/45 bg-brand-capability/15 px-2.5 text-[10px] font-medium uppercase tracking-wider text-brand-capability hover:bg-brand-capability/20 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Plus className="h-3 w-3" />
+              {importing ? "importing" : "import"}
+            </button>
+          </div>
+          {importStatus ? (
+            <div
+              className={cn(
+                "mt-2 flex items-start gap-1.5 rounded border px-2 py-1.5 text-[11px]",
+                importStatus.ok
+                  ? "border-success/40 bg-success/10 text-success"
+                  : "border-danger/40 bg-danger/10 text-danger",
+              )}
+            >
+              {importStatus.ok ? (
+                <CheckCircle2 className="mt-px h-3 w-3 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+              )}
+              <span className="break-words">{importStatus.message}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* filter bar */}
+      <div className="flex flex-col gap-2 border-b border-chrome-border bg-chrome-bg/20 px-3 py-2">
+        <div className="flex items-start gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-chrome-text/45" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search title, model, description, operator…"
+              className="h-7 w-full rounded border border-chrome-border bg-secondary-background pl-7 pr-2 text-[12px] text-foreground outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            {allTags.length > 0 ? (
+              <TagFilterDropdown
+                tags={allTags}
+                liveCounts={liveTagCounts}
+                selected={selectedTags}
+                onToggle={(tag) =>
+                  setSelectedTags((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(tag)) next.delete(tag)
+                    else next.add(tag)
+                    return next
+                  })
+                }
+                onClear={() => setSelectedTags(new Set())}
+              />
+            ) : null}
+            <div
+              role="group"
+              className="flex items-center gap-0.5 rounded border border-chrome-border bg-secondary-background p-0.5"
+              aria-label="Capability view"
+            >
+              <CapabilityViewButton
+                active={viewMode === "card"}
+                onClick={() => setViewMode("card")}
+                icon={Boxes}
+                title="Card view"
+              />
+              <CapabilityViewButton
+                active={viewMode === "list"}
+                onClick={() => setViewMode("list")}
+                icon={Table2}
+                title="List view"
+              />
+            </div>
+          </div>
+        </div>
+        {allSources.length > 1 ? (
+          <div className="flex flex-wrap items-center gap-1 border-t border-chrome-border/35 pt-1.5">
+            <span className="mr-1 text-[9px] uppercase tracking-wider text-chrome-text/45">
+              sources
+            </span>
+            {allSources.map(([source, total]) => {
+              const active = selectedSources.has(source)
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() =>
+                    setSelectedSources((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(source)) next.delete(source)
+                      else next.add(source)
+                      return next
+                    })
+                  }
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition",
+                    active
+                      ? "border-brand-capability/50 bg-brand-capability/15 text-brand-capability"
+                      : "border-chrome-border bg-secondary-background text-chrome-text hover:text-foreground",
+                  )}
+                  title={`${source} — ${total} pack${total === 1 ? "" : "s"}`}
+                >
+                  <Globe className="h-2.5 w-2.5" />
+                  <span className="max-w-[220px] truncate font-mono">{source}</span>
+                  <span className="font-mono tabular-nums text-chrome-text/55">
+                    {total}
+                  </span>
+                </button>
+              )
+            })}
+            {selectedSources.size > 0 ? (
+              <button
+                type="button"
+                onClick={() => setSelectedSources(new Set())}
+                className="inline-flex items-center gap-1 text-[10px] text-chrome-text/55 hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                clear sources
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* capability browser */}
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        {loadingCatalog ? (
+          <div className="grid h-full place-items-center text-[11px] text-chrome-text/55">
+            loading catalog…
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="grid h-full place-items-center text-[11px] text-chrome-text/55">
+            {totalCatalog === 0 ? "no capabilities in catalog" : "no matches"}
+          </div>
+        ) : (
+          <div
+            className={cn(
+              viewMode === "card"
+                ? "grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2.5"
+                : "flex flex-col gap-1.5",
+            )}
+          >
+            {visible.map((e) => (
+              <CapabilityCard
+                key={e.catalog.id}
+                entry={e}
+                view={viewMode}
+                callSeries={e.catalog.backend_name ? callSeries.get(e.catalog.backend_name) : undefined}
+                warrenNodes={uniqueNodesFromInventory(warrenInventory)}
+                maxVram={maxVram}
+                semanticMatch={semanticOnlyIds.has(e.catalog.id)}
+                onOpen={() => onOpenCapability(e.catalog.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── tag filter ──────────────────────────────────────────────────────
+
+function CapabilityViewButton({
+  active,
+  onClick,
+  icon: Icon,
+  title,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: LucideIcon
+  title: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={cn(
+        "grid h-6 w-7 place-items-center rounded transition-colors",
+        active
+          ? "bg-foreground/[0.12] text-foreground"
+          : "text-chrome-text hover:bg-foreground/[0.06]",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  )
+}
+
+/**
+ * Multi-select tag filter, collapsed into a single control beside the
+ * search box so the catalog's long tag list no longer eats a row of
+ * wrapping chips. Each row shows how many currently-searched packs carry
+ * the tag; click-away or Escape closes.
+ */
+function TagFilterDropdown({
+  tags,
+  liveCounts,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  tags: [string, number][]
+  liveCounts: Map<string, number>
+  selected: Set<string>
+  onToggle: (tag: string) => void
+  onClear: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    window.addEventListener("mousedown", onDown)
+    window.addEventListener("keydown", onKey)
+    return () => {
+      window.removeEventListener("mousedown", onDown)
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [open])
+
+  const count = selected.size
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "inline-flex h-7 items-center gap-1.5 rounded border px-2 text-[11px] transition",
+          count > 0
+            ? "border-brand-capability/50 bg-brand-capability/15 text-brand-capability"
+            : "border-chrome-border bg-secondary-background text-chrome-text hover:text-foreground",
+        )}
+        title="Filter by tags"
+      >
+        <Tag className="h-3 w-3" />
+        <span>Tags</span>
+        {count > 0 ? (
+          <span className="rounded-full bg-brand-capability/25 px-1.5 font-mono text-[10px] tabular-nums">
+            {count}
+          </span>
+        ) : null}
+        <ChevronDown className={cn("h-3 w-3 transition-transform", open ? "rotate-180" : "")} />
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 z-30 mt-1 w-60 overflow-hidden rounded-md border border-chrome-border bg-chrome-bg/95 shadow-lg backdrop-blur-md">
+          <div className="flex items-center justify-between border-b border-chrome-border/60 px-2 py-1.5 text-[9px] uppercase tracking-wider text-chrome-text/55">
+            <span>{tags.length} tags</span>
+            {count > 0 ? (
+              <button
+                type="button"
+                onClick={onClear}
+                className="inline-flex items-center gap-1 normal-case tracking-normal text-chrome-text/70 hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                clear {count}
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-[280px] overflow-y-auto py-1">
+            {tags.map(([tag, total]) => {
+              const live = liveCounts.get(tag) ?? 0
+              const checked = selected.has(tag)
+              const dimmed = !checked && live === 0
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => onToggle(tag)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] transition-colors hover:bg-foreground/[0.06]",
+                    dimmed ? "opacity-45" : "",
+                  )}
+                  title={`${tag} — ${total} total, ${live} match current search`}
+                >
+                  <span
+                    className={cn(
+                      "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] border",
+                      checked
+                        ? "border-brand-capability bg-brand-capability text-chrome-bg"
+                        : "border-chrome-border",
+                    )}
+                  >
+                    {checked ? <CheckCircle2 className="h-3 w-3" /> : null}
+                  </span>
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate",
+                      checked ? "text-brand-capability" : "text-chrome-text",
+                    )}
+                  >
+                    {tag}
+                  </span>
+                  <span className="font-mono tabular-nums text-chrome-text/45">{live}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+// ── helpers ─────────────────────────────────────────────────────────
+
+function filterBySearchOnly<T extends { catalog: JoinedCatalogEntry["catalog"] }>(
+  rows: T[],
+  search: string,
+): T[] {
+  const q = search.trim().toLowerCase()
+  if (q.length === 0) return rows
+  return rows.filter((r) => {
+    const c = r.catalog
+    const hay = [
+      c.id,
+      c.name,
+      c.title,
+      c.description ?? "",
+      c.source_model ?? "",
+      c.source_provider ?? "",
+      c.backend_name ?? "",
+      c.runtime_name ?? "",
+      c.catalog_source ?? "",
+      c.capability_role ?? "",
+      c.system_runtime ? "system runtime operator runtime" : "",
+      c.runtime_handler,
+      ...(c.acceptance_tests ?? []),
+      ...(c.tags ?? []),
+      ...(c.operators ?? []),
+    ]
+      .join(" ")
+      .toLowerCase()
+    return hay.includes(q)
+  })
+}
+
+function CapabilityCard({
+  entry,
+  view,
+  callSeries,
+  warrenNodes,
+  maxVram,
+  semanticMatch,
+  onOpen,
+}: {
+  entry: JoinedCatalogEntry
+  view: CapabilitiesView
+  /** Real call counts from at most the last 24h, oldest first. */
+  callSeries?: number[]
+  warrenNodes: WarrenInventoryRow[]
+  maxVram: number
+  /** Surfaced by the semantic re-rank (no keyword match) — gets a subtle tag. */
+  semanticMatch?: boolean
+  onOpen: () => void
+}) {
+  const { catalog, installed, installedRuntime, flags } = entry
+  const states = flagsToStates(flags)
+  const typeTone = capabilityTypeTone(classifyCatalogCapabilityType(catalog))
+  // MCP capabilities are a different *kind* of thing from model packs (tools
+  // over a gateway, not weights) — give them their own icon, an accent rail,
+  // and an MCP-shaped facts row so they read as distinct at a glance, not just
+  // via the type chip.
+  const isMcp = catalog.kind === "mcp"
+  // Gateway-served (managed) entries: the gold treatment. The Clover gateway
+  // runs in the install; the catalog install is metadata + its service key.
+  const managed = catalog.kind === "managed" ? (catalog.manifest?.managed ?? null) : null
+  const comingSoon = managed?.status === "coming_soon"
+  // Installed *and* live — a registered backend that's healthy, in use, or a
+  // ready runtime. These get the prominent treatment.
+  const active =
+    flags.registered && (flags.used || flags.healthy === true || flags.runtimeReady)
+  // The SQL operators this pack registers. Prefer the rich inline-manifest
+  // defs; fall back to bare names from the catalog row.
+  const opDefs = catalog.manifest?.operators ?? []
+  const opByName = new Map(opDefs.map((d) => [d.name, d]))
+  const opChips: OpChip[] =
+    catalog.operators.length > 0
+      ? catalog.operators.map((n) => opByName.get(n) ?? { name: n })
+      : opDefs
+  const testCount = catalog.acceptance_tests.length
+  const vramRequired = catalog.vram_required_bytes
+  const gpuPlacement = catalog.gpu_placement ?? "single_gpu"
+  const eligibleGpuNodes = warrenNodes.filter(
+    (n) =>
+      (n.gpu_count ?? 0) > 0 &&
+      nodeIsEligible(n),
+  )
+  const fitCount =
+    vramRequired == null
+      ? 0
+      : eligibleGpuNodes.filter((n) => nodeFitsVram(n, vramRequired, gpuPlacement) === "fits").length
+  const gpuFit =
+    vramRequired == null
+      ? null
+      : fitCount > 0
+        ? "fits"
+        : eligibleGpuNodes.length === 0
+          ? "no_gpu"
+          : "insufficient"
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "group relative overflow-hidden rounded-md border text-left transition",
+        view === "card"
+          ? "flex flex-col p-2.5 pl-3.5"
+          : "grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,1fr)] items-start gap-x-3 gap-y-1 p-2 pl-3.5",
+        active
+          ? "border-brand-capability/60 bg-brand-capability/[0.07] shadow-[0_0_0_1px_var(--brand-capability)] ring-1 ring-brand-capability/30 hover:bg-brand-capability/[0.1]"
+          : flags.registered
+            ? "border-chrome-border bg-secondary-background/50 ring-1 ring-brand-capability/15 hover:border-brand-capability/40 hover:bg-secondary-background/70"
+            : "border-chrome-border bg-secondary-background/40 hover:border-brand-capability/40 hover:bg-secondary-background/70",
+      )}
+      style={capabilityTypeStyle(typeTone)}
+    >
+      <CapabilityTypeWash active={active} registered={flags.registered} />
+      {isMcp || managed ? (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 bg-[var(--cap-type)]/70",
+            managed ? "w-[4px]" : "w-[3px]",
+          )}
+        />
+      ) : null}
+      <WeightBar bytes={vramRequired} max={maxVram} />
+
+      {/* title row */}
+      <div
+        className={cn(
+          "flex min-w-0 items-start gap-1.5",
+          view === "list" ? "col-start-1 row-start-1 flex-wrap" : "",
+        )}
+      >
+        {managed ? (
+          <RvbbitLogo
+            className="mt-1 h-2.5 w-auto shrink-0"
+            style={{ color: "var(--cap-type)" }}
+          />
+        ) : isMcp ? (
+          <Plug
+            className="mt-0.5 h-3.5 w-3.5 shrink-0"
+            style={{ color: "var(--cap-type)" }}
+          />
+        ) : (
+          <Package
+            className="mt-0.5 h-3.5 w-3.5 shrink-0"
+            style={{ color: "var(--cap-type)" }}
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-medium text-foreground group-hover:text-brand-capability">
+            {catalog.title}
+          </div>
+          <div className="truncate font-mono text-[10px] text-chrome-text/55">
+            {catalog.name}
+          </div>
+        </div>
+        <div
+          className={cn(
+            "flex items-center gap-1",
+            view === "list" ? "basis-full flex-wrap pl-5 pt-0.5" : "shrink-0",
+          )}
+        >
+          {semanticMatch ? (
+            <span
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-brand-capability/30 bg-brand-capability/10 px-1.5 py-px text-[9px] text-brand-capability/90"
+              title="Surfaced by semantic search — related to your query (no keyword match)"
+            >
+              <Sparkles className="h-2.5 w-2.5" />
+              related
+            </span>
+          ) : null}
+          {managed ? (
+            <span className="flex shrink-0 items-center gap-1">
+              {managed.verified?.tests ? (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px text-[9px]"
+                  style={{
+                    borderColor: "color-mix(in oklch, var(--cap-type) 45%, transparent)",
+                    color: "var(--cap-type)",
+                    background: "color-mix(in oklch, var(--cap-type) 12%, transparent)",
+                  }}
+                  title={`Semantic Tests battery: ${managed.verified.passed}/${managed.verified.tests} passed · ${managed.verified.regime ?? ""} · ${managed.verified.battery_date ?? ""}${managed.verified.note ? ` · ${managed.verified.note}` : ""}`}
+                >
+                  <CheckCircle2 className="h-2.5 w-2.5" />
+                  {managed.verified.passed}/{managed.verified.tests}
+                </span>
+              ) : null}
+              {comingSoon ? (
+                <span className="inline-flex items-center rounded-full border border-chrome-border/60 px-1.5 py-px text-[9px] text-chrome-text/60">
+                  coming soon
+                </span>
+              ) : (managed.pricing?.tiers?.length ?? 0) > 0 ? (
+                <span
+                  className="inline-flex items-center rounded-full px-1.5 py-px text-[9px] font-medium"
+                  style={{
+                    background: "color-mix(in oklch, var(--cap-type) 25%, transparent)",
+                    color: "var(--cap-type)",
+                    border: "1px solid color-mix(in oklch, var(--cap-type) 55%, transparent)",
+                  }}
+                  title="Free tier available — open for plans"
+                >
+                  {managed.pricing?.tiers?.some((t) => t.monthly_usd === 0)
+                    ? `Free · from $${managed.pricing!.monthly_usd}/mo`
+                    : `from $${managed.pricing!.monthly_usd}/mo`}
+                </span>
+              ) : managed.pricing?.monthly_usd ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="inline-flex cursor-pointer items-center rounded-full px-1.5 py-px text-[9px] font-medium hover:brightness-125"
+                  style={{
+                    background: "color-mix(in oklch, var(--cap-type) 25%, transparent)",
+                    color: "var(--cap-type)",
+                    border: "1px solid color-mix(in oklch, var(--cap-type) 55%, transparent)",
+                  }}
+                  title={managed.pricing.checkout_url ? "Subscribe — opens checkout" : "Subscription price"}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    ev.preventDefault()
+                    if (managed.pricing?.checkout_url) window.open(managed.pricing.checkout_url, "_blank")
+                  }}
+                >
+                  ${managed.pricing.monthly_usd}/mo
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          <DeviceChip device={catalog.device} />
+        </div>
+      </div>
+
+      {/* description */}
+      {catalog.description ? (
+        <p
+          className={cn(
+            "line-clamp-2 text-[11px] leading-snug text-chrome-text/75",
+            view === "list" ? "col-start-2 row-start-1 mt-0" : "mt-1.5",
+          )}
+        >
+          {catalog.description}
+        </p>
+      ) : null}
+
+      {/* state badges */}
+      <div
+        className={cn(
+          "flex min-w-0 flex-wrap items-center gap-1",
+          view === "list" ? "col-start-1 row-start-2 mt-1" : "mt-2",
+        )}
+      >
+        <InstallStateBadgeGroup states={states} size="xs" />
+        <CapabilityTypeChip tone={typeTone} />
+        <span
+          className="rounded-full border border-chrome-border/50 bg-foreground/[0.03] px-1.5 py-px font-mono text-[9px] text-chrome-text/60"
+          title={`catalog source: ${catalog.catalog_source}`}
+        >
+          {catalog.catalog_source}
+        </span>
+        {testCount > 0 ? (
+          <span
+            className="rounded-full border border-success/35 bg-success/10 px-1.5 py-px text-[9px] uppercase tracking-wider text-success"
+            title={catalog.acceptance_tests.join(", ")}
+          >
+            {testCount} test{testCount === 1 ? "" : "s"}
+          </span>
+        ) : null}
+        {catalog.system_runtime ? (
+          <span
+            className="rounded-full border border-brand-capability/40 bg-brand-capability/10 px-1.5 py-px text-[9px] uppercase tracking-wider text-brand-capability"
+            title="Operator runtime capability"
+          >
+            runtime
+          </span>
+        ) : null}
+        {vramRequired != null ? (
+          <GpuWeightChip
+            bytes={vramRequired}
+            required={catalog.gpu_required}
+            fit={gpuFit}
+            fitCount={fitCount}
+          />
+        ) : null}
+      </div>
+
+      {/* facts row — MCP cards describe a tool surface, not a model artifact */}
+      {isMcp ? (
+        <div
+          className={cn(
+            "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-chrome-text/55",
+            view === "list" ? "col-start-2 row-start-2 mt-1" : "mt-2",
+          )}
+        >
+          <span className="font-mono text-[var(--cap-type)]">MCP server</span>
+          <span>·</span>
+          <span>
+            {catalog.operators.length} operator{catalog.operators.length === 1 ? "" : "s"}
+          </span>
+          {catalog.tags.includes("mcp") && catalog.runtime_handler ? (
+            <>
+              <span>·</span>
+              <span className="font-mono">{catalog.runtime_handler}</span>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-chrome-text/55",
+            view === "list" ? "col-start-2 row-start-2 mt-1" : "mt-2",
+          )}
+        >
+          <span
+            className="truncate font-mono text-chrome-text/65"
+            title={catalog.source_model ?? ""}
+          >
+            {catalog.source_model ?? "—"}
+          </span>
+          {catalog.license ? (
+            <>
+              <span>·</span>
+              <span className="font-mono">{catalog.license}</span>
+            </>
+          ) : null}
+          <span>·</span>
+          <span>{catalog.runtime_handler}</span>
+        </div>
+      )}
+
+      {/* tags */}
+      {catalog.tags && catalog.tags.length > 0 ? (
+        <div
+          className={cn(
+            "flex min-w-0 flex-wrap gap-1",
+            view === "list" ? "col-start-2 row-start-3 mt-1" : "mt-1.5",
+          )}
+        >
+          {catalog.tags.slice(0, 5).map((t) => (
+            <span
+              key={t}
+              className="rounded bg-foreground/[0.05] px-1 py-px text-[9px] text-chrome-text/60"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* installed stats — only when registered */}
+      <div
+        className={cn(
+          "min-w-0",
+          view === "list" ? "col-start-3 row-span-3 row-start-1" : "",
+        )}
+      >
+        {installed ? <InstalledFooter installed={installed} series={callSeries} /> : null}
+        {!installed && installedRuntime ? (
+          <div className="mt-2 border-t border-chrome-border/40 pt-1.5 text-[10px] text-chrome-text/55">
+            runtime{" "}
+            <span className="font-mono text-foreground">{installedRuntime.name}</span>{" "}
+            <span className="text-chrome-text/45">·</span>{" "}
+            <span className="text-success">{installedRuntime.status}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {/* the SQL operators this pack unlocks — what people shop for */}
+      <OperatorChips
+        operators={opChips}
+        className={view === "list" ? "col-span-3 mt-1.5" : undefined}
+      />
+    </button>
+  )
+}
+
+/**
+ * Slim vertical "weight" gauge on the card's left edge: VRAM reservation
+ * normalized to the heaviest visible pack, filling bottom-up. CPU packs
+ * (no GPU reservation) show the same bar, greyed and empty — a quick
+ * at-a-glance sense of how heavy each capability is to host.
+ */
+function WeightBar({ bytes, max }: { bytes: number | null; max: number }) {
+  const isGpu = bytes != null && bytes > 0
+  const ratio = isGpu && max > 0 ? Math.min(1, bytes / max) : 0
+  return (
+    <div
+      className="absolute bottom-1 left-1 top-1 w-[3px] overflow-hidden rounded-full bg-foreground/[0.06]"
+      title={
+        isGpu
+          ? `${fmtBytes(bytes)} VRAM — relative to the heaviest visible pack`
+          : "CPU — no GPU reservation"
+      }
+    >
+      <div
+        className="absolute inset-x-0 bottom-0 rounded-full"
+        style={{
+          height: isGpu ? `${Math.max(5, ratio * 100)}%` : "100%",
+          background: isGpu ? "var(--brand-capability)" : "var(--chrome-text)",
+          opacity: isGpu ? 0.55 : 0.14,
+        }}
+      />
+    </div>
+  )
+}
+
+function GpuWeightChip({
+  bytes,
+  required,
+  fit,
+  fitCount,
+}: {
+  bytes: number
+  required: boolean
+  fit: "fits" | "no_gpu" | "insufficient" | null
+  fitCount: number
+}) {
+  const tone =
+    fit === "fits"
+      ? "border-success/35 bg-success/10 text-success"
+      : fit === "insufficient"
+        ? "border-danger/35 bg-danger/10 text-danger"
+        : fit === "no_gpu"
+          ? "border-warning/35 bg-warning/10 text-warning"
+          : "border-warning/35 bg-warning/10 text-warning"
+  const title =
+    fit === "fits"
+      ? `${fitCount} ready GPU Warren node${fitCount === 1 ? "" : "s"} can fit this reservation`
+      : fit === "insufficient"
+        ? "No ready GPU Warren has enough unreserved VRAM"
+        : fit === "no_gpu"
+          ? "No ready GPU Warren nodes are visible"
+          : "Estimated GPU reservation"
+  return (
+    <span
+      className={cn(
+        "rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wider",
+        tone,
+      )}
+      title={title}
+    >
+      {required ? "gpu " : "gpu opt "}
+      {fmtBytes(bytes)}
+    </span>
+  )
+}
+
+function DeviceChip({ device }: { device: string }) {
+  const tone =
+    device === "cuda"
+      ? "bg-warning/10 text-warning ring-warning/30"
+      : device === "cpu"
+        ? "bg-foreground/[0.05] text-chrome-text/60 ring-chrome-border/40"
+        : "bg-brand-capability/10 text-brand-capability ring-brand-capability/30"
+  return (
+    <span
+      title={`device preference: ${device}`}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider ring-1",
+        tone,
+      )}
+    >
+      <Cpu className="h-2.5 w-2.5" />
+      {device}
+    </span>
+  )
+}
+
+function InstalledFooter({
+  installed,
+  series,
+}: {
+  installed: import("@/lib/rvbbit/capabilities").InstalledBackend
+  series?: number[]
+}) {
+  return (
+    <div className="mt-2 border-t border-chrome-border/40 pt-1.5">
+      <div className="flex items-center gap-2 text-[10px] text-chrome-text/55">
+        <span>
+          <span className="font-mono tabular-nums text-foreground">
+            {fmtCount(installed.n_calls)}
+          </span>{" "}
+          calls
+        </span>
+        {installed.n_errors > 0 ? (
+          <span className="text-danger">
+            <span className="font-mono tabular-nums">{installed.n_errors}</span> err
+          </span>
+        ) : null}
+        {installed.p95_latency_ms != null ? (
+          <span>
+            <span className="font-mono tabular-nums text-foreground">
+              {fmtMs(installed.p95_latency_ms)}
+            </span>{" "}
+            p95
+          </span>
+        ) : null}
+        {installed.last_call_at ? (
+          <span className="ml-auto" title={new Date(installed.last_call_at).toISOString()}>
+            {fmtAgo(installed.last_call_at)}
+          </span>
+        ) : null}
+      </div>
+      {installed.n_calls > 0 ? (
+        <Sparkline
+          values={series ?? []}
+          height={18}
+          color="var(--brand-capability)"
+          fillOpacity={0.18}
+          className="mt-1 opacity-90"
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function fmtBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0B"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let value = bytes
+  let idx = 0
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024
+    idx += 1
+  }
+  const digits = value >= 10 || idx === 0 ? 0 : 1
+  return `${value.toFixed(digits)}${units[idx]}`
+}

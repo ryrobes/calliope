@@ -1,0 +1,69 @@
+.surface-grid>.surface:where(.kind-email){grid-column:span 8;min-width:0}
+html body.zen[data-warehouse-page="calliope"] .zen-packed>:where(.surface.kind-email){--stage-span:2}
+@container stage-layout (max-width:759px){html body.zen[data-warehouse-page="calliope"] .zen-packed>:where(.surface.kind-email){--stage-span:1}}
+.mail-review button.mail-sender{border:0;font-size:12px;color:var(--dim);padding:4px 0}
+.mail-review{font-family:var(--sans);color:var(--foreground,var(--bone));min-width:0;padding:18px 22px;container:mail-review / inline-size}
+.mail-review button,.mail-connection-dialog button{font:inherit;color:var(--foreground,var(--bone));background:transparent;border:1px solid var(--block-border,var(--line));border-radius:6px;padding:7px 11px;cursor:pointer}
+.mail-review button:hover,.mail-connection-dialog button:hover{background:color-mix(in srgb,var(--foreground,var(--bone)) 7%,transparent)}
+.mail-review button:disabled,.mail-connection-dialog button:disabled{opacity:.4;cursor:default}
+.mail-review button:focus-visible,.mail-connection-dialog button:focus-visible{outline:2px solid var(--accent,var(--amber));outline-offset:2px}
+.mail-summary,.mail-footer,.mail-review-actions,.mail-replies header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mail-summary{justify-content:space-between;font-size:var(--rvbbit-type-small,12px);color:var(--chrome-text,var(--fog));padding-bottom:14px;border-bottom:1px solid var(--line)}
+.mail-summary>div{display:flex;gap:5px}.mail-summary button{border-color:transparent}.mail-summary button[aria-pressed=true]{background:color-mix(in srgb,var(--foreground,var(--bone)) 8%,transparent)}
+.mail-stack{--mail-ink:#302d26;--mail-muted:#706857;--mail-rule:#d6cfc0;--mail-stock:#f5f0e4;position:relative;isolation:isolate;margin:16px 0 8px;padding-bottom:8px;min-width:0}
+.mail-stack::before,.mail-stack::after{content:"";position:absolute;height:30px;border:1px solid #c7bfad;border-radius:0 0 3px 3px;pointer-events:none;box-shadow:0 2px 3px #0002}
+.mail-stack::before{left:8px;right:8px;bottom:0;background:#dcd3c1;z-index:-2}
+.mail-stack::after{left:4px;right:4px;bottom:4px;background:#e9e1d1;z-index:-1}
+.mail-review .mail-recipients{position:relative;z-index:2;display:flex;align-items:flex-end;gap:4px;min-height:48px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0 0 -1px;padding:5px 0 0;background:transparent;border:0;box-shadow:none}
+.mail-recipients::-webkit-scrollbar{display:none}
+.mail-review .mail-recipients button{position:relative;display:flex;align-items:center;gap:10px;flex:0 0 auto;max-width:min(220px,80%);height:38px;margin:0;padding:0 16px;color:var(--mail-muted);font:13px/1.3 var(--sans,sans-serif);border:1px solid #c7bfad;border-radius:9px 9px 0 0;background:linear-gradient(#e7decc,#dad0bc);box-shadow:inset 0 1px 0 #fff5;transition:background-color .15s,color .15s}
+.mail-recipients button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-review .mail-recipients button:hover{color:var(--mail-ink);background:linear-gradient(#eee6d6,#e2d8c5)}
+.mail-review .mail-recipients button[aria-current=true]{height:43px;color:var(--mail-ink);border-color:var(--mail-rule);border-bottom-color:var(--mail-stock);background:var(--mail-stock);background-image:radial-gradient(#78634408 .6px,transparent .6px);background-size:5px 5px;box-shadow:inset 0 1px 0 #fff9}
+.mail-review .mail-recipients button:focus-visible{outline:2px solid var(--mail-muted);outline-offset:-5px}
+.mail-recipients i{width:6px;height:6px;border-radius:50%;background:#877b65;flex:none}.mail-recipients .mail-state-sent{background:#52765d}.mail-recipients .mail-state-draft{background:#a47924}.mail-recipients .mail-state-failed,.mail-recipients .mail-state-uncertain{background:#a94736}
+.mail-copy{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.8 var(--mono,monospace);min-height:140px;max-height:640px;overflow:auto}.mail-preparing{font-style:italic}
+.mail-attachments{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.mail-attachment{display:inline-flex;align-items:center;gap:9px;max-width:100%;overflow-wrap:anywhere;color:var(--foreground,var(--fog));border:1px solid var(--line);border-radius:5px;padding:8px 10px;text-decoration:none;font-size:var(--rvbbit-type-small,12px)}.mail-attachment small{color:var(--dim);white-space:nowrap}
+.mail-sources{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px;color:var(--dim);font-size:var(--rvbbit-type-small,12px)}.mail-sources button{font-size:inherit;padding:4px 7px}.mail-review-actions{justify-content:flex-end;margin-top:24px}.mail-review .mail-primary,.mail-connection-dialog .mail-primary{border-color:color-mix(in srgb,var(--accent,var(--amber)) 45%,var(--line));background:color-mix(in srgb,var(--accent,var(--amber)) 12%,transparent);color:var(--accent,var(--amber))}
+.mail-footer{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);justify-content:space-between}.mail-footer nav{display:flex;align-items:center;gap:10px;color:var(--dim);font:12px var(--mono)}.mail-footer nav button{font-size:22px;line-height:18px}.mail-sender{font-size:12px;color:var(--dim);overflow-wrap:anywhere}.mail-muted{color:var(--dim)}
+.mail-about{border-left:2px solid var(--line);padding:12px 16px;margin-top:15px;background:color-mix(in srgb,var(--foreground,var(--bone)) 3%,transparent);font-size:13px;line-height:1.6}.mail-about p{margin:8px 0}.mail-about span{display:block;color:var(--dim)}
+.mail-edit-label,.mail-about label,.mail-connection-dialog label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim);margin:12px 0}.mail-edit-label input,.mail-edit-label textarea,.mail-about textarea,.mail-connection-dialog input{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:5px;background:color-mix(in srgb,var(--panel,var(--void)) 50%,transparent);color:var(--foreground,var(--bone));font:15px/1.6 var(--sans);padding:10px}.mail-editor{min-height:290px;resize:vertical}.mail-about textarea{min-height:70px;resize:vertical}
+/* The message is a paper document in every theme; review controls stay in the app chrome. */
+.mail-paper{
+  position:relative;z-index:1;color-scheme:light;color:var(--mail-ink);background-color:var(--mail-stock);
+  background-image:radial-gradient(#78634408 .6px,transparent .6px);background-size:5px 5px;
+  border:1px solid var(--mail-rule);border-radius:0 3px 3px 3px;box-shadow:0 2px 3px #0002,0 8px 24px #0001;
+  text-align:left;min-width:0;overflow:hidden;
+}
+.mail-paper-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:18px 24px;color:var(--mail-muted);font:11px/1.5 var(--mono,monospace)}
+.mail-paper-kind{display:inline-flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.09em}
+.mail-paper-kind svg{width:18px;height:18px;flex:none}
+.mail-paper-status{padding:2px 7px;border:1px solid var(--mail-rule);border-radius:3px}
+.mail-envelope{padding:0 24px 20px;overflow-wrap:anywhere}
+.mail-envelope-row{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:baseline;column-gap:12px;margin:0;padding:7px 0;font:14px/1.55 var(--sans,sans-serif)}
+.mail-paper .mail-field-name{color:var(--mail-muted);font:600 12px/1.6 var(--mono,monospace)}
+.mail-address{font:13px/1.6 var(--mono,monospace);overflow-wrap:anywhere}
+.mail-addressee{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;min-width:0}
+.mail-review .mail-envelope button{max-width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere;padding:0;border:0;border-radius:2px;color:var(--mail-ink);font:600 14px/1.55 var(--sans,sans-serif);text-decoration:underline;text-decoration-color:var(--mail-rule);text-underline-offset:3px}
+.mail-review .mail-paper button:hover{background:#302d260a;text-decoration-color:var(--mail-muted)}
+.mail-paper button:focus-visible,.mail-paper a:focus-visible,.mail-paper input:focus-visible,.mail-paper textarea:focus-visible{outline:2px solid var(--mail-muted);outline-offset:3px}
+.mail-paper .mail-subject{color:var(--mail-ink);font:600 18px/1.45 var(--sans,sans-serif);margin:0;overflow-wrap:anywhere}
+.mail-message{padding:24px;border-top:1px solid var(--mail-rule)}
+.mail-paper .mail-copy{color:var(--mail-ink);scrollbar-color:#b5ab97 transparent}
+.mail-paper .mail-preparing{color:var(--mail-muted)}
+.mail-paper .mail-attachments{padding-top:16px;border-top:1px solid var(--mail-rule)}
+.mail-paper .mail-attachment{color:var(--mail-ink);border-color:var(--mail-rule);background:#fff4}
+.mail-paper .mail-attachment small{color:var(--mail-muted)}
+.mail-paper .mail-edit-label{color:var(--mail-muted);margin:0}
+.mail-paper .mail-edit-label input,.mail-paper .mail-edit-label textarea{min-width:0;background:#fff6;color:var(--mail-ink);border-color:var(--mail-rule);border-radius:3px}
+.mail-paper .mail-editor{font:13px/1.8 var(--mono,monospace)}
+@container mail-review (max-width:480px){
+  .mail-paper-heading{padding:14px 16px}
+  .mail-envelope{padding:0 16px 14px}
+  .mail-envelope-row{grid-template-columns:54px minmax(0,1fr);column-gap:8px}
+  .mail-message{padding:18px 16px}
+  .mail-paper .mail-subject{font-size:16px}
+}
+.mail-error{color:#df9c7e;font-size:13px}.mail-replies section{padding:20px 0;border-bottom:1px solid var(--line)}.mail-replies header{justify-content:space-between;font-size:12px;color:var(--dim)}.mail-replies h3{font-size:18px;font-weight:500}.mail-replies .mail-copy{min-height:0;max-height:300px}.mail-replies section>button{margin-top:15px}
+.mail-connection-dialog{box-sizing:border-box;width:min(540px,calc(100vw - 32px));max-height:90vh;overflow:auto;background:var(--panel,var(--void,#10121b));color:var(--foreground,var(--bone,#eee));border:1px solid var(--line,#555);border-radius:12px;padding:24px;font:15px/1.5 var(--sans,sans-serif)}.mail-connection-dialog::backdrop{background:#0009;backdrop-filter:blur(5px)}.mail-connection-dialog header{display:flex;justify-content:space-between;align-items:center;gap:12px}.mail-connection-dialog h2{font-size:21px;font-weight:500;margin:0}.mail-connection-dialog footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.mail-server-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:1100px){.surface-grid>.surface:where(.kind-email){grid-column:1 / -1}html body.zen[data-warehouse-page="calliope"] .zen-packed>:where(.surface.kind-email){--stage-span:1}.mail-review{padding:14px}.mail-footer{align-items:flex-start}.mail-server-fields{grid-template-columns:1fr}.mail-copy{max-height:480px}}

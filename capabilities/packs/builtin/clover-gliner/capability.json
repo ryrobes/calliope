@@ -1,0 +1,88 @@
+{
+  "api_version": "rvbbit.capability/v1",
+  "kind": "hf_backend",
+  "name": "clover_gliner",
+  "description": "Pinned GLiNER medium CPU entity spans with the Clover extract contract. Independently installable; does not replace existing SQL aliases.",
+  "source": {
+    "provider": "huggingface",
+    "model": "urchade/gliner_medium-v2.1",
+    "revision": "40ec419335d09393f298636f471328b722c6da9e"
+  },
+  "runtime": {
+    "template": "clover-gliner",
+    "device": "cpu",
+    "base_image": "python:3.12-slim",
+    "port": 8080,
+    "env": {
+      "MODEL_THREADS": "2"
+    },
+    "volumes": [
+      {
+        "name": "model_cache",
+        "mount": "/models"
+      }
+    ]
+  },
+  "backend": {
+    "name": "clover_gliner",
+    "transport": "rvbbit",
+    "batch_size": 8,
+    "max_concurrent": 1,
+    "timeout_ms": 300000
+  },
+  "operators": [
+    {
+      "name": "clover_gliner_extract",
+      "arg_names": [
+        "text",
+        "labels"
+      ],
+      "arg_types": [
+        "text",
+        "text"
+      ],
+      "return_type": "jsonb",
+      "parser": "json",
+      "model": "clover-extract-v1/urchade/gliner_medium-v2.1@40ec419335d09393f298636f471328b722c6da9e/gliner-0.2.16",
+      "inputs": {
+        "text": "{{ inputs.text }}",
+        "labels": "{{ inputs.labels }}"
+      },
+      "description": "Pinned GLiNER medium CPU entity spans with the Clover extract contract. Independently installable; does not replace existing SQL aliases.",
+      "cache_policy": "never",
+      "tests": [
+        {
+          "name": "entity_spans",
+          "sql": "SELECT rvbbit.clover_gliner_extract('Alice works at Acme in Boston.','person,organization,location')::text",
+          "expect": {
+            "type": "contains",
+            "value": "Alice"
+          },
+          "description": "Run the installed CPU model and recover a known person span."
+        }
+      ]
+    }
+  ],
+  "smoke": {
+    "inputs": [
+      {
+        "text": "Alice works at Acme in Boston.",
+        "labels": [
+          "person",
+          "organization",
+          "location"
+        ]
+      }
+    ],
+    "sql": [
+      "SELECT rvbbit.clover_gliner_extract('Alice works at Acme in Boston.','person,organization,location');"
+    ]
+  },
+  "warren": {
+    "container_port": 8080,
+    "health_path": "/health"
+  },
+  "resources": {
+    "gpu": false
+  }
+}

@@ -1,0 +1,74 @@
+name: CalliopeMobile
+options:
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  CalliopeMobile:
+    type: application
+    platform: iOS
+    sources:
+      - App.swift
+      - AudioBridge.swift
+      - AudioPCM.swift
+      - MediaBridge.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.rvbbit.calliope.mobile
+        PRODUCT_NAME: CalliopeMobile
+        INFOPLIST_FILE: Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: Bridge.h
+        ENABLE_DEBUG_DYLIB: NO
+        ENABLE_BITCODE: NO
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": Simulator.entitlements
+        DEAD_CODE_STRIPPING: YES
+        ARCHS: arm64
+        OTHER_LDFLAGS:
+          - "-force_load"
+          - "$(CALLIOPE_STATIC_LIB)"
+          - "-lc++"
+          - "-framework UIKit"
+          - "-framework Metal"
+          - "-framework MetalKit"
+          - "-framework QuartzCore"
+          - "-framework CoreVideo"
+          - "-framework CoreGraphics"
+          - "-framework CoreText"
+          - "-framework CoreFoundation"
+          - "-framework Foundation"
+          - "-framework Security"
+          - "-framework SystemConfiguration"
+          - "-framework UniformTypeIdentifiers"
+          - "-framework IOSurface"
+          - "-framework AVFoundation"
+          - "-framework CoreMedia"
+          - "-ObjC"
+  CalliopeInteractionTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+      - AudioPCM.swift
+    dependencies:
+      - target: CalliopeMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.rvbbit.calliope.interaction-tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+schemes:
+  CalliopeMobile:
+    build:
+      targets:
+        CalliopeMobile: all
+    test:
+      targets:
+        - CalliopeInteractionTests
+      environmentVariables:
+        CALLIOPE_TEST_POINT: "$(CALLIOPE_TEST_POINT)"
+        CALLIOPE_TEST_TEXT: "$(CALLIOPE_TEST_TEXT)"
+        CALLIOPE_TEST_SCROLL: "$(CALLIOPE_TEST_SCROLL)"
+        CALLIOPE_TEST_PHOTO: "$(CALLIOPE_TEST_PHOTO)"
+        CALLIOPE_TEST_PREVIEW: "$(CALLIOPE_TEST_PREVIEW)"
+        CALLIOPE_TEST_LINK: "$(CALLIOPE_TEST_LINK)"

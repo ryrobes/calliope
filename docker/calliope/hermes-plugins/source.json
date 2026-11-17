@@ -1,0 +1,18 @@
+{
+  "claude-subscription-directsdk-experimental": {
+    "repository": "https://github.com/NousResearch/hermes-official-plugins.git",
+    "path": "claude-subscription-directsdk",
+    "revision": "6dacaaddbfd8e98dfc524096c44f712f743246b8",
+    "version": "0.3.3",
+    "license": "MIT",
+    "docs": "https://hermes-agent.nousresearch.com/docs/plugins/claude-subscription-directsdk",
+    "requires_hermes": ">=0.21.4",
+    "claude_code_cli": "2.1.299",
+    "excluded": [
+      "assets/",
+      "evals/",
+      ".gitignore"
+    ],
+    "note": "Vendored verbatim from the plugin directory at revision (the standalone hermes-plugin-claude-subscription-directsdk repo moved here on 2026-10-10). Baked in as a bundled provider. Claude Code 2.1.299 is the CLI the plugin's README re-checked on Max (Oct 14-15 2026) and is past the 2.1.293 that the haiku alias needs. The image exports Claude Code's quiet-traffic flags, which the plugin never removes, so its claude_code_telemetry setting stays effectively off."
+  }
+}

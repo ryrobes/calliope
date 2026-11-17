@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Invoice review — Computer acceptance</title>
+<style>
+:root { font-family: system-ui, sans-serif; color: #152b3d; background: #edf2f5; }
+body { max-width: 900px; margin: 40px auto; padding: 0 24px; }
+header { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+h1 { font-size:30px; margin-bottom:8px; } p { color:#526678; }
+section { padding:24px; background:white; border:1px solid #ccd7e0; border-radius:12px; margin-top:24px; }
+label { display:inline-flex; flex-direction:column; gap:6px; margin-right:24px; font-weight:600; }
+select, button { font:inherit; padding:10px 14px; border:1px solid #879baa; border-radius:6px; background:white; }
+button { color:white; background:#12647b; cursor:pointer; }
+#total { font-size:32px; font-weight:700; }
+table { border-collapse:collapse; width:100%; margin-top:24px; }
+th,td { padding:14px 8px; border-bottom:1px solid #dce3e9; text-align:left; }
+th:last-child,td:last-child { text-align:right; }
+small { color:#526678; }
+</style>
+</head>
+<body>
+<header><div><h1>Invoice review</h1><p>Synthetic office-work fixture · Computer acceptance</p></div><button id="reset" type="button">Reset filters</button></header>
+<section aria-label="Invoice filters">
+<label>Customer<select id="customer"><option value="all">All customers</option><option>North</option><option>South</option></select></label>
+<label>Status<select id="status"><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Pending</option></select></label>
+</section>
+<section aria-label="Filtered invoice results">
+<small>Total for shown invoices</small><div id="total" role="status" aria-live="polite"></div>
+<p id="count"></p>
+<table><thead><tr><th>Invoice</th><th>Customer</th><th>Status</th><th>Amount</th></tr></thead><tbody id="rows"></tbody></table>
+</section>
+<script>
+const invoices = [
+ {id:'N-101',customer:'North',status:'paid',amount:100},
+ {id:'N-102',customer:'North',status:'pending',amount:200},
+ {id:'N-103',customer:'North',status:'paid',amount:300},
+ {id:'S-201',customer:'South',status:'paid',amount:150},
+ {id:'S-202',customer:'South',status:'pending',amount:250}
+];
+const money = value => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(value);
+function render() {
+ const customer = document.getElementById('customer').value;
+ const status = document.getElementById('status').value;
+ const visible = invoices.filter(row => (customer==='all' || row.customer===customer) && (status==='all' || row.status===status));
+ document.getElementById('rows').replaceChildren(...visible.map(row => {
+   const tr=document.createElement('tr');
+   for (const value of [row.id,row.customer,row.status,money(row.amount)]) {
+     const td=document.createElement('td'); td.textContent=value; tr.append(td);
+   }
+   return tr;
+ }));
+ document.getElementById('count').textContent=`${visible.length} invoices shown`;
+ document.getElementById('total').textContent=money(invoices.reduce((sum,row)=>sum+row.amount,0));
+}
+document.getElementById('customer').addEventListener('change',render);
+document.getElementById('status').addEventListener('change',render);
+document.getElementById('reset').addEventListener('click',()=>{
+ document.getElementById('customer').value='all'; document.getElementById('status').value='all'; render();
+});
+render();
+</script>
+</body>
+</html>

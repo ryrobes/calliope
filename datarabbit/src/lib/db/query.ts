@@ -1,0 +1,457 @@
+import "server-only"
+
+import type { PoolClient, QueryResult as PgQueryResult, QueryResultRow } from "pg"
+import { getPool, type PoolLane } from "./pool"
+import type { QueryResult, QueryResultColumn, StatementResult } from "./types"
+import { splitStatements } from "@/lib/sql/then-rewrite"
+
+const DEFAULT_ROW_LIMIT = 5_000
+
+const TYPE_NAME_CACHE = new Map<string, Map<number, string>>()
+
+// Column provenance: the driver gives a tableID (pg_class oid) + columnID (attnum)
+// per result field; resolve those to schema.table.column names so the UI can
+// cross-filter by the REAL source table. Cached per connection+database (keyed
+// `oid:attnum`). DDL (rename/drop a column) can stale this cache, but it's
+// fail-safe: injectStatementFilters re-validates the column against the LIVE schema
+// before injecting, so a stale name simply doesn't match and the filter no-ops.
+interface ColumnSource {
+  schema: string
+  table: string
+  column: string
+}
+const COLUMN_SOURCE_CACHE = new Map<string, Map<string, ColumnSource>>()
+
+interface PgFieldLike {
+  name: string
+  dataTypeID: number
+  tableID?: number
+  columnID?: number
+}
+
+async function loadColumnSources(
+  client: PoolClient,
+  key: string,
+  fields: ReadonlyArray<PgFieldLike>,
+): Promise<Map<string, ColumnSource>> {
+  let cache = COLUMN_SOURCE_CACHE.get(key)
+  if (!cache) {
+    cache = new Map<string, ColumnSource>()
+    COLUMN_SOURCE_CACHE.set(key, cache)
+  }
+  const oids = new Set<number>()
+  const attnums = new Set<number>()
+  for (const f of fields) {
+    const oid = f.tableID ?? 0
+    const attnum = f.columnID ?? 0
+    if (!oid || !attnum || cache.has(`${oid}:${attnum}`)) continue
+    oids.add(oid)
+    attnums.add(attnum)
+  }
+  if (oids.size > 0) {
+    try {
+      const res = await client.query<{ toid: number; anum: number; sch: string; tbl: string; col: string }>(
+        `SELECT c.oid::int4 AS toid, a.attnum::int4 AS anum, n.nspname AS sch, c.relname AS tbl, a.attname AS col
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_attribute a ON a.attrelid = c.oid
+         WHERE c.oid = ANY($1::oid[]) AND a.attnum = ANY($2::int2[])
+           AND a.attnum > 0 AND NOT a.attisdropped`,
+        [[...oids], [...attnums]],
+      )
+      for (const r of res.rows) cache.set(`${r.toid}:${r.anum}`, { schema: r.sch, table: r.tbl, column: r.col })
+    } catch {
+      /* best-effort: cross-filter simply won't engage for unresolved columns */
+    }
+  }
+  return cache
+}
+
+function buildColumns(
+  fields: ReadonlyArray<PgFieldLike>,
+  typeNames: Map<number, string>,
+  sources?: Map<string, ColumnSource>,
+): QueryResultColumn[] {
+  return fields.map((f) => {
+    const src = sources && f.tableID && f.columnID ? sources.get(`${f.tableID}:${f.columnID}`) : undefined
+    return {
+      name: f.name,
+      dataTypeId: f.dataTypeID,
+      dataTypeName: typeNames.get(f.dataTypeID),
+      sourceSchema: src?.schema,
+      sourceTable: src?.table,
+      sourceColumn: src?.column,
+    }
+  })
+}
+
+/** Build one transcript entry per statement from the driver's multi-statement
+ *  result array. The statement TEXT is attached only when the split count matches
+ *  the result count 1:1 (else cards stay unlabeled rather than mislabeled). */
+function buildStatementResults(
+  rawArr: PgQueryResult<QueryResultRow>[],
+  sqlText: string,
+  typeNames: Map<number, string>,
+  limit: number,
+  sources?: Map<string, ColumnSource>,
+): StatementResult[] {
+  const statements = splitStatements(sqlText)
+  const labeled = statements.length === rawArr.length ? statements : null
+  return rawArr.map((r, i) => {
+    const safeRows = r.rows ?? []
+    const truncated = safeRows.length > limit
+    const rows = truncated ? safeRows.slice(0, limit) : safeRows
+    const columns = buildColumns((r.fields ?? []) as PgFieldLike[], typeNames, sources)
+    return {
+      index: i,
+      sql: labeled ? labeled[i] : undefined,
+      command: r.command,
+      columns,
+      rows,
+      rowCount: typeof r.rowCount === "number" ? r.rowCount : rows.length,
+      truncated,
+    }
+  })
+}
+
+function pickPrimaryResult(
+  raw: PgQueryResult<QueryResultRow> | PgQueryResult<QueryResultRow>[],
+): PgQueryResult<QueryResultRow> {
+  if (!Array.isArray(raw)) return raw
+  if (raw.length === 0) {
+    return { rows: [], fields: [], command: "", rowCount: 0, oid: 0 } as unknown as PgQueryResult<QueryResultRow>
+  }
+  // Prefer the last result that returned rows; otherwise the last result.
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const r = raw[i]
+    if (r && Array.isArray(r.rows) && r.rows.length > 0) return r
+  }
+  return raw[raw.length - 1]
+}
+
+async function loadTypeNames(client: PoolClient, key: string): Promise<Map<number, string>> {
+  const cached = TYPE_NAME_CACHE.get(key)
+  if (cached) return cached
+
+  const result = await client.query<{ oid: number; typname: string }>(
+    "SELECT oid::int4 AS oid, typname FROM pg_type",
+  )
+  const map = new Map<number, string>()
+  for (const row of result.rows) map.set(row.oid, row.typname)
+  TYPE_NAME_CACHE.set(key, map)
+  return map
+}
+
+export interface ExecuteOpts {
+  rowLimit?: number
+  /** If true, wrap the query in a read-only transaction. */
+  readOnly?: boolean
+  /** Burrow mode (rvbbit-sql/docs/BURROW_PLAN.md): execute as this PG role.
+   *  Wraps the statement in a transaction and SET LOCAL ROLEs into it, so
+   *  the DBA's GRANTs/RLS govern the query and the pooled connection
+   *  reverts on txn end. The service role stays least-privilege — that is
+   *  the real backstop for SQL that ends the transaction itself. */
+  role?: string
+  /** Run against a different database on the same server (e.g. pg_cron's home db). */
+  database?: string
+  /**
+   * Per-query statement_timeout (ms) overriding the connection default (the
+   * pool's 30m DEFAULT_STATEMENT_TIMEOUT_MS). 0 disables the timeout entirely.
+   * Postgres arms statement_timeout once, when a query message arrives, from the
+   * session GUC at that instant — nothing inside the called function (set_config,
+   * a function SET clause, or COMMIT in a procedure) can move it afterward. So a
+   * long server-side job like rvbbit.catalog_crawl() must have the timeout set on
+   * the connection BEFORE the call, as its own statement. We do that here via a
+   * separate `SET` message, then RESET so the pooled connection's default is
+   * restored for the next borrower.
+   */
+  statementTimeout?: number
+  /** Pool lane. User SQL uses the interactive lane; progress/metadata probes
+   *  use the meta lane so they do not starve SQL blocks. */
+  poolLane?: PoolLane
+  /** Client-supplied token registering this query's backend PID so a separate
+   *  request can pg_cancel_backend() exactly it (see cancelQueryByToken). */
+  cancelToken?: string
+}
+
+// token -> the backend running it, so a Stop button can cancel that exact query.
+const CANCEL_REGISTRY = new Map<string, { connectionId: string; pid: number; database?: string }>()
+
+// ── Manual transactions (autocommit off) ────────────────────────────────────
+//
+// A manual transaction must run all its statements on ONE pinned backend, but the
+// pool releases the client after each query. So a window's transaction checks out
+// a client, holds it across runs, and releases it on COMMIT/ROLLBACK. An idle
+// sweep rolls back + releases any forgotten session so it can't pin a connection
+// forever.
+
+interface TxnSession {
+  client: PoolClient
+  connectionId: string
+  database?: string
+  recordId: string
+  /** Backend PID of the pinned client, so a Stop can pg_cancel_backend exactly it. */
+  pid: number | null
+  lastUsed: number
+}
+const TXN_SESSIONS = new Map<string, TxnSession>()
+const TXN_IDLE_MS = 10 * 60_000
+let txnSweepStarted = false
+function ensureTxnSweep(): void {
+  if (txnSweepStarted) return
+  txnSweepStarted = true
+  const timer = setInterval(() => {
+    const now = Date.now()
+    for (const [id, s] of TXN_SESSIONS) {
+      if (now - s.lastUsed <= TXN_IDLE_MS) continue
+      TXN_SESSIONS.delete(id)
+      void (async () => {
+        try { await s.client.query("ROLLBACK") } catch { /* ignore */ } finally { s.client.release() }
+      })()
+    }
+  }, 60_000)
+  // Don't keep the process alive just for the sweep.
+  ;(timer as { unref?: () => void }).unref?.()
+}
+
+/** Run a statement inside the pinned transaction for `sessionId`, beginning the
+ *  transaction lazily on the first statement. The held client stays checked out
+ *  (even on a statement error, so the user can ROLLBACK) until txnEnd. */
+export async function txnQuery(
+  sessionId: string,
+  connectionId: string,
+  sql: string,
+  opts: { rowLimit?: number; database?: string; cancelToken?: string } = {},
+): Promise<QueryResult> {
+  ensureTxnSweep()
+  const limit = opts.rowLimit ?? DEFAULT_ROW_LIMIT
+  let session = TXN_SESSIONS.get(sessionId)
+  if (session) {
+    // A transaction is pinned to ONE backend (its original connection + database).
+    // Refuse a statement that arrived for a different target — otherwise it would
+    // silently run on the pinned backend while the caller believes it hit the new
+    // one (e.g. the db-switcher changed mid-transaction).
+    if (session.connectionId !== connectionId || (session.database ?? "") !== (opts.database ?? "")) {
+      throw new Error(
+        "This window has an open transaction pinned to its original connection/database. Commit or roll back before switching.",
+      )
+    }
+  } else {
+    const { pool, record } = await getPool(connectionId, opts.database, "interactive")
+    const client = await pool.connect()
+    try {
+      await client.query("BEGIN")
+    } catch (e) {
+      client.release()
+      throw e
+    }
+    let pid = (client as unknown as { processID?: number | null }).processID ?? null
+    if (pid == null) {
+      try {
+        pid = (await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid ?? null
+      } catch {
+        pid = null
+      }
+    }
+    session = { client, connectionId, database: opts.database, recordId: record.id, pid, lastUsed: Date.now() }
+    TXN_SESSIONS.set(sessionId, session)
+  }
+  session.lastUsed = Date.now()
+  const client = session.client
+  const start = Date.now()
+  // Register the pinned backend for cancellation, but only around THIS statement —
+  // pg_cancel_backend has no statement identity, so the token must be gone before
+  // the next statement reuses the same backend (mirrors executeQuery).
+  let registered = false
+  if (opts.cancelToken && session.pid != null) {
+    CANCEL_REGISTRY.set(opts.cancelToken, { connectionId, pid: session.pid, database: opts.database })
+    registered = true
+  }
+  let raw: PgQueryResult<QueryResultRow> | PgQueryResult<QueryResultRow>[]
+  try {
+    raw = await client.query<QueryResultRow>({ text: sql })
+  } finally {
+    if (registered) CANCEL_REGISTRY.delete(opts.cancelToken!)
+  }
+  const durationMs = Date.now() - start
+  const result = pickPrimaryResult(raw)
+  const safeRows = result.rows ?? []
+  const truncated = safeRows.length > limit
+  const rows = truncated ? safeRows.slice(0, limit) : safeRows
+  const typeNames = await loadTypeNames(client, session.recordId)
+  const allRaw = Array.isArray(raw) ? raw : [raw]
+  const sources = await loadColumnSources(
+    client,
+    `${session.recordId}:${session.database ?? ""}`,
+    allRaw.flatMap((r) => (r.fields ?? []) as PgFieldLike[]),
+  )
+  const columns = buildColumns((result.fields ?? []) as PgFieldLike[], typeNames, sources)
+  let results: StatementResult[] | undefined
+  if (Array.isArray(raw) && raw.length > 1) {
+    results = buildStatementResults(raw, sql, typeNames, limit, sources)
+  }
+  return {
+    sql,
+    connectionId,
+    columns,
+    rows,
+    rowCount: typeof result.rowCount === "number" ? result.rowCount : rows.length,
+    truncated,
+    durationMs,
+    queueWaitMs: 0,
+    command: result.command,
+    results,
+  }
+}
+
+/** Commit or roll back the pinned transaction for `sessionId` and release its
+ *  connection back to the pool. Returns false if there was no open session. */
+export async function txnEnd(sessionId: string, action: "commit" | "rollback"): Promise<boolean> {
+  const session = TXN_SESSIONS.get(sessionId)
+  if (!session) return false
+  TXN_SESSIONS.delete(sessionId)
+  try {
+    await session.client.query(action === "commit" ? "COMMIT" : "ROLLBACK")
+  } catch {
+    /* the connection is being discarded anyway */
+  } finally {
+    session.client.release()
+  }
+  return true
+}
+
+/** Cancel the in-flight query registered under `token` via pg_cancel_backend on a
+ *  separate (meta-lane) connection. Returns true if a backend was signalled. */
+export async function cancelQueryByToken(token: string): Promise<boolean> {
+  const entry = CANCEL_REGISTRY.get(token)
+  if (!entry) return false
+  try {
+    const { pool } = await getPool(entry.connectionId, entry.database, "meta")
+    const client = await pool.connect()
+    try {
+      await client.query("SELECT pg_cancel_backend($1)", [entry.pid])
+      return true
+    } finally {
+      client.release()
+    }
+  } catch {
+    return false
+  }
+}
+
+export async function executeQuery(
+  connectionId: string,
+  sql: string,
+  opts: ExecuteOpts = {},
+): Promise<QueryResult> {
+  const { pool, record } = await getPool(connectionId, opts.database, opts.poolLane)
+  const limit = opts.rowLimit ?? DEFAULT_ROW_LIMIT
+  const acquireStart = Date.now()
+  const client = await pool.connect()
+  const queueWaitMs = Date.now() - acquireStart
+  const start = Date.now()
+  // Override the connection's default statement_timeout for this one query, as a
+  // separate message so Postgres re-arms the timer from the new value (see
+  // ExecuteOpts.statementTimeout). RESET in `finally` keeps the pooled connection
+  // clean for the next borrower.
+  const overrideTimeout = Number.isFinite(opts.statementTimeout) && opts.statementTimeout! >= 0
+  try {
+    if (overrideTimeout) {
+      await client.query(`SET statement_timeout = ${Math.floor(opts.statementTimeout!)}`)
+    }
+    const asRole = typeof opts.role === "string" && /^[a-zA-Z_][a-zA-Z0-9_$]{0,62}$/.test(opts.role)
+      ? opts.role
+      : null
+    if (opts.role && !asRole) {
+      throw new Error(`invalid session role name: ${JSON.stringify(opts.role)}`)
+    }
+    if (opts.readOnly || asRole) {
+      await client.query(opts.readOnly ? "BEGIN READ ONLY" : "BEGIN")
+    }
+    if (asRole) {
+      await client.query(`SET LOCAL ROLE "${asRole.replace(/"/g, '""')}"`)
+    }
+    // Register the backend PID for cancellation — but ONLY for the duration of the
+    // user statement. pg_cancel_backend has no statement identity, so the token
+    // must be gone before the post-query work (loadTypeNames / RESET) and before
+    // the connection is released and the PID reused, or a late Stop would cancel
+    // the wrong query. `processID` is captured at connect; fall back to a query.
+    let registered = false
+    if (opts.cancelToken) {
+      let pid = (client as unknown as { processID?: number | null }).processID ?? null
+      if (pid == null) {
+        try {
+          pid = (await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid ?? null
+        } catch {
+          pid = null
+        }
+      }
+      if (pid != null) {
+        CANCEL_REGISTRY.set(opts.cancelToken, { connectionId, pid, database: opts.database })
+        registered = true
+      }
+    }
+    let raw: PgQueryResult<QueryResultRow> | PgQueryResult<QueryResultRow>[]
+    try {
+      raw = await client.query<QueryResultRow>({ text: sql })
+    } finally {
+      if (registered) CANCEL_REGISTRY.delete(opts.cancelToken!)
+    }
+    const durationMs = Date.now() - start
+
+    // node-postgres returns an array of results for multi-statement queries.
+    // We pick the *last* SELECT-shaped result (the one with fields) as the
+    // visible payload, matching what a SQL client traditionally shows.
+    const result = pickPrimaryResult(raw)
+    const safeRows = result.rows ?? []
+    const truncated = safeRows.length > limit
+    const rows = truncated ? safeRows.slice(0, limit) : safeRows
+
+    const typeNames = await loadTypeNames(client, record.id)
+    // Resolve column provenance once for ALL fields (primary + every statement) so
+    // a clicked cell can cross-filter / broadcast by its real source table. Cached
+    // by connection+database (pg_class OIDs are per-database).
+    const allRaw = Array.isArray(raw) ? raw : [raw]
+    const sources = await loadColumnSources(
+      client,
+      `${record.id}:${opts.database ?? ""}`,
+      allRaw.flatMap((r) => (r.fields ?? []) as PgFieldLike[]),
+    )
+    const columns = buildColumns((result.fields ?? []) as PgFieldLike[], typeNames, sources)
+
+    if (opts.readOnly || asRole) {
+      await client.query("COMMIT")
+    }
+
+    // Multi-statement runs carry a per-statement breakdown so the transcript can
+    // show every output; single-statement runs leave `results` absent (unchanged).
+    let results: StatementResult[] | undefined
+    if (Array.isArray(raw) && raw.length > 1) {
+      results = buildStatementResults(raw, sql, typeNames, limit, sources)
+    }
+
+    return {
+      sql,
+      connectionId,
+      columns,
+      rows,
+      rowCount: typeof result.rowCount === "number" ? result.rowCount : rows.length,
+      truncated,
+      durationMs,
+      queueWaitMs,
+      command: result.command,
+      results,
+    }
+  } catch (err) {
+    if (opts.readOnly || opts.role) {
+      try { await client.query("ROLLBACK") } catch { /* ignore */ }
+    }
+    throw err
+  } finally {
+    if (opts.cancelToken) CANCEL_REGISTRY.delete(opts.cancelToken)
+    if (overrideTimeout) {
+      try { await client.query("RESET statement_timeout") } catch { /* ignore */ }
+    }
+    client.release()
+  }
+}

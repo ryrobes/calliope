@@ -1,0 +1,37 @@
+{
+  "calliope_version": "1.2.0-rc.5",
+  "rvbbit_engine_version": "4.2.10",
+  "images": [
+    "calliope-postgres",
+    "calliope-datarabbit",
+    "calliope-warren",
+    "calliope-server",
+    "calliope-hermes",
+    "calliope-desktop",
+    "calliope-doc-extract",
+    "calliope-clover",
+    "calliope-ui-studio",
+    "calliope-clover-decisions",
+    "calliope-clover-utilities",
+    "calliope-clover-web",
+    "calliope-clover-research",
+    "calliope-clover-analytics",
+    "calliope-clover-gliner",
+    "calliope-clover-tspulse"
+  ],
+  "upstreams": {
+    "hermes_base_image": "nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3",
+    "hindsight_image": "ghcr.io/vectorize-io/hindsight-api:1.2.1-slim@sha256:084af5a6522d67f5905f7992cdb3d910d778496e5dd2566caec7cf82ed2e7d8c"
+  },
+  "schema": {
+    "baseline": "4.2.10-calliope-0508",
+    "migration_target": "0508_semantic_compiler_slice_names",
+    "mode": "baked-baseline-with-incremental-upgrades",
+    "baseline_status": "verified-during-image-build"
+  },
+  "runtime_capabilities": [
+    "runtimes/python-runtime",
+    "runtimes/mcp-gateway",
+    "data/dlt-mirror"
+  ]
+}

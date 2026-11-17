@@ -1,0 +1,260 @@
+# Two Postgres 18 instances side by side, plus a bench harness container.
+#
+#   pg-heap     : vanilla postgres:18, the baseline
+#   pg-rvbbit   : postgres:18 + pg_rvbbit extension built from this tree
+#   bench       : python tooling for data gen + query timing (idle by default;
+#                 exec into it to run scripts)
+
+services:
+  pg-heap:
+    image: postgres:18
+    container_name: rvbbit-pg-heap
+    environment:
+      POSTGRES_PASSWORD: rvbbit
+      POSTGRES_DB: bench
+    ports:
+      - "55432:5432"
+    volumes:
+      - heap_data:/var/lib/postgresql
+    # pg-heap gets the same general tuning as pg-rvbbit (parallel-query
+    # pool sizes, AIO knobs, planner cost model) so the baseline isn't
+    # held back by vanilla defaults. The pg_rvbbit-specific bits are
+    # excluded — no extension preload, no extension-specific GUCs.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=3GB
+      - -c
+      - work_mem=128MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_cache_size=8GB
+      - -c
+      - default_statistics_target=200
+      - -c
+      - max_worker_processes=32
+      - -c
+      - max_parallel_workers=16
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - max_parallel_maintenance_workers=4
+      - -c
+      - io_method=worker
+      - -c
+      - io_workers=16
+      - -c
+      - effective_io_concurrency=64
+      - -c
+      - maintenance_io_concurrency=16
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pg-rvbbit:
+    image: ${RVBBIT_PG_IMAGE:-docker-pg-rvbbit}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rvbbit
+    container_name: rvbbit-pg-rvbbit
+    environment:
+      POSTGRES_PASSWORD: rvbbit
+      POSTGRES_DB: bench
+      RVBBIT_CREDENTIAL_KEY: ${RVBBIT_CREDENTIAL_KEY:-}
+      RVBBIT_CREDENTIAL_KEYS: ${RVBBIT_CREDENTIAL_KEYS:-}
+      RVBBIT_CREDENTIAL_KEY_FILE: ${RVBBIT_CREDENTIAL_KEY_FILE:-}
+      RVBBIT_CREDENTIAL_KEYS_FILE: ${RVBBIT_CREDENTIAL_KEYS_FILE:-}
+      # Pass through OpenRouter API key for semantic operators (R5+).
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Optional direct provider keys. These are env var names referenced
+      # from rvbbit.backends.auth_header_env, not values stored in SQL.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Managed-capability key (hutch tenant) — name referenced from
+      # rvbbit.backends.auth_header_env, value lives in docker/.env. One
+      # key covers all of Clover (ML + LLM) since the 2026-07 SKU merge.
+      RVBBIT_CLOVER_KEY: ${RVBBIT_CLOVER_KEY:-}
+      RVBBIT_DUCK_BACKEND: ${RVBBIT_DUCK_BACKEND:-true}
+      RVBBIT_DUCK_BACKEND_SHARED: ${RVBBIT_DUCK_BACKEND_SHARED:-}
+      RVBBIT_DUCK_BACKEND_SHARED_STRICT: ${RVBBIT_DUCK_BACKEND_SHARED_STRICT:-}
+      RVBBIT_DUCK_BACKEND_SHARED_TARGETS: ${RVBBIT_DUCK_BACKEND_SHARED_TARGETS:-}
+      RVBBIT_DUCK_BACKEND_SHARED_DIR: ${RVBBIT_DUCK_BACKEND_SHARED_DIR:-}
+      RVBBIT_DUCK_BACKEND_SHARED_WORKERS: ${RVBBIT_DUCK_BACKEND_SHARED_WORKERS:-}
+      RVBBIT_DUCK_BACKEND_SHARED_LAUNCH: ${RVBBIT_DUCK_BACKEND_SHARED_LAUNCH:-}
+      RVBBIT_DUCK_TELEMETRY_BATCH: ${RVBBIT_DUCK_TELEMETRY_BATCH:-}
+      RVBBIT_DUCK_TELEMETRY_FLUSH_MS: ${RVBBIT_DUCK_TELEMETRY_FLUSH_MS:-}
+      RVBBIT_GPU_GQE_BACKEND: ${RVBBIT_GPU_GQE_BACKEND:-true}
+      RVBBIT_GQE_BIN: ${RVBBIT_GQE_BIN:-}
+      RVBBIT_GQE_BRIDGE_BIN: ${RVBBIT_GQE_BRIDGE_BIN:-}
+      RVBBIT_GQE_CLI: ${RVBBIT_GQE_CLI:-}
+      RVBBIT_GQE_NODE_MANAGER: ${RVBBIT_GQE_NODE_MANAGER:-}
+      RVBBIT_GQE_TASK_MANAGER: ${RVBBIT_GQE_TASK_MANAGER:-}
+      RVBBIT_GQE_SERVER_URL: ${RVBBIT_GQE_SERVER_URL:-}
+      RVBBIT_GQE_AUTO_START: ${RVBBIT_GQE_AUTO_START:-true}
+      RVBBIT_GQE_NUM_GPUS: ${RVBBIT_GQE_NUM_GPUS:-}
+      RVBBIT_GQE_CLIENT_MODE: ${RVBBIT_GQE_CLIENT_MODE:-}
+      RVBBIT_GQE_FLIGHT_FALLBACK: ${RVBBIT_GQE_FLIGHT_FALLBACK:-}
+      RVBBIT_GQE_ALLOW_RISKY_SHAPES: ${RVBBIT_GQE_ALLOW_RISKY_SHAPES:-}
+      # security-01: when set, the backend sends this bearer token on every MCP
+      # gateway request; set the SAME value on the mcp-gateway service to enforce
+      # auth. Empty (dev default) = the gateway runs open on the internal network.
+      RVBBIT_GATEWAY_TOKEN: ${RVBBIT_GATEWAY_TOKEN:-}
+      # Google ADC can be a normal credentials path inside the container or
+      # compact service-account JSON for local/dev Compose usage.
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+      # Flow control: how many concurrent provider calls allowed per backend.
+      # Default 8 — bump for high-throughput workloads, lower for tight
+      # rate limits.
+      RVBBIT_PROVIDER_MAX_CONCURRENT: ${RVBBIT_PROVIDER_MAX_CONCURRENT:-32}
+      # Thread pool size per backend. Mostly infrastructure today; used
+      # by future multi-step parallel sub-steps and custom-scan batching.
+      RVBBIT_POOL_SIZE: ${RVBBIT_POOL_SIZE:-32}
+      # In-memory cache capacity (entries). Tune for repeated workloads.
+      RVBBIT_CACHE_SIZE: ${RVBBIT_CACHE_SIZE:-30000}
+      # DataFusion in-process tokio worker threads (df_inprocess route).
+      # Unset → pg_rvbbit picks min(num_cpus, 8). Set 0 to force a
+      # single-thread runtime, or N to pin to a specific count.
+      RVBBIT_DF_THREADS: ${RVBBIT_DF_THREADS:-}
+      # Native CustomScan row-group worker threads for selected fast paths.
+      # Unset → min(num_cpus, 8); clamped to row-group count. Set 1 for serial.
+      RVBBIT_NATIVE_THREADS: ${RVBBIT_NATIVE_THREADS:-}
+      # Parquet writer knobs. See crates/rvbbit_storage/src/row_group.rs
+      # for the full list of supported keys.
+      RVBBIT_PARQUET_V2: ${RVBBIT_PARQUET_V2:-on}
+      RVBBIT_PARQUET_BLOOM: ${RVBBIT_PARQUET_BLOOM:-on}
+      RVBBIT_PARQUET_PAGE_ROWS: ${RVBBIT_PARQUET_PAGE_ROWS:-5000}
+      # Extend bloom filters to numeric / temporal columns too. Off by
+      # default (text-only is the cheap-safe setting); flip on for
+      # workloads heavy in point-equality queries on integer/date cols.
+      # Re-compact after toggling to materialize blooms in the parquet
+      # files; existing row groups keep whatever they were written with.
+      RVBBIT_PARQUET_BLOOM_NUMERIC: ${RVBBIT_PARQUET_BLOOM_NUMERIC:-on}
+      # Backend-local scan batch cache (decoded Arrow batches keyed by
+      # (path, mtime, projection)). LRU eviction; per-backend, so total
+      # memory across the cluster is roughly N_backends × this size.
+      # Default 1024 MiB fits a 200k-row ClickBench hits table whole.
+      RVBBIT_SCAN_BATCH_CACHE_MB: ${RVBBIT_SCAN_BATCH_CACHE_MB:-2048}
+      RVBBIT_COLUMNAR_CACHE_MB: ${RVBBIT_COLUMNAR_CACHE_MB:-2048}
+      # budgeted per-backend columnar accelerator cache ^
+      # RVBBIT_ROUTE_NO_PROFILE_NATIVE_MAX_ROWS: 500000
+      # RVBBIT_ROUTE_NO_PROFILE_VARIANT_MIN_ROWS: 250000
+    ports:
+      - "55433:5432"
+    volumes:
+      - rvbbit_data:/var/lib/postgresql
+      - ../bench/clickbench/direct_accel:/rvbbit_import:ro
+      - rvbbit_staging:/staging
+    # All knobs come from /etc/rvbbit/tuning.conf (see
+    # docker/config/rvbbit-tuning.conf). Override individual settings by
+    # adding `-c key=value` after the config_file line — last value wins.
+    # `include_if_exists` is a config-file directive (not a GUC) so it
+    # can't be set via -c; using -c config_file=... is the supported
+    # path for replacing the primary postgresql.conf.
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/rvbbit/tuning.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Legacy dev-only gateway. V1 installs MCP through the Warren catalog
+  # (`make mcp-gateway-up`) so a plain `make up` does not start this service.
+  mcp-gateway:
+    profiles:
+      - legacy-mcp-gateway
+    build:
+      context: ../capabilities/packs/runtimes/mcp-gateway
+    container_name: rvbbit-mcp-gateway
+    depends_on:
+      pg-rvbbit:
+        condition: service_healthy
+    environment:
+      RVBBIT_DSN: postgresql://postgres:rvbbit@pg-rvbbit:5432/bench
+      # Pass through any creds an MCP server might need (resolved at spawn
+      # via ${VAR} refs in rvbbit.mcp_servers.env).
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+    # pg-rvbbit and bench reach it via docker DNS as mcp-gateway:9180. The
+    # localhost-bound host port lets the lens dev server POST install-time
+    # secrets to the gateway; in prod the lens runs in this network and reaches
+    # mcp-gateway:9180 directly.
+    ports:
+      - "127.0.0.1:9180:9180"
+    expose:
+      - "9180"
+    # Persist the encrypted secret store + its key across rebuilds/recreates.
+    volumes:
+      - mcp_gateway_data:/app/data
+    restart: unless-stopped
+
+  bench:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bench
+    container_name: rvbbit-bench
+    depends_on:
+      pg-heap:
+        condition: service_healthy
+      pg-rvbbit:
+        condition: service_healthy
+    environment:
+      HEAP_DSN: postgresql://postgres:rvbbit@pg-heap:5432/bench
+      RVBBIT_DSN: postgresql://postgres:rvbbit@pg-rvbbit:5432/bench
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+    volumes:
+      - ../bench:/bench
+      - ../bench/clickbench/direct_accel:/rvbbit_import
+      - ../tests:/tests
+      - ../sidecars:/sidecars:ro
+      - ../results:/results
+      - ../capabilities:/capabilities:ro
+      # POC: allow the benchmark harness to run DuckDB directly over
+      # Rvbbit's compacted parquet files for guarded read-only hot paths.
+      - rvbbit_data:/rvbbit_pgdata:ro
+      # Mount host CSV directory read-only for benchmarks against
+      # real-world datasets (e.g. bigfoot sightings).
+      - ${RVBBIT_CSV_DIR:-./csv-files}:/csv-files:ro
+    working_dir: /bench
+    # Idle by default so you can `docker compose exec bench python run.py …`.
+    command: ["sleep", "infinity"]
+
+  # Document-brain extraction sidecar (dev build from sidecars/doc-extract).
+  # 0047 registered the extract_doc backend at this container name.
+  doc-extract:
+    build:
+      context: ../sidecars/doc-extract
+    container_name: rvbbit-doc-extract
+    volumes:
+      - rvbbit_staging:/staging
+    restart: unless-stopped
+
+volumes:
+  heap_data:
+  rvbbit_data:
+  mcp_gateway_data:
+  rvbbit_staging:

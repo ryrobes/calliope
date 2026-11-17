@@ -1,0 +1,131 @@
+/* Gallery's collection language, with a persistent worksheet frame for data.
+   All modes share the same gutters; only the inner reading surface scrolls. */
+#meaning-desk{--desk-gutter:max(20px,4vw);--desk-surface:color-mix(in oklch,var(--panel) 90%,transparent);--desk-control:34px;position:relative;display:flex;flex-direction:column;height:calc(100dvh - var(--meaning-rail-height));overflow:hidden;overscroll-behavior:contain;-webkit-font-smoothing:antialiased}
+#meaning-desk,#meaning-desk *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 45%,transparent) transparent}
+#desk-nav button,.desk-types button,.desk-object,.desk-actions button,.desk-local button,.desk-area-card,.desk-link{border-radius:0;font-family:var(--font);letter-spacing:0;text-transform:none}
+#meaning-desk button:disabled{cursor:default}
+.desk-icon-button svg,.desk-nav-actions button>svg,.desk-area-card svg{display:block;width:18px;height:18px;flex:none}
+#desk-search{height:var(--desk-control);border-radius:0;background:color-mix(in oklch,var(--panel) 62%,transparent);font:var(--rvbbit-type-body)/1 var(--font);padding:0 12px;border:1px solid var(--line)}
+#desk-nav{display:flex;flex:none;align-items:center;justify-content:space-between;gap:16px;min-height:54px;padding:8px var(--desk-gutter);border-bottom:1px solid var(--line);background:color-mix(in oklch,var(--page) 58%,transparent);font-size:var(--rvbbit-type-body)}
+.desk-location{display:flex;align-items:center;gap:6px;min-width:0}
+.desk-location>span{color:var(--muted);margin-inline:4px}.desk-location>strong{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#desk-nav button,#desk-nav a{min-height:34px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+#desk-nav .desk-icon-button{padding:7px;width:34px}.desk-nav-actions{display:flex;align-items:center;gap:12px;flex:none}.desk-nav-actions>a{color:var(--accent)}
+#desk-nav button:disabled{opacity:.3}
+#desk-nav [aria-pressed=true]{background:color-mix(in oklch,var(--accent) 12%,transparent);color:var(--accent)}
+#desk-content{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;width:100%;padding:0 var(--desk-gutter) 24px;overflow:hidden}
+#desk-notice{flex:none;padding:12px var(--desk-gutter);color:var(--warning);background:var(--panel)}
+.desk-collection-toolbar{display:flex;align-items:center;gap:16px;flex:none;min-height:68px;padding:16px 0;border-bottom:1px solid var(--line)}
+.desk-collection-toolbar>input{flex:1;min-width:160px;max-width:440px;margin-left:auto}
+.desk-collection-label{font-size:var(--rvbbit-type-body);font-weight:600}.desk-collection-label>span{color:var(--muted);font-weight:400;margin-left:8px}
+.desk-types{display:flex;align-items:stretch;min-height:var(--desk-control);border:1px solid var(--line);background:color-mix(in oklch,var(--page) 62%,transparent);flex:none;max-width:100%;overflow-x:auto}
+.desk-types button{display:flex;align-items:center;gap:8px;padding:0 12px;border-right:1px solid var(--line);font-size:var(--rvbbit-type-body);white-space:nowrap;min-height:32px}
+.desk-types button:last-child{border:0}.desk-types button>span{font-size:var(--rvbbit-type-small);opacity:.65;font-variant-numeric:tabular-nums}
+#meaning-desk .desk-types button[aria-pressed=true],#meaning-desk .desk-local button[aria-pressed=true]{background:var(--amber,var(--accent));color:var(--main-foreground,#101018)}
+.desk-layout{display:grid;flex:1;min-height:0;grid-template-columns:clamp(220px,20vw,290px) minmax(0,1fr);gap:28px;padding-top:24px;align-items:stretch}
+.desk-shelf{min-width:0;min-height:0;height:100%;padding-right:20px;border-right:1px solid var(--line);display:flex;flex-direction:column}
+.desk-shelf-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;margin-bottom:12px;color:var(--muted);font-size:var(--rvbbit-type-body)}
+.desk-shelf-heading strong{font-weight:500}.desk-shelf-heading>span{font-variant-numeric:tabular-nums}
+.desk-object-list{overflow:auto;min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:4px}
+#meaning-desk .desk-object{display:block;width:100%;padding:16px 12px;margin:0;text-align:left;border:1px solid transparent;border-bottom-color:var(--line);background:color-mix(in oklch,var(--panel) 45%,transparent)}
+.desk-object strong{font-weight:600;font-size:var(--rvbbit-type-body);line-height:1.45;display:block;overflow-wrap:anywhere}
+.desk-object small{display:block;color:var(--muted);font-size:var(--rvbbit-type-small);line-height:1.5;margin-top:6px;overflow-wrap:anywhere}
+.desk-object .desk-list-value{display:block;margin-top:12px;font-size:22px;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:var(--ink)}
+#meaning-desk .desk-object[aria-pressed=true]{border-color:color-mix(in oklch,var(--accent) 48%,var(--line));background:color-mix(in oklch,var(--accent) 10%,var(--panel));box-shadow:inset 3px 0 var(--accent)}
+.desk-object-page{display:flex;flex-direction:column;min-width:0;min-height:0;width:100%;height:100%}
+.desk-object-body{flex:1;min-width:0;min-height:0;padding-inline-end:12px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain;container:meaning-object / inline-size}
+/* The overview scrolls edge to edge so its scrollbar sits at the window edge;
+   the page gutter moves inside as padding, keeping the content's margins. */
+.desk-overview,.desk-pins{flex:1;min-height:0;margin-inline:calc(-1 * var(--desk-gutter));padding-inline:var(--desk-gutter);overflow:auto;scrollbar-gutter:stable}
+.desk-title{display:flex;flex:none;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.desk-title h1{font-size:clamp(24px,2.4vw,34px);font-weight:650;letter-spacing:-.025em;line-height:1.2;overflow-wrap:anywhere}
+.desk-eyebrow{display:block;color:var(--muted);font:600 var(--rvbbit-type-small)/1.5 var(--font);letter-spacing:.07em;margin-bottom:7px;text-transform:uppercase}
+.desk-actions{display:flex;gap:8px;flex:none;flex-wrap:wrap;font-size:var(--rvbbit-type-body)}
+.desk-actions button{border:1px solid var(--line);background:var(--desk-surface);min-height:34px;padding:6px 12px}
+#meaning-desk .desk-actions .desk-primary{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 45%,var(--line))}
+.desk-local{display:flex;flex:none;align-self:flex-start;border:1px solid var(--line);margin-bottom:20px;background:color-mix(in oklch,var(--page) 62%,transparent)}
+.desk-local button{font-size:var(--rvbbit-type-body);min-height:32px;padding:6px 13px;border-right:1px solid var(--line)}.desk-local button:last-child{border:0}
+.desk-small{color:var(--muted);font-size:var(--rvbbit-type-small);line-height:1.6}
+.desk-metric-overview{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:0;border:1px solid var(--line);background:var(--desk-surface);align-items:start;margin-bottom:24px}
+.desk-metric-overview>.desk-metric,.desk-metric-overview>.desk-definition{min-width:0;margin:0;padding:24px}
+.desk-metric-overview>.desk-definition{border-left:1px solid var(--line);height:100%}
+@container meaning-object (max-width:900px){.desk-metric-overview{grid-template-columns:minmax(0,1fr)}.desk-metric-overview>.desk-definition{border-left:0;border-top:1px solid var(--line);height:auto}}
+.desk-reading{font-size:clamp(36px,3.8vw,56px);font-weight:500;letter-spacing:-.04em;line-height:1.2;margin:10px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.desk-reading>.data-properties{font-size:var(--rvbbit-type-body)}
+.desk-metric .history-figure{width:100%;max-width:none;margin-top:24px}
+.desk-metric .history-chart{width:100%;height:220px;min-height:0;max-height:220px}
+.desk-metric .history-figure figcaption{font-family:var(--font);font-size:var(--rvbbit-type-small)}.desk-metric .chart-readout{flex-wrap:wrap;border-radius:0}
+.desk-data{padding-top:24px;border-top:1px solid var(--line);margin-bottom:28px}
+.desk-section-head{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap}
+.desk-section-head h2,.desk-connections h2,.desk-definition h2{font-size:20px;font-weight:650;letter-spacing:-.012em}
+.desk-section-head .timestamp{display:inline-flex;gap:7px;font-size:inherit}.desk-section-head .timestamp small{font-size:inherit}
+.desk-data label{font-size:var(--rvbbit-type-small);color:var(--muted);display:flex;flex-direction:column;gap:6px;max-width:100%;min-width:0}
+.desk-data select{max-width:100%;width:190px;min-height:34px;padding:6px 9px;background:var(--panel);border:1px solid var(--line);border-radius:0;font:var(--rvbbit-type-body) var(--font);color:var(--ink)}
+.desk-table{width:100%;overflow:auto;max-height:580px;overscroll-behavior:contain;border:1px solid var(--line);background:var(--desk-surface)}
+.desk-table table{border-collapse:collapse;font-size:var(--rvbbit-type-body);width:100%;text-align:left}
+.desk-table th{font-weight:500;background:var(--panel);position:sticky;top:0;z-index:1;color:var(--muted);vertical-align:top;white-space:nowrap}
+.desk-table td,.desk-table th{padding:10px 12px;border-bottom:1px solid var(--line)}
+.desk-table th small{display:block;font-size:var(--rvbbit-type-small);font-weight:400;margin-top:3px}
+.desk-table td>span{display:block;max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desk-table td button{padding:3px 5px;color:var(--accent);text-decoration:underline}
+.desk-connections{padding-top:20px;border-top:1px solid var(--line);margin-bottom:20px}
+.desk-connections>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px;margin-top:16px}
+.desk-connections article{padding:16px 18px;border:1px solid var(--line);background:var(--desk-surface);min-width:0}
+.desk-connections .desk-link{padding:0;color:var(--accent);display:block;font-size:var(--rvbbit-type-body);font-weight:600;text-align:left;overflow-wrap:anywhere}
+.desk-connections small{display:block;color:var(--muted);font-size:var(--rvbbit-type-small);margin:6px 0}
+#meaning-desk details{margin-top:16px;color:var(--muted);font-size:var(--rvbbit-type-small)}
+#meaning-desk summary{cursor:pointer;line-height:1.6}#meaning-desk details p{margin:10px 0;overflow-wrap:anywhere}
+.desk-facts{display:grid;gap:0;margin:18px 0 22px}
+.desk-facts>div{display:grid;grid-template-columns:minmax(100px,.7fr) minmax(0,1.5fr);gap:16px;padding:12px 0;border-bottom:1px solid var(--line)}
+.desk-facts dt{font-size:var(--rvbbit-type-small);color:var(--muted);overflow-wrap:anywhere}
+.desk-facts dd{margin:0;overflow-wrap:anywhere;font-size:var(--rvbbit-type-body);max-height:300px;overflow:auto}
+.desk-definition pre{padding:16px;background:color-mix(in oklch,var(--page) 58%,transparent);border:1px solid var(--line);border-radius:0;white-space:pre-wrap;overflow-wrap:anywhere;font:var(--rvbbit-type-small)/1.8 var(--mono);max-height:500px;overflow:auto}
+.desk-definition>h3{margin:24px 0 12px}.desk-object-body>.desk-definition,.desk-record{padding:24px;border:1px solid var(--line);background:var(--desk-surface);margin-bottom:24px}
+.desk-warning{padding:12px 14px;margin:16px 0;border-left:2px solid var(--warning);background:color-mix(in oklch,var(--warning) 5%,var(--panel));font-size:var(--rvbbit-type-small);color:var(--warning);overflow-wrap:anywhere}
+.desk-empty{padding:28px 0;color:var(--muted);line-height:1.7}.desk-empty h2{font-size:20px;line-height:1.3;margin-bottom:10px;color:var(--ink)}
+.desk-object-body>.desk-empty{padding:28px;border:1px solid var(--line);background:var(--desk-surface);margin-bottom:24px}
+.desk-home-title{padding:52px 0 30px;border-bottom:1px solid var(--line)}
+.desk-home-title .desk-eyebrow{color:var(--amber,var(--accent));font-family:var(--mono);font-weight:400;letter-spacing:.19em}
+.desk-home-title h1{font-size:clamp(38px,5.4vw,68px);line-height:1;letter-spacing:-.045em;font-weight:600;margin-top:16px}
+.desk-home-title h1 em{color:var(--amber,var(--accent));font-family:var(--font-superior-serif,Georgia,serif);font-weight:400;letter-spacing:-.02em}
+.desk-home-title p{margin-top:18px;color:var(--muted);font-size:var(--rvbbit-type-body);line-height:1.5}
+.desk-areas{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-top:24px;margin-bottom:24px}
+#meaning-desk .desk-area-card{padding:26px;text-align:left;background:var(--panel);display:flex;flex-direction:column;align-items:flex-start;min-height:210px;transition:background .15s}
+#meaning-desk .desk-area-card:hover{background:color-mix(in oklch,var(--accent) 5%,var(--panel))}
+.desk-area-card h2{font-size:22px;line-height:1.3;color:var(--ink);margin:6px 0 12px;overflow-wrap:anywhere;font-weight:650}
+.desk-area-card>p{color:var(--muted);font-size:var(--rvbbit-type-body);line-height:1.5;margin-bottom:26px}
+.desk-area-card footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;border-top:1px solid var(--line);width:100%;padding-top:14px;font-size:var(--rvbbit-type-body);color:var(--accent)}
+.desk-areas>.desk-empty{background:var(--panel);padding:24px;grid-column:1/-1}
+.desk-artifact{padding:28px;border:1px solid var(--line);background:var(--desk-surface);margin-bottom:24px}.desk-artifact h2{font-size:24px;margin-bottom:10px}
+.desk-artifact>a{display:inline-flex;align-items:center;min-height:34px;padding:6px 14px;border:1px solid var(--accent);margin-top:24px;color:var(--accent)}
+/* Keep the real Data explorer mounted and give it every remaining pixel. */
+.desk-query .desk-object-body{display:flex;flex-direction:column;overflow:hidden}
+.desk-query .desk-data{display:flex;flex-direction:column;flex:1;min-height:0;margin:0;padding:0;border:0}
+.desk-query .desk-section-head{flex:none;min-height:28px;margin-bottom:8px;gap:10px}.desk-query .desk-section-head h2{display:none}.desk-query .desk-section-head p{font:var(--rvbbit-type-small)/1.5 var(--font)}
+#meaning-pivot-slot{height:clamp(600px,78dvh,1100px);min-width:0;min-height:0}
+.desk-query #meaning-pivot-slot{height:auto;flex:1;min-height:0;background:color-mix(in oklch,var(--panel) 78%,transparent);border:1px solid var(--line);padding:12px}
+#meaning-pivot-slot>div{height:100%;min-height:0}
+@media(max-width:1200px){.desk-collection-toolbar{flex-wrap:wrap;gap:10px}.desk-collection-toolbar>input{max-width:none;min-width:180px}.desk-layout{grid-template-columns:210px minmax(0,1fr);gap:20px}.desk-shelf{padding-right:12px}.desk-title{flex-wrap:wrap}}
+@media(max-width:780px){
+ #meaning-desk{--desk-gutter:20px}#desk-content{display:block;overflow:auto;padding-bottom:20px}
+ #desk-nav{gap:8px;flex-wrap:wrap}.desk-location{flex:1}.desk-nav-actions{gap:6px;margin-left:auto}.desk-location>strong{max-width:45vw}
+ .desk-layout{height:auto;display:block;padding-top:16px}.desk-shelf{height:auto;margin-bottom:20px;padding:0;border:0}.desk-shelf-heading{display:none}
+ .desk-object-list{display:flex;gap:8px;overflow:auto;padding-bottom:8px;scrollbar-gutter:auto}#meaning-desk .desk-object{width:240px;flex:none;border:1px solid var(--line)}
+ .desk-collection-toolbar{flex-wrap:wrap}.desk-types{width:100%}.desk-types button{flex:1;justify-content:center}.desk-collection-toolbar>input{width:100%;max-width:none}
+ .desk-object-page{height:auto}.desk-object-body,.desk-query .desk-object-body{display:block;overflow:visible;padding:0;scrollbar-gutter:auto}
+ .desk-overview,.desk-pins{overflow:visible;margin:0;padding:0}.desk-home-title{padding:36px 0 24px}
+ .desk-query #meaning-pivot-slot{height:max(600px,calc(100dvh - 140px));flex:none}
+ .desk-metric .history-chart{min-width:0}.desk-metric-overview>.desk-metric,.desk-metric-overview>.desk-definition{padding:20px}.desk-table{max-height:440px}
+ .desk-title{align-items:flex-start}.desk-query .desk-section-head p{overflow-wrap:anywhere}.desk-data select{width:100%}
+}
+@media(max-width:440px){.desk-facts>div{grid-template-columns:1fr;gap:6px}.desk-reading{font-size:34px}.desk-area-card h2{font-size:20px}.desk-object-body>.desk-definition,.desk-record{padding:20px}.desk-local{max-width:100%}.desk-local button{font-size:var(--rvbbit-type-small)}}
+@media(prefers-reduced-motion:reduce){#meaning-desk .desk-area-card{transition:none}}
+/* Short desktop windows use one compact frame in every object mode. */
+@media(min-width:781px) and (max-height:820px){
+ #desk-content .desk-collection-toolbar{padding:8px 0;min-height:50px}
+ #desk-content .desk-layout{padding-top:12px}
+ #desk-content .desk-title{margin-bottom:10px}#desk-content .desk-title h1{font-size:26px}
+ #desk-content .desk-eyebrow{margin-bottom:3px}#desk-content .desk-local{margin-bottom:10px}
+ #desk-content .desk-section-head{min-height:20px;margin-bottom:4px}
+ .desk-query #meaning-pivot-slot{padding:8px}
+}

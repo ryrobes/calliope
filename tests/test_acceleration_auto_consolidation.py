@@ -1,0 +1,592 @@
+import os
+import threading
+import time
+
+import psycopg
+import pytest
+
+
+RVBBIT_DSN = os.environ.get(
+    "RVBBIT_DSN", "postgresql://postgres:rvbbit@pg-rvbbit:5432/bench"
+)
+
+
+def _row_group_state(rvbbit, table):
+    return rvbbit.execute(
+        f"""
+        SELECT count(*)::int, coalesce(sum(n_rows), 0)::int
+        FROM rvbbit.row_groups
+        WHERE table_oid = '{table}'::regclass
+        """
+    ).fetchone()
+
+
+def _latest_operation(rvbbit, table):
+    return rvbbit.execute(
+        f"""
+        SELECT operation, status, rows_written, settings
+        FROM rvbbit.acceleration_operations
+        WHERE table_oid = '{table}'::regclass
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+
+def _set_consolidation_policy(
+    rvbbit, table, *, max_row_groups=None, max_tombstones=None
+):
+    rvbbit.execute(
+        f"""
+        SELECT rvbbit.set_accel_policy(
+            '{table}'::regclass,
+            strategy => 'scheduled',
+            min_interval_secs => 0,
+            full_rebuild_drift_ratio => 1000,
+            max_row_groups_before_rebuild => %s,
+            max_tombstones_before_rebuild => %s
+        )
+        """,
+        (max_row_groups, max_tombstones),
+    )
+
+
+def _wait_for_rebuild_lock_wait(rvbbit, timeout=10):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        waiting = rvbbit.execute(
+            """
+            SELECT count(*)::int
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND query LIKE '%rvbbit.rebuild_acceleration%'
+              AND wait_event_type = 'Lock'
+            """
+        ).fetchone()[0]
+        if waiting > 0:
+            return
+        time.sleep(0.05)
+    raise AssertionError("rebuild did not reach the final lock wait")
+
+
+def test_accel_tick_bootstraps_registered_unbuilt_table(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+    rvbbit.execute(
+        f"INSERT INTO {temp_table} VALUES (1, 'one'), (2, 'two'), (3, 'three')"
+    )
+    rvbbit.execute(f"ANALYZE {temp_table}")
+
+    # Registration alone is eligibility, not a materialized accelerator. This
+    # exact state used to fall through accel_tick as clean forever.
+    assert _row_group_state(rvbbit, temp_table) == (0, 0)
+    assert rvbbit.execute(
+        f"""
+        SELECT count(*)::int
+        FROM pg_trigger
+        WHERE tgrelid = '{temp_table}'::regclass
+          AND NOT tgisinternal
+        """
+    ).fetchone()[0] == 0
+
+    rvbbit.execute(
+        f"""
+        SELECT rvbbit.set_accel_policy(
+            '{temp_table}'::regclass,
+            strategy => 'scheduled',
+            min_interval_secs => 0
+        )
+        """
+    )
+
+    planned = rvbbit.execute(
+        f"""
+        SELECT action, status, executed, reason
+        FROM rvbbit.accel_tick(NULL, true)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert planned[0:3] == ("delta", "planned", False)
+    assert planned[3] == "no accelerator baseline"
+
+    executed = rvbbit.execute(
+        f"""
+        SELECT action, status, executed, rows_written, error
+        FROM rvbbit.accel_tick(NULL, false)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert executed == ("delta", "ok", True, 3, None)
+    assert _row_group_state(rvbbit, temp_table)[1] == 3
+
+    trigger_names = {
+        row[0]
+        for row in rvbbit.execute(
+            f"""
+            SELECT tgname
+            FROM pg_trigger
+            WHERE tgrelid = '{temp_table}'::regclass
+              AND NOT tgisinternal
+            """
+        ).fetchall()
+    }
+    assert "rvbbit_shadow_heap_dirty_insert" in trigger_names
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 3
+
+
+@pytest.mark.parametrize(
+    ("strategy", "target_secs", "prime_demand", "reason_fragment"),
+    [
+        ("target", 3600, False, "target requires a baseline"),
+        ("demand", None, True, "observed slow-path demand"),
+    ],
+)
+def test_accel_tick_bootstrap_respects_policy_gate(
+    rvbbit, temp_table, strategy, target_secs, prime_demand, reason_fragment
+):
+    rvbbit.execute(f"CREATE TABLE {temp_table} (id int) USING rvbbit")
+    rvbbit.execute(f"INSERT INTO {temp_table} SELECT generate_series(1, 20)")
+    rvbbit.execute(f"ANALYZE {temp_table}")
+    if prime_demand:
+        assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 20
+        # pg_stat flushes asynchronously; make the observed heap scan visible
+        # before asking the demand policy for its dry-run decision.
+        rvbbit.execute("SELECT pg_stat_force_next_flush()")
+
+    rvbbit.execute(
+        f"""
+        SELECT rvbbit.set_accel_policy(
+            '{temp_table}'::regclass,
+            strategy => %s,
+            freshness_target_secs => %s,
+            min_interval_secs => 0
+        )
+        """,
+        (strategy, target_secs),
+    )
+    planned = rvbbit.execute(
+        f"""
+        SELECT action, status, reason
+        FROM rvbbit.accel_tick(NULL, true)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert planned[0:2] == ("delta", "planned")
+    assert reason_fragment in planned[2]
+
+
+def test_fold_tick_consolidates_clean_row_group_fanout(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+
+    for i in range(1, 4):
+        rvbbit.execute(f"INSERT INTO {temp_table} VALUES ({i}, 'row {i}')")
+        rvbbit.execute(
+            f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)"
+        )
+
+    assert _row_group_state(rvbbit, temp_table) == (3, 3)
+    _set_consolidation_policy(rvbbit, temp_table, max_row_groups=3)
+
+    # Clean freshness reporting belongs to accel_tick; this test owns the
+    # independent off-hours fold lane and should exercise that lane directly.
+    planned = rvbbit.execute(
+        f"""
+        SELECT action, status, executed, reason
+        FROM rvbbit.accel_fold_tick(1, true)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert planned[0:3] == ("full", "planned", False)
+    assert planned[3].startswith("row_group_fanout 3 >= 3")
+
+    executed = rvbbit.execute(
+        f"""
+        SELECT action, status, executed, rows_written, error
+        FROM rvbbit.accel_fold_tick(1, false)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert executed == ("full", "ok", True, 3, None)
+
+    assert _row_group_state(rvbbit, temp_table) == (1, 3)
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 3
+
+    operation, status, rows_written, settings = _latest_operation(rvbbit, temp_table)
+    assert (operation, status, rows_written) == ("rebuild_acceleration", "ok", 3)
+    assert settings["dropped_row_groups"] == 3
+
+
+def test_fold_tick_consolidates_clean_tombstone_pressure(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+    rvbbit.execute(
+        f"INSERT INTO {temp_table} VALUES (1, 'one'), (2, 'two'), (3, 'three')"
+    )
+    rvbbit.execute(f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)")
+
+    rvbbit.execute(f"DELETE FROM {temp_table} WHERE id = 2")
+    result = rvbbit.execute(
+        f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)"
+    ).fetchone()[0]
+    assert result["status"] == "ok"
+    assert result["rows_written"] == 0
+    assert _row_group_state(rvbbit, temp_table) == (1, 3)
+    assert rvbbit.execute(
+        f"SELECT rvbbit.tombstone_count('{temp_table}'::regclass)"
+    ).fetchone()[0] == 1
+
+    _set_consolidation_policy(rvbbit, temp_table, max_tombstones=1)
+
+    # The fold decision is independent of whether accel_tick emits clean rows.
+    planned = rvbbit.execute(
+        f"""
+        SELECT action, status, executed, reason
+        FROM rvbbit.accel_fold_tick(1, true)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert planned[0:3] == ("full", "planned", False)
+    assert planned[3].startswith("tombstone_count 1 >= 1")
+
+    executed = rvbbit.execute(
+        f"""
+        SELECT action, status, executed, rows_written, error
+        FROM rvbbit.accel_fold_tick(1, false)
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert executed == ("full", "ok", True, 2, None)
+
+    assert _row_group_state(rvbbit, temp_table) == (1, 2)
+    assert rvbbit.execute(
+        f"SELECT rvbbit.tombstone_count('{temp_table}'::regclass)"
+    ).fetchone()[0] == 0
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 2
+
+    operation, status, rows_written, settings = _latest_operation(rvbbit, temp_table)
+    assert (operation, status, rows_written) == ("rebuild_acceleration", "ok", 2)
+    assert settings["dropped_row_groups"] == 1
+
+
+def test_rebuild_stages_fold_and_defers_old_file_reap(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+
+    for i in range(1, 4):
+        rvbbit.execute(f"INSERT INTO {temp_table} VALUES ({i}, 'row {i}')")
+        rvbbit.execute(
+            f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)"
+        )
+
+    old_max_rg_id, old_paths = rvbbit.execute(
+        f"""
+        SELECT max(rg_id)::int, array_agg(path ORDER BY rg_id)
+        FROM rvbbit.row_groups
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert old_max_rg_id == 2
+    assert len(old_paths) == 3
+    old_file_paths = rvbbit.execute(
+        f"""
+        SELECT array_agg(path ORDER BY path)
+        FROM (
+            SELECT path FROM rvbbit.row_groups
+            WHERE table_oid = '{temp_table}'::regclass
+            UNION ALL
+            SELECT path FROM rvbbit.row_group_variants
+            WHERE table_oid = '{temp_table}'::regclass
+            UNION ALL
+            SELECT path FROM rvbbit.text_dictionaries
+            WHERE table_oid = '{temp_table}'::regclass
+        ) files
+        """
+    ).fetchone()[0]
+
+    result = rvbbit.execute(
+        f"SELECT rvbbit.rebuild_acceleration('{temp_table}'::regclass, false)"
+    ).fetchone()[0]
+    assert result["status"] == "ok"
+    assert result["operation"] == "rebuild_acceleration"
+    assert result["dropped_row_groups"] == 3
+    assert result["queued_orphan_files"] == len(set(old_file_paths))
+
+    new_min_rg_id, row_groups, rows = rvbbit.execute(
+        f"""
+        SELECT min(rg_id), count(*)::int, sum(n_rows)::int
+        FROM rvbbit.row_groups
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()
+    assert new_min_rg_id > old_max_rg_id
+    assert (row_groups, rows) == (1, 3)
+
+    queued_paths = rvbbit.execute(
+        f"""
+        SELECT array_agg(path ORDER BY path)
+        FROM rvbbit.orphaned_files
+        WHERE table_oid = '{temp_table}'::regclass
+        """
+    ).fetchone()[0]
+    assert queued_paths == sorted(set(old_file_paths))
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 3
+
+    dequeued, unlinked = rvbbit.execute(
+        "SELECT files_dequeued, files_unlinked "
+        "FROM rvbbit.reap_orphaned_files(interval '0 seconds', 100)"
+    ).fetchone()
+    assert dequeued >= len(set(old_file_paths))
+    assert unlinked >= len(set(old_file_paths))
+    assert (
+        rvbbit.execute(
+            "SELECT count(*) FROM rvbbit.orphaned_files WHERE table_oid = %s::regclass",
+            (temp_table,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_drop_registered_table_clears_catalog_and_reaps_accel_files(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+    rvbbit.execute(f"SELECT rvbbit.set_accel_policy('{temp_table}'::regclass, 'scheduled')")
+    rvbbit.execute(f"INSERT INTO {temp_table} VALUES (1, 'one'), (2, 'two')")
+    rvbbit.execute(f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)")
+
+    table_oid = rvbbit.execute(f"SELECT '{temp_table}'::regclass::oid").fetchone()[0]
+    file_paths = rvbbit.execute(
+        f"""
+        SELECT array_agg(path ORDER BY path)
+        FROM (
+            SELECT path FROM rvbbit.row_groups
+            WHERE table_oid = '{temp_table}'::regclass
+            UNION ALL
+            SELECT path FROM rvbbit.row_group_variants
+            WHERE table_oid = '{temp_table}'::regclass
+            UNION ALL
+            SELECT path FROM rvbbit.text_dictionaries
+            WHERE table_oid = '{temp_table}'::regclass
+        ) files
+        """
+    ).fetchone()[0]
+    file_paths = sorted(set(file_paths or []))
+    assert file_paths
+
+    rvbbit.execute(f"DROP TABLE {temp_table}")
+
+    catalog_counts = rvbbit.execute(
+        f"""
+        SELECT
+            (SELECT count(*) FROM rvbbit.tables WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.row_groups WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.row_group_variants WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.text_dictionaries WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.generations WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.acceleration_state WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.accel_policy WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.delete_log WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.table_dirty_markers WHERE table_oid = {table_oid}::oid),
+            (SELECT count(*) FROM rvbbit.shreds WHERE table_oid = {table_oid}::oid)
+        """
+    ).fetchone()
+    assert catalog_counts == (0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+    queued = rvbbit.execute(
+        """
+        SELECT path, table_oid, reason
+        FROM rvbbit.orphaned_files
+        WHERE path = ANY(%s)
+        ORDER BY path
+        """,
+        (file_paths,),
+    ).fetchall()
+    assert queued == [(path, None, "drop_table") for path in file_paths]
+
+    dequeued, unlinked = rvbbit.execute(
+        "SELECT files_dequeued, files_unlinked "
+        "FROM rvbbit.reap_orphaned_files(interval '0 seconds', 100)"
+    ).fetchone()
+    assert dequeued >= len(file_paths)
+    assert unlinked >= len(file_paths)
+    assert (
+        rvbbit.execute(
+            "SELECT count(*) FROM rvbbit.orphaned_files WHERE path = ANY(%s)",
+            (file_paths,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_rebuild_preserves_snapshot_visible_generation(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+    rvbbit.execute(
+        f"""
+        SELECT * FROM rvbbit.snapshot_load(
+            '{temp_table}'::regclass,
+            $$SELECT 1::int AS id, 'one'::text AS label
+              UNION ALL
+              SELECT 2::int AS id, 'two'::text AS label$$
+        )
+        """
+    )
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 2
+
+    floor_before, max_generation_before = rvbbit.execute(
+        f"""
+        SELECT t.min_visible_generation, max(rg.generation)::bigint
+        FROM rvbbit.tables t
+        JOIN rvbbit.row_groups rg ON rg.table_oid = t.table_oid
+        WHERE t.table_oid = '{temp_table}'::regclass
+        GROUP BY t.min_visible_generation
+        """
+    ).fetchone()
+    assert floor_before == max_generation_before
+
+    result = rvbbit.execute(
+        f"SELECT rvbbit.rebuild_acceleration('{temp_table}'::regclass, false)"
+    ).fetchone()[0]
+    assert result["status"] == "ok"
+
+    floor_after, max_generation_after, row_groups = rvbbit.execute(
+        f"""
+        SELECT t.min_visible_generation, max(rg.generation)::bigint, count(*)::int
+        FROM rvbbit.tables t
+        JOIN rvbbit.row_groups rg ON rg.table_oid = t.table_oid
+        WHERE t.table_oid = '{temp_table}'::regclass
+        GROUP BY t.min_visible_generation
+        """
+    ).fetchone()
+    assert floor_after == max_generation_after
+    assert floor_after > floor_before
+    assert row_groups == 1
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 2
+
+
+def test_rebuild_catches_up_update_committed_during_lagged_fold(rvbbit, temp_table):
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+    rvbbit.execute(
+        f"""
+        INSERT INTO {temp_table}
+        SELECT g, 'row ' || g::text
+        FROM generate_series(1, 1000) AS g
+        """
+    )
+    rvbbit.execute(f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)")
+
+    result_holder = {}
+    error_holder = {}
+
+    def run_rebuild():
+        try:
+            with psycopg.connect(RVBBIT_DSN, autocommit=True) as conn:
+                result_holder["result"] = conn.execute(
+                    f"SELECT rvbbit.rebuild_acceleration('{temp_table}'::regclass, false)"
+                ).fetchone()[0]
+        except Exception as exc:  # pragma: no cover - propagated below
+            error_holder["error"] = exc
+
+    with psycopg.connect(RVBBIT_DSN) as writer:
+        writer.execute(f"UPDATE {temp_table} SET label = 'updated' WHERE id = 1")
+        thread = threading.Thread(target=run_rebuild)
+        thread.start()
+        _wait_for_rebuild_lock_wait(rvbbit)
+        writer.commit()
+        thread.join(timeout=10)
+
+    assert not thread.is_alive()
+    if error_holder:
+        raise error_holder["error"]
+
+    result = result_holder["result"]
+    assert result["status"] == "ok"
+    assert result["catchup_rows"] == 1
+    assert result["remapped_tombstones"] == 1
+    assert result["rows_written"] == 1001
+
+    rows, tombstones, dirty = rvbbit.execute(
+        f"""
+        SELECT
+            (SELECT coalesce(sum(n_rows), 0)::int
+             FROM rvbbit.row_groups
+             WHERE table_oid = '{temp_table}'::regclass),
+            rvbbit.tombstone_count('{temp_table}'::regclass)::int,
+            (SELECT shadow_heap_dirty
+             FROM rvbbit.tables
+             WHERE table_oid = '{temp_table}'::regclass)
+        """
+    ).fetchone()
+    assert (rows, tombstones, dirty) == (1001, 1, False)
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 1000
+    assert (
+        rvbbit.execute(f"SELECT label FROM {temp_table} WHERE id = 1").fetchone()[0]
+        == "updated"
+    )
+
+
+def test_accel_tick_folds_delta_fanout_on_a_dirty_table(rvbbit, temp_table):
+    """0499: once deltas have added max_row_groups_before_rebuild row groups, the
+    freshness tick's next refresh of the dirty table is a full one."""
+    rvbbit.execute("SET rvbbit.compact_vortex_layout = 'off'")
+    rvbbit.execute("SET rvbbit.compact_hive_layout = 'off'")
+    rvbbit.execute(
+        f"CREATE TABLE {temp_table} (id int PRIMARY KEY, label text) USING rvbbit"
+    )
+    rvbbit.execute(f"INSERT INTO {temp_table} VALUES (1, 'row 1')")
+    rvbbit.execute(f"SELECT rvbbit.refresh_acceleration('{temp_table}'::regclass, false)")
+    _set_consolidation_policy(rvbbit, temp_table, max_row_groups=3)
+
+    actions = []
+    for i in range(2, 6):
+        rvbbit.execute(f"INSERT INTO {temp_table} VALUES ({i}, 'row {i}')")
+        action, status, reason = rvbbit.execute(
+            f"""
+            SELECT action, status, reason
+            FROM rvbbit.accel_tick(NULL, false)
+            WHERE table_oid = '{temp_table}'::regclass
+            """
+        ).fetchone()
+        assert status == "ok"
+        actions.append((action, reason))
+
+    assert [a for a, _ in actions] == ["delta", "delta", "delta", "full"]
+    assert actions[-1][1] == "3 row groups from deltas >= 3"
+    assert _row_group_state(rvbbit, temp_table) == (1, 5)
+    assert rvbbit.execute(f"SELECT count(*) FROM {temp_table}").fetchone()[0] == 5
+
+
+def test_row_groups_a_full_build_writes_are_not_delta_fanout(rvbbit):
+    """0499: a large table's own row groups (one per compact_scan_chunk_rows rows)
+    never count toward max_row_groups_before_rebuild."""
+    fanout = rvbbit.execute(
+        """
+        SELECT rvbbit.accel_delta_row_groups(39, 40000000),
+               rvbbit.accel_delta_row_groups(40, 40000000),
+               rvbbit.accel_delta_row_groups(724, 24299),
+               rvbbit.accel_delta_row_groups(0, 0)
+        """
+    ).fetchone()
+    assert fanout == (0, 1, 723, 0)

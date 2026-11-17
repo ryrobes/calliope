@@ -1,0 +1,60 @@
+import { NextResponse } from "next/server"
+import { executeQuery } from "@/lib/db/query"
+import { burrowExecutionRole, burrowSession, isBurrow } from "@/lib/server/burrow"
+
+export const runtime = "nodejs"
+
+interface Body {
+  connectionId?: string
+  sql?: string
+  rowLimit?: number
+  readOnly?: boolean
+  /** Sibling-database override (same server, different db) — e.g. pg_cron's home db. */
+  database?: string
+  /** Per-query statement_timeout (ms); 0 disables it. For long server-side jobs
+   *  like rvbbit.catalog_crawl() that must outlive the pool's 30m default. */
+  statementTimeout?: number
+  /** Internal UI metadata probes can opt into the small metadata pool so they
+   *  don't contend with user SQL blocks. */
+  poolLane?: "interactive" | "meta"
+  /** Token registering this query's backend so /api/db/cancel can stop it. */
+  cancelToken?: string
+}
+
+export async function POST(req: Request) {
+  const body = (await req.json().catch(() => null)) as Body | null
+  if (!body?.connectionId || !body?.sql) {
+    return NextResponse.json({ ok: false, error: "connectionId and sql required" }, { status: 400 })
+  }
+  try {
+    // Burrow always requires the Warehouse session. In pg auth mode SQL also
+    // assumes its mapped PG role; hosted/shared auth uses the pinned service
+    // connection, matching the access Calliope has to this appliance database.
+    let role: string | undefined
+    if (isBurrow()) {
+      const session = await burrowSession(req.headers.get("cookie"))
+      if (!session) return NextResponse.json({ ok: false, error: "not signed in" }, { status: 401 })
+      role = burrowExecutionRole(session)
+    }
+    const result = await executeQuery(body.connectionId, body.sql, {
+      rowLimit: body.rowLimit,
+      readOnly: body.readOnly,
+      database: body.database,
+      statementTimeout: body.statementTimeout,
+      poolLane: body.poolLane,
+      cancelToken: body.cancelToken,
+      role,
+    })
+    return NextResponse.json({ ok: true, ...result })
+  } catch (err) {
+    const e = err as Error & { code?: string; position?: string; detail?: string; hint?: string }
+    return NextResponse.json({
+      ok: false,
+      error: e.message ?? String(err),
+      code: e.code,
+      position: e.position ? Number(e.position) : null,
+      detail: e.detail,
+      hint: e.hint,
+    }, { status: 200 })
+  }
+}

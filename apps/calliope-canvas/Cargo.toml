@@ -1,0 +1,33 @@
+[package]
+name = "calliope-canvas"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+# Independent from the database extension's workspace and release cycle.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+tempfile = "3"
+gpui = "=0.2.2"
+gpui-component = "=0.5.1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "cookies", "rustls-tls", "multipart"] }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+smol = "2"
+a2ui-base = { git = "https://github.com/liangdi/a2ui.git", rev = "97391988e41052240c36c27442912420903f13a8" }
+a2ui-gpui = { path = "vendor/a2ui-gpui" }
+
+[patch.crates-io]
+# GPUI 0.2.2 -> zed-async-tar -> xattr 0.2.3 uses libc's removed Linux
+# ENOATTR alias. Keep current libc; use Linux's actual ENODATA constant.
+xattr = { path = "vendor/xattr" }
+
+[profile.dev]
+debug = 0
+incremental = true

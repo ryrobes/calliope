@@ -1,0 +1,49 @@
+{
+  "api_version": "rvbbit.pack/v1",
+  "id": "builtin/clover-gliner",
+  "name": "clover_gliner",
+  "title": "Clover GLiNER medium CPU worker",
+  "description": "Pinned GLiNER medium CPU entity spans with the Clover extract contract. Independently installable; does not replace existing SQL aliases.",
+  "license": "apache-2.0",
+  "tags": [
+    "clover",
+    "cpu",
+    "gliner",
+    "sql"
+  ],
+  "capability": "capability.json",
+  "source": {
+    "provider": "huggingface",
+    "model": "urchade/gliner_medium-v2.1",
+    "revision": "40ec419335d09393f298636f471328b722c6da9e"
+  },
+  "runtime": {
+    "mode": "build",
+    "template": "clover-gliner",
+    "device": "cpu"
+  },
+  "exports": {
+    "backend": "clover_gliner",
+    "operators": [
+      "clover_gliner_extract"
+    ]
+  },
+  "install": {
+    "mode": "build",
+    "warren": true,
+    "docker": true
+  },
+  "acceptance": {
+    "target_selector": {
+      "capability": true,
+      "docker": true,
+      "gpu": false
+    },
+    "tests": [
+      {
+        "name": "real_inference",
+        "sql": "DO $$ DECLARE v jsonb; BEGIN v := rvbbit.clover_gliner_extract('Alice works at Acme in Boston.','person,organization,location'); IF jsonb_array_length(v) < 2 OR v IS NULL THEN RAISE EXCEPTION 'CPU inference failed: %',v; END IF; END $$;"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <style>html{background:#100d0b}body{background:transparent}</style>
+  <title>__CALLIOPE_PAGE_TITLE__</title>
+  <link rel="icon" href="/calliope/callie-favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+  <link rel="stylesheet" href="/theme/superior-fonts.css">
+  <link rel="stylesheet" href="/calliope/workspace-ui.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/calliope.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/artifact-work.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/computer-stage.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/correspondence.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/image-work.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/query-work.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/system-stage.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/stage-canvas.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/stage-arrange.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/computer.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/shared-files.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/calliope/computer-xterm.css?v=__CALLIOPE_ASSET_VERSION__">
+  <link rel="stylesheet" href="/theme/warehouse-theme.css">
+  <script src="/theme/warehouse-theme.js"></script>
+  <script src="/theme/metric-cards.js"></script>
+<link rel="stylesheet" href="/calliope/playbook-picker.css?v=__CALLIOPE_ASSET_VERSION__">
+</head>
+<body data-warehouse-page="calliope" data-calliope-mode="__CALLIOPE_MODE__" data-calliope-page="__CALLIOPE_PAGE__" data-excalifont="__CALLIOPE_EXCALIFONT__">
+<script src="/calliope/boot-veil.js?v=__CALLIOPE_ASSET_VERSION__"></script>
+__CALLIOPE_BACKGROUND__
+<div class="grid-wash" aria-hidden="true"></div>
+
+<nav class="topbar" data-warehouse-header>
+  <a class="brand" __CALLIOPE_BRAND_LINK__ aria-label="Open the Floor">
+    <span class="calliope-brand"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></span>
+  </a>
+  <div class="calliope-rail-nav" aria-label="Workspace views">__CALLIOPE_WORKSPACE_NAV__</div>
+  <div class="mobile-switcher" aria-label="Notebook views">
+    <button id="mobile-sessions-toggle" type="button" aria-label="Show sessions" aria-controls="calliope-sessions" aria-expanded="false">
+      <span aria-hidden="true">S</span><b>Sessions</b>
+    </button>
+    <button id="mobile-chat-toggle" type="button" aria-label="Show Calliope" aria-controls="calliope-chat" aria-expanded="false">
+      <span aria-hidden="true">C</span><b>Calliope</b>
+    </button>
+  </div>
+  <div class="top-context">
+    <span class="setup-context"><i></i> initial setup</span>
+    <span class="company-memory"><i></i> shared company memory</span>
+    <button id="personal-brief-open" class="personal-brief-open" type="button" title="Open today's private Personal Brief">
+      <span>Brief</span><b id="personal-brief-count" hidden>0</b>
+    </button>
+    <button id="work-inbox-open" class="work-inbox-open" type="button" title="Open private assignments and playbooks" aria-haspopup="dialog" aria-controls="work-inbox-dialog">
+      <span class="work-inbox-mark" aria-hidden="true">↳</span>
+      <span class="work-inbox-open-copy"><strong>Inbox</strong><small>Work Inbox</small></span>
+      <b id="work-inbox-count" class="work-inbox-count" hidden>0</b>
+    </button>
+    <button id="calliope-dreams-open" class="calliope-dreams-open" type="button" title="See what Calliope noticed and imagined overnight" hidden>
+      <span>Dreams</span><b id="calliope-dreams-count" hidden>0</b>
+    </button>
+    <button id="calliope-pages-open" class="calliope-pages-open" type="button" title="Open living Pages that keep a business question current">
+      <span>Pages</span><b id="calliope-pages-count" hidden>0</b>
+    </button>
+    <button id="google-calendar-open" class="google-calendar-open" type="button" hidden aria-label="Connect Google Calendar">
+      <span aria-hidden="true">▦</span><b>Calendar</b><i aria-hidden="true"></i>
+    </button>
+    <button id="action-library-open" class="action-library-open" type="button" title="Find things Calliope can connect, configure, or help you do" hidden>Library</button>
+    <button id="instrument-library-open" class="instrument-library-open" type="button" hidden>Instruments</button>
+    <button id="workflow-library-open" class="workflow-library-open" type="button" hidden>Workflows</button>
+    <button id="style-library-open" class="style-library-open" type="button">Design Profiles</button>
+    <button id="provider-settings-open" class="provider-settings-open" type="button"
+            title="Configure model providers and Calliope routes" aria-haspopup="dialog"
+            aria-controls="provider-settings-dialog" hidden>Models</button>
+    <span data-warehouse-theme-anchor></span>
+    __CALLIOPE_ACCOUNT__
+  </div>
+</nav>
+
+<main class="notebook" aria-label="Calliope notebook">
+  <aside id="calliope-sessions" class="sessions-column" aria-label="Your sessions">
+    <div id="session-resizer" class="session-resizer" role="separator"
+         aria-label="Resize sessions panel" aria-orientation="vertical"
+         aria-valuemin="205" aria-valuemax="420" aria-valuenow="238"
+         tabindex="0"></div>
+    <section id="setup-rail" class="setup-rail" aria-label="Getting started">
+      <header class="setup-rail-head">
+        <p class="eyebrow">First boot</p>
+        <h1>Getting started</h1>
+        <p>Calliope will walk you through each part and put the working controls on the stage.</p>
+      </header>
+      <div class="setup-progress" aria-label="Setup progress">
+        <div><span>Required setup</span><b id="setup-progress-label">Checking…</b></div>
+        <i><span id="setup-progress-bar"></span></i>
+      </div>
+      <div id="setup-todo-list" class="setup-todo-list" aria-live="polite"></div>
+      <footer class="setup-rail-note">
+        <strong>This is a working conversation.</strong>
+        <p>Secrets stay behind references. Query results, table choices, tests, and other setup artifacts appear on the stage.</p>
+      </footer>
+    </section>
+    <header class="column-head sessions-head">
+      <div>
+        <p class="eyebrow">Your notebooks</p>
+        <h1>Sessions</h1>
+      </div>
+      <button id="new-session" class="square-action" type="button" title="Start a new session" aria-label="New session"><i aria-hidden="true">+</i><span>New</span></button>
+    </header>
+    <label class="session-search">
+      <span aria-hidden="true">⌕</span>
+      <input id="session-search" type="search" placeholder="Find a session…" autocomplete="off">
+    </label>
+    <div id="session-list" class="session-list" aria-label="Calliope notebooks"></div>
+    <div class="rail-note">
+      <span><i aria-hidden="true"></i> Private by default</span>
+      <p>Shared work arrives live.</p>
+    </div>
+  </aside>
+
+  <section class="stage-column" aria-label="Artifact history">
+    <header class="column-head stage-head">
+      <div class="stage-title-wrap">
+        <p id="stage-eyebrow" class="eyebrow">Living artifact record</p>
+        <button id="session-title" class="session-title" type="button" title="Rename session">Choose or start a session</button>
+      </div>
+      <div class="stage-actions">
+        <span id="surface-count" class="surface-count">0 surfaces</span>
+        <button id="google-sheet-import" class="google-sheet-import" type="button" hidden disabled title="Bring an explicitly selected Google Sheet into this private Stage">
+          <svg viewBox="0 0 16 18" aria-hidden="true">
+            <path d="M2.25 1.25h7.1l4.4 4.4v11.1H2.25z"></path>
+            <path d="M9.35 1.25v4.4h4.4M4.65 8.15h6.7v5.85h-6.7zm0 2.05h6.7m-4.45-2.05V14m2.25-5.85V14"></path>
+          </svg>
+          <span>Bring in Sheet</span>
+        </button>
+        <button id="google-document-import" class="google-document-import" type="button" hidden disabled title="Add an explicitly selected Google Doc to your private Brain">
+          <svg viewBox="0 0 16 18" aria-hidden="true">
+            <path d="M2.25 1.25h7.1l4.4 4.4v11.1H2.25z"></path>
+            <path d="M9.35 1.25v4.4h4.4M4.65 8.25h6.3M4.65 10.7h6.3M4.65 13.15h4.2"></path>
+          </svg>
+          <span>Bring in Doc</span>
+        </button>
+        <button id="archive-session" class="quiet-action" type="button" disabled>Archive</button>
+      </div>
+    </header>
+    <form id="evidence-search" class="evidence-search" role="search">
+      <span class="evidence-search-glyph" aria-hidden="true">⌕</span>
+      <label for="evidence-query" class="sr-only">Find evidence across company memory, artifacts, and warehouse semantics</label>
+      <input id="evidence-query" type="search" maxlength="600"
+             placeholder="Find evidence across company memory…" autocomplete="off" disabled>
+      <span id="evidence-search-scope" class="evidence-search-scope">docs · artifacts · data</span>
+      <button id="evidence-search-submit" type="submit" disabled>Find</button>
+    </form>
+    <div id="stage-rail" class="stage-rail" aria-label="Stage navigation and search" hidden>
+      <div id="stage-view-control" class="stage-view-control" hidden></div>
+      <div id="stage-arrange-control" class="stage-arrange-control" hidden></div>
+      <form class="stage-search" role="search" aria-label="Search this chat's Stage">
+        <label for="stage-search-query" class="sr-only">Search Stage</label>
+        <input id="stage-search-query" type="search" maxlength="600" autocomplete="off" placeholder="Search…" aria-describedby="stage-search-status">
+        <button type="submit" aria-label="Find related work" title="Find related work (Enter)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg></button>
+        <button type="button" data-stage-search-clear aria-label="Clear Stage search and filters" hidden>×</button>
+      </form>
+      <details class="stage-kind-filter">
+        <summary aria-label="Filter Stage by type" title="Filter Stage by type"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14l-5.5 6v5l-3 2v-7Z"/></svg></summary>
+        <div><label class="sr-only" for="stage-search-kind">Filter Stage by type</label><select id="stage-search-kind"><option value="">All types</option></select></div>
+      </details>
+      <div class="stage-time" hidden>
+        <button type="button" data-stage-time-toggle aria-label="Browse Stage history" aria-expanded="false" aria-controls="stage-time-controls" title="Browse saved work over time"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7a7 7 0 1 1 0 6M3 3v4h4m3-2v5l3 2"/></svg><span data-stage-time-state hidden>Earlier</span></button>
+        <div class="stage-time-controls" id="stage-time-controls">
+          <div class="stage-time-track"><span data-stage-time-ticks aria-hidden="true"></span><input type="range" min="0" max="1" value="1" step="1" aria-label="Stage history" aria-describedby="stage-time-detail"></div>
+          <button type="button" data-stage-time-now disabled title="Return to all saved work">Now</button>
+          <span id="stage-time-detail" class="stage-time-detail" data-stage-time-detail role="status"></span>
+        </div>
+      </div>
+      <span id="stage-view-context" hidden></span>
+      <span id="stage-search-status" role="status" aria-live="polite" hidden></span>
+    </div>
+    <div id="stage-scroll" class="stage-scroll">
+      <section id="system-stage" aria-label="System workspace" hidden></section>
+      <div class="stage-live-work">
+        <section id="stage-queries" class="query-work" aria-label="Recent query results in progress" hidden></section>
+        <section id="stage-desktop" class="desktop-stage" aria-label="Desktop activity" hidden></section>
+        <section id="stage-builds" class="stage-builds" aria-label="Artifacts in progress" hidden></section>
+      </div>
+      <section id="stage-arrange" class="stage-arrange" aria-label="Arrangement" hidden></section>
+      <button id="new-surfaces" class="new-surfaces" type="button" hidden>New surfaces ↑</button>
+      <section id="setup-stage-controls" class="setup-stage-controls" aria-label="Secure setup controls" hidden></section>
+      <div id="stage-empty" class="stage-empty">
+        <div class="orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+        <p class="eyebrow">Nothing placed yet</p>
+        <h2 id="stage-empty-headline" class="stage-empty-headline" data-length="short">Ideas become things here.</h2>
+        <p id="stage-empty-copy">Find existing evidence or ask Calliope a business question. Search sets, queries, charts, dashboards, decks, images, and documents collect above their history—not inside the conversation.</p>
+      </div>
+      <div id="stage" class="stage"></div>
+    </div>
+  </section>
+
+  <section id="stage-working-set" class="stage-working-set" aria-label="Current Stage work" hidden>
+    <header>
+      <div><span>Working set</span><b id="stage-working-set-count">0 live</b></div>
+      <small>Ephemeral tool activity · published results replace these cards</small>
+    </header>
+    <div id="stage-working-body" class="stage-working-body">
+      <div id="stage-working-set-items" class="stage-working-set-items" role="log" aria-live="polite"></div>
+      <aside id="stage-turn-plan" class="stage-turn-plan" aria-label="Team plans" hidden>
+        <header>
+          <span>Team plans</span>
+          <b id="stage-turn-plan-meta">Waiting</b>
+          <button id="stage-turn-plan-toggle" type="button" aria-expanded="true" aria-controls="stage-turn-plan-items">Minimize</button>
+        </header>
+        <div id="stage-turn-plan-items" aria-live="polite"></div>
+      </aside>
+    </div>
+  </section>
+
+    <aside id="composer-suggestion-rail" class="composer-suggestion-rail" aria-label="Suggested metrics for this draft" hidden></aside>
+
+    <section id="chat-decisions" class="chat-decisions" aria-label="Questions waiting for your answer" hidden></section>
+
+  <aside id="calliope-chat" class="chat-column" aria-label="Calliope workspace">
+    <div id="chat-resizer" class="chat-resizer" role="separator"
+         aria-label="Resize conversation panel" aria-orientation="vertical"
+         aria-valuemin="320" aria-valuemax="720" aria-valuenow="390"
+         tabindex="0"></div>
+    <nav id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="Workspace views" aria-orientation="vertical">
+      <button id="workspace-tab-chat" type="button" role="tab" data-workspace-view="chat" aria-controls="workspace-chat" aria-selected="true"><span>Chat</span><i aria-hidden="true"></i></button>
+      <button id="workspace-tab-data" type="button" role="tab" data-workspace-view="data" aria-controls="workspace-data" aria-selected="false" tabindex="-1"><span>Data</span><i aria-hidden="true"></i></button>
+      <button id="workspace-tab-library" type="button" role="tab" data-workspace-view="library" aria-controls="workspace-library" aria-selected="false" tabindex="-1" hidden><span>Library</span><i aria-hidden="true"></i></button>
+      <button id="computer-open" type="button" role="tab" data-workspace-view="desktop" aria-controls="workspace-desktop" aria-selected="false" tabindex="-1" hidden><span>Desktop</span><i aria-hidden="true"></i></button>
+      <button id="workspace-tab-sketch" type="button" role="tab" data-workspace-view="sketch" aria-controls="workspace-sketch" aria-selected="false" tabindex="-1" hidden><span>Sketch</span><i aria-hidden="true"></i></button>
+    </nav>
+    <section id="workspace-chat" class="workspace-chat" role="tabpanel" aria-labelledby="workspace-tab-chat">
+    <header class="column-head calliope-head">
+      <div id="chat-agent-picker" class="chat-agent-picker">
+        <button id="chat-agent-picker-toggle" class="chat-agent-picker-toggle" type="button"
+                aria-haspopup="listbox" aria-expanded="false" aria-controls="chat-agent-picker-menu">
+          <span id="chat-agent-avatar" class="muse-avatar" aria-hidden="true"
+                data-day-src="/calliope/callie-avatar-day.jpg"
+                data-night-src="/calliope/callie-avatar-night.jpg">
+            <img id="calliope-avatar" alt="" width="42" height="42" decoding="async">
+            <i class="chat-agent-placeholder"></i>
+          </span>
+          <span class="chat-agent-picker-copy">
+            <span id="chat-eyebrow" class="eyebrow">Warehouse muse</span>
+            <strong id="chat-agent-name">Calliope</strong>
+          </span>
+          <span class="chat-agent-picker-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <button id="chat-voice-toggle" class="chat-voice-toggle" type="button" hidden
+                aria-live="polite"><span class="chat-voice-glyph" aria-hidden="true"></span></button>
+        <div id="chat-agent-picker-menu" class="chat-agent-picker-menu" role="listbox"
+             aria-label="Choose who owns this notebook" hidden></div>
+      </div>
+      <span class="agent-state">
+        <span id="calliope-status" class="agent-status" role="status" aria-live="polite" aria-atomic="true">
+          <span class="agent-status-label">Checking activity…</span>
+          <canvas class="agent-status-particles" data-ray-color="accent" data-ray-zoom="1.7" aria-hidden="true" hidden></canvas>
+        </span>
+      </span>
+    </header>
+
+    <details id="chat-topic" class="chat-topic" hidden>
+      <summary><button id="chat-topic-favorite" type="button" aria-label="Favorite thread" aria-pressed="false" title="Favorite thread"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.55 4.45 1.08 6.28L12 17.36l-5.63 2.97 1.08-6.28L2.9 9.6l6.3-.9Z"/></svg></button><span id="chat-topic-title"></span><span class="chat-topic-chevron" aria-hidden="true">⌄</span><button id="share-session" class="share-session" type="button" hidden aria-haspopup="dialog" aria-controls="session-share-dialog" aria-label="Share this thread" title="Share this thread"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8 15.7 6.6M8.3 13.2l7.4 4.2"/></svg><span class="share-session-text">Share</span></button></summary>
+      <p id="chat-topic-summary"></p>
+      <button id="chat-topic-download" type="button">Download thread · Markdown ↓</button>
+      <button id="chat-topic-playbook" type="button" hidden title="Save this chat as a reusable method. Opens a new thread where you and Calliope shape it.">Save as Playbook ≋</button>
+      <button id="chat-topic-playbook-source" type="button" hidden>Open the chat it came from →</button>
+    </details>
+    <div id="session-access-meta" class="session-access-meta" hidden></div>
+    <div id="room-strip" class="room-strip" hidden></div>
+    <div id="chat-empty" class="chat-empty">
+      <p id="chat-empty-copy">Calliope works through the same governed RVBBIT tools used from GChat and MCP clients. Her prose stays here; what she makes appears on the stage.</p>
+    </div>
+    <div id="messages" class="messages" aria-live="polite"></div>
+    <div class="chat-follow-rail"><button id="chat-jump-latest" type="button" aria-controls="messages" hidden>Jump to latest <span aria-hidden="true">↓</span></button></div>
+    <section id="tool-activity" class="tool-activity" aria-label="Temporary turn activity" hidden>
+      <button id="tool-activity-toggle" class="tool-activity-toggle" type="button" aria-expanded="true">
+        <i class="activity-signal" aria-hidden="true"></i>
+        <span class="activity-heading">
+          <strong>Calliope / live</strong>
+          <small id="tool-activity-meta">Ephemeral · not saved</small>
+        </span>
+        <span id="tool-activity-summary" class="tool-activity-summary">Starting…</span>
+        <span class="activity-chevron" aria-hidden="true">⌃</span>
+      </button>
+      <div id="tool-activity-body" class="tool-activity-body">
+        <div id="tool-activity-log" class="tool-activity-log" role="log" aria-live="polite"></div>
+        <div id="tool-activity-draft" class="tool-activity-draft" hidden>
+          <span>Transient output · may change</span>
+          <div id="tool-activity-draft-copy" class="tool-activity-draft-copy"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="agent-work" class="agent-work" aria-label="Specialist work in flight" hidden></section>
+
+    <div id="read-only-notice" class="read-only-notice" hidden>
+      <span aria-hidden="true">◇</span>
+      <p><strong>This chat is read-only here</strong><small>It was archived, or it continues in another channel.</small></p>
+    </div>
+
+    <form id="composer" class="composer">
+      <div id="system-stage-context" aria-label="Context shared with Callie" hidden></div>
+      <div id="mention-invites" class="mention-invites" hidden></div>
+      <div id="intake-copy" class="intake-copy" hidden>
+        <p class="eyebrow">Your Calliope</p>
+        <h1 id="intake-headline">What are we working on?</h1>
+        <p id="intake-blurb">Ask anything, resume recent work, or follow what Calliope noticed across the business.</p>
+        <button id="intake-back" class="intake-back" type="button" hidden>← Back to your notebooks</button>
+      </div>
+      <div class="composer-entry"><div class="composer-entry-content">
+      <div id="design-profile-chip" class="design-profile-chip" hidden></div>
+      <div id="selected-reference" class="selected-reference" hidden></div>
+      <div id="evidence-context-tray" class="evidence-context-tray" hidden></div>
+      <div id="spatial-selection-tray" class="spatial-selection-tray" hidden></div>
+      <div id="composer-playbooks" class="playbook-selections" aria-label="Selected playbooks" hidden></div>
+      <div id="attachment-tray" class="attachment-tray" hidden></div>
+      <section id="reply-choices" class="reply-choices" aria-live="polite" hidden></section>
+      <div class="compose-box">
+        <label class="sr-only" for="message-input">Message Calliope</label>
+        <div id="message-editor" class="message-editor" hidden></div>
+        <textarea id="message-input" rows="1" placeholder="Ask Calliope to explore, compare, or make something…" disabled></textarea>
+        <div id="speech-preview" class="speech-live-preview" data-speech-preview="chat"
+             aria-label="Dictation preview" aria-live="off" hidden>
+          <p></p>
+          <div class="dictation-controls">
+            <span class="dictation-activity" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span id="speech-status" class="speech-status" role="status" aria-live="polite"></span>
+            <time id="speech-elapsed" aria-label="Recording time"></time>
+            <div class="dictation-actions">
+              <button id="speech-discard" type="button">Discard</button>
+              <button id="speech-finish" type="button" aria-keyshortcuts="Alt+Shift+D"
+                      title="Finish dictation and add it to your draft · Alt + Shift + D">Finish</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div></div>
+      <div class="compose-actions">
+        <div class="compose-tools">
+        <div class="compose-utilities">
+        <label class="attach-action" title="Attach files" aria-label="Attach files">
+          <input id="image-input" type="file" multiple hidden>
+          <span aria-hidden="true">⌁</span><span class="label">Attach</span>
+        </label>
+        <button id="shared-files-open" class="attach-action" type="button" title="Conversation files and desktop shared folder">Files</button>
+        <button id="visual-intent-open" class="attach-action" type="button" aria-label="Visual intent" title="Explore visual changes without starting a chat turn"><span aria-hidden="true">✎</span><span class="label">Visual intent</span></button>
+        <button id="speech-record" class="speech-action" type="button" data-speech-record="chat"
+                aria-label="Dictate a message" aria-pressed="false" aria-keyshortcuts="Alt+Shift+D"
+                title="Dictate a message · Alt + Shift + D" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5A3.5 3.5 0 0 0 12 15Z"></path>
+            <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7"></path>
+          </svg>
+          <span class="label">Dictate</span>
+        </button>
+        </div>
+        <div class="compose-settings">
+        <div id="zen-design-control" class="zen-design-control" hidden>
+          <button id="zen-design-button" type="button" aria-haspopup="listbox" aria-expanded="false"
+                  aria-label="Design Profile" title="Design Profile pinned to this notebook"><span aria-hidden="true">◈</span> <span class="label">design</span></button>
+          <div id="zen-design-menu" class="zen-design-menu" role="listbox" hidden></div>
+        </div>
+        <button id="composer-rail-toggle" class="zen-team-toggle composer-rail-toggle" type="button" aria-pressed="false" aria-controls="composer-suggestion-rail" aria-label="Suggest metrics" hidden
+                title="Suggest metrics beside the Stage while you type"><span aria-hidden="true">✦</span><span class="label">Suggest</span></button>
+        <button id="composer-playbook-open" class="zen-team-toggle" type="button" aria-haspopup="dialog" aria-controls="playbook-picker" aria-label="Playbook" title="Add a Playbook reference to your message" hidden><span aria-hidden="true">≋</span><span class="label">Playbook</span></button>
+        <button id="zen-team-toggle" class="zen-team-toggle" type="button" aria-pressed="false" aria-label="Team mode" hidden
+                title="Team mode (opt-in): treat requests as projects — Calliope plans, delegates scoped workstreams to specialists in parallel, and integrates the results. Slower and uses more tokens. Off: she handles everything herself.">
+          <i class="team-toggle-indicator" aria-hidden="true"></i><span class="label">Team off</span></button>
+        <button id="room-address-toggle" class="zen-team-toggle room-address-toggle" type="button" hidden aria-label="Who this message is for"
+                title="Who your message is for. Auto: Callie answers what's meant for her and leaves the rest of the room's talk alone."><i class="room-address-mark" aria-hidden="true">@</i><span class="label">To: Auto</span></button>
+        </div>
+        </div>
+        <div class="compose-submit-actions">
+        <button id="stop-message" class="stop-action" type="button" aria-label="Stop Calliope" title="Stop this running request" hidden>
+          <i aria-hidden="true"></i><span class="label">Stop</span>
+        </button>
+        <button id="send-message" class="send-action" type="submit" disabled aria-label="Send message">↑</button>
+        </div>
+      </div>
+    </form>
+
+    <section id="intake-guidance" class="intake-guidance" aria-label="Ways to begin" hidden>
+      <header class="intake-context-head">
+        <span><strong>In motion</strong><small id="intake-context-meta">Grounded in company evidence</small></span>
+        <div class="intake-context-actions">
+          <button id="intake-briarpatch" type="button" title="The Briarpatch — Calliope's living map of your data universe">⌘ Briarpatch</button>
+          <button id="intake-guidance-collapse" type="button" title="Hide the context below the composer">Hide</button>
+          <button id="intake-guidance-refresh" type="button">Refresh</button>
+          <div id="intake-view-toggle" class="intake-view-toggle" role="group" aria-label="Start page layout">
+            <button type="button" data-intake-view="list">List</button>
+            <button type="button" data-intake-view="map">Map</button>
+          </div>
+        </div>
+      </header>
+      <section id="intake-map" class="intake-map" aria-label="Related company context" hidden>
+        <div id="intake-map-nodes" class="intake-map-nodes" aria-live="polite"></div>
+      </section>
+      <div id="intake-list" class="intake-list">
+        <section id="intake-decision-section" class="intake-decision-section" aria-labelledby="intake-decision-title" hidden>
+          <header class="intake-guidance-head">
+            <span><i aria-hidden="true"></i><strong id="intake-decision-title">Waiting on you</strong></span>
+            <small id="intake-decision-count"></small>
+          </header>
+          <div id="intake-decision" class="intake-decision" aria-live="polite"></div>
+        </section>
+        <section id="intake-resume-section" class="intake-resume-section" aria-labelledby="intake-resume-title" hidden>
+          <header class="intake-guidance-head">
+            <span><i aria-hidden="true"></i><strong id="intake-resume-title">Resume</strong></span>
+            <small>Recent notebooks</small>
+          </header>
+          <div id="intake-resume" class="intake-resume" aria-live="polite"></div>
+        </section>
+        <section id="intake-observation-section" class="intake-observation-section" aria-labelledby="intake-observation-title">
+          <header class="intake-guidance-head">
+            <span><i aria-hidden="true"></i><strong id="intake-observation-title">Calliope noticed</strong></span>
+            <small>Evidence-backed</small>
+          </header>
+          <div id="intake-observations" class="intake-observations" aria-live="polite"></div>
+        </section>
+      </div>
+    </section>
+    <button id="intake-guidance-restore" class="intake-guidance-restore" type="button" aria-controls="intake-guidance" hidden><i aria-hidden="true"></i>Show context</button>
+    <section id="intake-home" class="intake-home" aria-labelledby="intake-home-title" hidden>
+      <header class="intake-home-head">
+        <div class="intake-home-heading"><span id="intake-home-title">Yours to watch</span><small id="intake-home-status">Things you pinned in Gallery</small></div>
+        <a href="/gallery">Open Gallery →</a>
+      </header>
+      <div id="intake-home-grid" class="intake-home-grid"></div>
+    </section>
+    </section>
+    <section id="workspace-desktop" class="workspace-panel" role="tabpanel" aria-labelledby="computer-open" hidden>
+      <section id="computer-shelf" class="computer-shelf" aria-label="Callie’s computer" hidden></section>
+    </section>
+    <section id="workspace-data" class="workspace-panel" role="tabpanel" aria-labelledby="workspace-tab-data" hidden>
+      <iframe id="data-panel-frame" title="Explore data" data-src="/calliope/data-panel.html"></iframe>
+    </section>
+    <section id="workspace-library" class="workspace-panel" role="tabpanel" aria-labelledby="workspace-tab-library" hidden>
+      <div id="library-shelf" class="library-shelf" aria-label="Pieces to arrange"></div>
+    </section>
+    <section id="workspace-sketch" class="workspace-panel" role="tabpanel" aria-labelledby="workspace-tab-sketch" hidden>
+      <div id="sketch-shelf" class="sketch-shelf" aria-label="Active shared Sketch" hidden></div>
+    </section>
+  </aside>
+</main>
+<button id="mobile-shade" class="mobile-shade" type="button" aria-label="Return to artifact stage"></button>
+
+<dialog id="calliope-metric-dialog" class="calliope-metric-dialog" aria-labelledby="calliope-metric-title">
+  <div class="calliope-metric-shell">
+    <header class="calliope-metric-head">
+      <div>
+        <p class="eyebrow">Metric lens</p>
+        <h2 id="calliope-metric-title">Governed metric</h2>
+        <small id="calliope-metric-meta">Definition, history, and lineage</small>
+      </div>
+      <button id="calliope-metric-close" type="button" aria-label="Close metric lens">×</button>
+    </header>
+    <div id="calliope-metric-content" class="calliope-metric-content" aria-live="polite"></div>
+  </div>
+</dialog>
+
+<dialog id="provider-settings-dialog" class="provider-settings-dialog" aria-labelledby="provider-settings-title">
+  <div class="provider-settings-shell">
+    <div id="provider-settings-veil" class="provider-settings-veil" hidden role="status" aria-live="polite">
+      <div class="provider-settings-veil-card">
+        <i class="provider-veil-pulse" aria-hidden="true"></i>
+        <strong id="provider-settings-veil-title">Applying…</strong>
+        <small id="provider-settings-veil-detail"></small>
+        <span id="provider-settings-veil-elapsed"></span>
+      </div>
+    </div>
+    <header>
+      <div>
+
+        <h2 id="provider-settings-title">Models &amp; providers</h2>
+
+      </div>
+      <button id="provider-settings-close" class="markup-close" type="button" aria-label="Close model settings">×</button>
+    </header>
+    <div class="provider-settings-body">
+      <section class="provider-settings-section" aria-labelledby="provider-settings-providers-title">
+        <div class="provider-settings-section-head">
+          <div><span>01</span><h3 id="provider-settings-providers-title">Providers</h3></div>
+          <button id="provider-settings-refresh" class="quiet-action" type="button">Refresh models</button>
+        </div>
+        <div id="provider-settings-providers" class="provider-settings-providers"></div>
+        <div id="provider-oauth-card" class="provider-oauth-card" hidden></div>
+      </section>
+      <section class="provider-settings-section provider-agents-section" aria-labelledby="provider-settings-agents-title">
+        <div class="provider-settings-section-head">
+          <div><span>02</span><h3 id="provider-settings-agents-title">Agents</h3></div>
+          <small>Agent changes restart Hermes.</small>
+        </div>
+        <div id="provider-settings-agents" class="provider-settings-agents"></div>
+      </section>
+    </div>
+    <footer>
+      <div id="provider-settings-usage" class="provider-settings-usage">Usage appears here after the first call.</div>
+      <div id="provider-settings-status" class="provider-settings-status" role="status" aria-live="polite"></div>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="session-share-dialog" class="session-share-dialog" aria-labelledby="session-share-title">
+  <div class="session-share-shell">
+    <header>
+      <div>
+        <p class="eyebrow">Notebook access</p>
+        <h2 id="session-share-title">Bring people into this room</h2>
+      </div>
+      <button id="session-share-close" class="markup-close" type="button" aria-label="Close sharing">×</button>
+    </header>
+    <section class="session-share-intro">
+      <div id="session-share-avatars" class="participant-stack" aria-label="Current notebook audience"></div>
+      <div><strong id="session-share-summary">Only you</strong><small>Everyone you add can read the whole chat and its Stage, talk here, and ask Callie to change its artifacts.</small></div>
+    </section>
+    <label class="session-share-search">
+      <span aria-hidden="true">⌕</span>
+      <input id="session-share-search" type="search" placeholder="Find a person or Team…" autocomplete="off">
+    </label>
+    <div class="session-share-grid">
+      <section>
+        <header><span>Teams</span><small>Flat application groups</small></header>
+        <div id="session-share-teams" class="session-share-options"></div>
+      </section>
+      <section>
+        <header><span>People</span><small>Observed signed-in users</small></header>
+        <div id="session-share-people" class="session-share-options"></div>
+      </section>
+    </div>
+    <div id="session-share-warning" class="session-share-warning" hidden></div>
+    <footer>
+      <p>Participants speak as themselves. One turn runs at a time. Only you manage sharing and archive the thread.</p>
+      <button id="session-share-copy" class="quiet-action" type="button">Copy link</button>
+      <button id="session-share-cancel" class="quiet-action" type="button">Cancel</button>
+      <button id="session-share-save" class="primary-action" type="button">Save access</button>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="page-library-dialog" class="page-library-dialog" aria-labelledby="page-library-title">
+    <header class="page-library-header"><div><p class="living-page-kicker">Your living documents</p><h2 id="page-library-title">Pages</h2></div>
+      <button type="button" data-page-library-new>+ New Page</button><button type="button" data-page-dialog-close aria-label="Close Pages">✕</button></header>
+    <p class="page-library-intro">A place for questions you return to. Open a Page to read, ask Callie, or refresh its answer when you need it.</p>
+    <label class="page-library-search">Find a Page<input id="page-library-search" type="search" placeholder="Project, person, meeting series…" autocomplete="off"></label>
+    <div id="page-library-list" class="page-library-list" aria-live="polite"></div>
+  </dialog>
+  <dialog id="page-revision-dialog" class="page-revision-dialog" aria-labelledby="page-revision-title">
+    <header class="page-library-header"><div><p class="living-page-kicker">Saved revision</p><h2 id="page-revision-title"></h2></div><button type="button" data-page-dialog-close aria-label="Close revision">✕</button></header>
+    <div id="page-revision-body" class="living-page-body"></div>
+  </dialog>
+  <dialog id="calliope-pages-dialog" class="calliope-pages-dialog" aria-labelledby="calliope-pages-title">
+  <div class="calliope-pages-shell">
+    <header class="calliope-pages-head">
+      <div>
+        <p class="eyebrow">Questions that keep working</p>
+        <h2 id="calliope-pages-title">Living Pages</h2>
+        <p>Give Calliope a question once. Each revision stays grounded in the company evidence you can see.</p>
+      </div>
+      <div>
+        <button id="calliope-pages-new" class="quiet-action" type="button">New page</button>
+        <button id="calliope-pages-close" class="markup-close" type="button" aria-label="Close Pages">×</button>
+      </div>
+    </header>
+    <div class="calliope-pages-layout">
+      <aside class="calliope-pages-index" aria-label="Your living Pages">
+        <header><span>Your Pages</span><b id="calliope-pages-index-count">0</b></header>
+        <div id="calliope-pages-list" class="calliope-pages-list"></div>
+      </aside>
+      <section class="calliope-pages-workspace">
+        <div id="calliope-pages-empty" class="calliope-pages-empty">
+          <span class="calliope-pages-glyph" aria-hidden="true">P</span>
+          <p class="eyebrow">A durable point of view</p>
+          <h3>What should stay understood?</h3>
+          <p>A client relationship. A department’s priorities. A project’s risks. Start with the question you keep having to reconstruct.</p>
+          <button id="calliope-pages-empty-new" class="primary-action" type="button">Create a living Page</button>
+        </div>
+        <form id="calliope-pages-form" class="calliope-pages-form" hidden>
+          <header>
+            <p class="eyebrow">New living Page</p>
+            <h3>Give the question somewhere to live.</h3>
+            <p>Calliope will find currently visible evidence, synthesize a first revision, and keep exact source receipts.</p>
+          </header>
+          <label><span>Page name</span><input id="calliope-page-name" maxlength="180" required placeholder="Acme relationship pulse" autocomplete="off"></label>
+          <label><span>What should this Page keep understanding?</span><textarea id="calliope-page-question" maxlength="4000" rows="6" required placeholder="What is the current state of this relationship, what changed, what have we promised, and what needs attention next?"></textarea></label>
+          <label><span>Anchor object <i>optional</i></span><input id="calliope-page-anchor" maxlength="500" placeholder="Acme Corp, Project Lantern, Q3 planning…" autocomplete="off"><small>A client, project, ticket, meeting, or other name already present in the Brain.</small></label>
+          <label><span>Standing brief <i>optional</i></span><textarea id="calliope-page-create-brief" maxlength="8000" rows="3" placeholder="Keep deadlines prominent. Separate confirmed decisions from open questions."></textarea><small>Preferences to retain across revisions. Refresh happens when you ask for it.</small></label>
+          <footer>
+            <button id="calliope-pages-form-cancel" class="quiet-action" type="button">Cancel</button>
+            <button id="calliope-pages-create" class="primary-action" type="submit">Create first revision</button>
+          </footer>
+        </form>
+        <article id="calliope-pages-detail" class="calliope-pages-detail" hidden>
+          <header>
+            <div>
+              <p id="calliope-page-detail-meta" class="eyebrow">Living Page</p>
+              <h3 id="calliope-page-detail-title"></h3>
+              <p id="calliope-page-detail-question"></p>
+            </div>
+            <div class="calliope-page-detail-actions">
+              <a id="calliope-page-thread" class="quiet-action" hidden>Open Page</a>
+              <button id="calliope-page-refresh" class="primary-action" type="button">Refresh</button>
+              <button id="calliope-page-archive" class="quiet-action" type="button">Archive</button>
+            </div>
+          </header>
+          <div id="calliope-page-status" class="calliope-page-status" hidden>
+            <span aria-hidden="true"><i></i><i></i><i></i></span>
+            <div><strong>Calliope is updating this Page.</strong><small>You can keep reading or open the conversation to follow the work.</small></div>
+          </div>
+          <div id="calliope-page-stale" class="calliope-page-stale" hidden>
+            <span aria-hidden="true">◇</span><div><strong>This revision is closed.</strong><p>Access to at least one source changed. Refresh to create a new revision from what you can see now.</p></div>
+          </div>
+          <details class="calliope-page-brief">
+            <summary>Standing brief</summary>
+            <p>What should each refresh preserve or emphasize? Saving this changes the brief, not the current document.</p>
+            <textarea id="calliope-page-brief" rows="4" maxlength="8000" aria-label="Standing brief"></textarea>
+            <button id="calliope-page-brief-save" type="button" class="quiet-action">Save brief</button>
+          </details>
+          <p id="calliope-page-outcome" role="status" hidden></p>
+          <div class="calliope-page-paper">
+            <div id="calliope-page-body" class="calliope-page-body"></div>
+          </div>
+          <details id="calliope-page-evidence" class="calliope-page-evidence">
+            <summary><span>Evidence receipts</span><b id="calliope-page-evidence-count">0 sources</b><i aria-hidden="true">⌄</i></summary>
+            <div id="calliope-page-evidence-list"></div>
+          </details>
+        </article>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="voice-dialog" class="voice-dialog" aria-labelledby="voice-dialog-title">
+  <div class="voice-dialog-shell">
+    <header>
+      <div>
+        <p class="eyebrow">Complete response</p>
+        <h2 id="voice-dialog-title">Behind the conversational answer</h2>
+      </div>
+      <button id="voice-dialog-close" class="markup-close" type="button" aria-label="Close complete response">×</button>
+    </header>
+    <div class="voice-dialog-body">
+      <div class="voice-dialog-signal" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div id="voice-dialog-script" class="voice-dialog-script"></div>
+      <div id="voice-dialog-meta" class="voice-dialog-meta"></div>
+      <details id="voice-tuning" class="voice-tuning" hidden>
+        <summary>Tuning <span id="voice-tuning-state"></span></summary>
+        <div class="voice-tuning-grid">
+          <label>Voice id
+            <input id="voice-tuning-voice" list="voice-tuning-recent" maxlength="64" placeholder="default voice" spellcheck="false" autocomplete="off">
+          </label>
+          <datalist id="voice-tuning-recent"></datalist>
+          <label class="voice-tuning-wide">Delivery direction
+            <textarea id="voice-tuning-direction" rows="2" maxlength="400" placeholder="e.g. slower, land the numbers, one dry chuckle at most"></textarea>
+          </label>
+          <div class="voice-tuning-actions">
+            <button id="voice-tuning-respeak" class="quiet-action" type="button" title="Keep these words, synthesize again with the voice above">Re-speak with this voice</button>
+            <button id="voice-tuning-regenerate" class="quiet-action" type="button" title="Write a new take with the direction above, then speak it">Regenerate take</button>
+          </div>
+          <pre id="voice-tuning-script" class="voice-tuning-script"></pre>
+          <div id="voice-tuning-facts" class="voice-dialog-meta"></div>
+          <div id="voice-tuning-takes" class="voice-tuning-takes"></div>
+        </div>
+      </details>
+      <small>The conversation can show Calliope's shorter, personality-shaped presentation with or without speech. This modal keeps her complete, canonical answer available without adding another chat message.</small>
+    </div>
+    <footer>
+      <button id="voice-dialog-copy" class="quiet-action" type="button">Copy full answer</button>
+      <span></span>
+      <button id="voice-dialog-stop" class="quiet-action" type="button" disabled>Stop</button>
+      <button id="voice-dialog-replay" class="primary-action" type="button">Replay</button>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="markup-dialog" class="markup-dialog" aria-labelledby="markup-title">
+  <div class="markup-shell">
+    <header class="markup-head">
+      <div>
+        <p class="eyebrow">Spatial prompt</p>
+        <h2 id="markup-title">Select or mark up image</h2>
+      </div>
+      <button id="markup-close" class="markup-close" type="button" aria-label="Close markup editor">×</button>
+    </header>
+    <div id="visual-intent-source" hidden><label>Starting image <select id="visual-intent-target"></select></label><span id="visual-intent-meta"></span><button id="visual-intent-refresh" type="button">Fresh capture</button></div>
+    <div id="markup-toolbar" class="markup-toolbar" aria-label="Markup tools">
+      <div class="markup-tool-group">
+        <button type="button" class="active" data-markup-tool="select">Select</button>
+        <button type="button" data-markup-tool="pen">Pen</button>
+        <button type="button" data-markup-tool="arrow">Arrow</button>
+        <button type="button" data-markup-tool="rect">Box</button>
+      </div>
+      <i></i>
+      <div class="markup-colors" aria-label="Stroke color">
+        <button type="button" class="active" data-markup-color="#ff4d4f" style="--swatch:#ff4d4f" aria-label="Red"></button>
+        <button type="button" data-markup-color="#ffb020" style="--swatch:#ffb020" aria-label="Amber"></button>
+        <button type="button" data-markup-color="#35d07f" style="--swatch:#35d07f" aria-label="Green"></button>
+        <button type="button" data-markup-color="#4da3ff" style="--swatch:#4da3ff" aria-label="Blue"></button>
+        <button type="button" data-markup-color="#ffffff" style="--swatch:#ffffff" aria-label="White"></button>
+      </div>
+      <i></i>
+      <div class="markup-widths" aria-label="Stroke width">
+        <button type="button" data-markup-width="3" aria-label="Fine stroke"><span style="--dot:3px"></span></button>
+        <button type="button" class="active" data-markup-width="6" aria-label="Medium stroke"><span style="--dot:6px"></span></button>
+        <button type="button" data-markup-width="10" aria-label="Heavy stroke"><span style="--dot:10px"></span></button>
+      </div>
+      <i></i>
+      <div class="markup-history">
+        <button id="markup-undo" type="button" disabled>Undo</button>
+        <button id="markup-clear" type="button" disabled>Clear</button>
+      </div>
+    </div>
+    <div class="markup-canvas-stage">
+      <div id="markup-loading" class="markup-loading">Preparing image…</div>
+      <canvas id="markup-canvas" aria-label="Image markup canvas"></canvas>
+    </div>
+    <section id="visual-intent-controls" hidden aria-label="Visual intent editing">
+      <div id="visual-intent-rail" aria-label="Image versions"></div>
+      <div class="visual-intent-prompt"><label for="visual-intent-prompt">What should change?</label><textarea id="visual-intent-prompt" rows="2" maxlength="8000" placeholder="Describe the change. Draw on the image to point things out…"></textarea><button id="visual-intent-generate" type="button" class="primary-action">Generate edit</button><button id="visual-intent-save" type="button" class="primary-action">Save to Stage</button></div>
+      <p id="visual-intent-status" role="status" aria-live="polite"></p>
+    </section>
+    <footer class="markup-foot">
+      <span>Select an area or draw at full image resolution · Ctrl/⌘ Z to undo</span>
+      <div>
+        <button id="markup-cancel" type="button" class="quiet-action">Cancel</button>
+        <button id="markup-attach" type="button" class="primary-action" disabled>Add to message</button>
+      </div>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="briarpatch-dialog" class="sketch-workspace-dialog" aria-label="The Briarpatch — living map of the data universe">
+  <div class="sketch-workspace-content briarpatch-frame">
+    <button id="briarpatch-close" type="button" class="briarpatch-close" aria-label="Close the Briarpatch">✕</button>
+    <iframe id="briarpatch-iframe" title="The Briarpatch" src="about:blank"></iframe>
+  </div>
+</dialog>
+<dialog id="sketch-workspace-dialog" class="sketch-workspace-dialog" aria-label="Expanded collaborative Sketch">
+  <div id="sketch-workspace-content" class="sketch-workspace-content"></div>
+</dialog>
+
+<dialog id="surface-viewer-dialog" class="surface-viewer-dialog" aria-labelledby="surface-viewer-title">
+  <div class="surface-viewer-shell">
+    <header class="surface-viewer-head">
+      <div>
+        <p id="surface-viewer-meta" class="eyebrow">Expanded surface</p>
+        <h2 id="surface-viewer-title">Open surface</h2>
+      </div>
+      <button id="viewer-visual-intent" type="button" hidden>✎ Visual intent</button>
+      <a id="surface-viewer-external" href="#" target="_blank" rel="noopener" hidden>Open source ↗</a>
+      <button id="surface-viewer-close" class="markup-close" type="button" aria-label="Close expanded surface">×</button>
+    </header>
+    <div id="surface-viewer-content" class="surface-viewer-content" aria-live="polite"></div>
+  </div>
+</dialog>
+
+<dialog id="sheet-import-dialog" class="sheet-import-dialog" aria-labelledby="sheet-import-title">
+  <div class="sheet-import-shell">
+    <header class="sheet-import-head">
+      <div class="sheet-import-mark" aria-hidden="true">
+        <svg viewBox="0 0 16 18">
+          <path d="M2.25 1.25h7.1l4.4 4.4v11.1H2.25z"></path>
+          <path d="M9.35 1.25v4.4h4.4M4.65 8.15h6.7v5.85h-6.7zm0 2.05h6.7m-4.45-2.05V14m2.25-5.85V14"></path>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Private Google Sheet snapshot</p>
+        <h2 id="sheet-import-title">Choose a tab and range</h2>
+        <p id="sheet-import-workbook">Inspecting the selected workbook…</p>
+      </div>
+      <a id="sheet-import-source" href="#" target="_blank" rel="noopener" hidden>Open source ↗</a>
+      <button id="sheet-import-close" class="markup-close" type="button" aria-label="Close Sheet import">×</button>
+    </header>
+    <div class="sheet-import-workspace">
+      <aside class="sheet-import-tabs-wrap">
+        <span>Workbook tabs</span>
+        <div id="sheet-import-tabs" class="sheet-import-tabs" role="listbox" aria-label="Google Sheet tabs"></div>
+        <p>Only the tab and bounded range you confirm will enter this private notebook.</p>
+      </aside>
+      <section class="sheet-import-preview-pane">
+        <div class="sheet-import-controls">
+          <label>
+            <span>Range <i>optional</i></span>
+            <input id="sheet-import-range" type="text" maxlength="32" placeholder="A1:Z500" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="sheet-import-header-toggle">
+            <input id="sheet-import-header" type="checkbox" checked>
+            <span><b>First row is headers</b><i>Creates stable field names for Calliope</i></span>
+          </label>
+          <button id="sheet-import-preview-refresh" type="button">Refresh preview</button>
+        </div>
+        <div id="sheet-import-preview" class="sheet-import-preview" aria-live="polite">
+          <div class="sheet-import-loading"><i></i><strong>Reading the selected Sheet…</strong><span>Only a bounded preview is being requested.</span></div>
+        </div>
+      </section>
+    </div>
+    <footer class="sheet-import-foot">
+      <div>
+        <strong>Frozen, not silently synced.</strong>
+        <span id="sheet-import-status">The imported rows retain their workbook, tab, range, and content hash.</span>
+      </div>
+      <button id="sheet-import-cancel" class="quiet-action" type="button">Cancel</button>
+      <button id="sheet-import-commit" class="primary-action" type="button" disabled>Bring into Stage →</button>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="document-import-dialog" class="sheet-import-dialog document-import-dialog" aria-labelledby="document-import-title">
+  <div class="sheet-import-shell document-import-shell">
+    <header class="sheet-import-head document-import-head">
+      <div class="sheet-import-mark document-import-mark" aria-hidden="true">
+        <svg viewBox="0 0 16 18">
+          <path d="M2.25 1.25h7.1l4.4 4.4v11.1H2.25z"></path>
+          <path d="M9.35 1.25v4.4h4.4M4.65 8.25h6.3M4.65 10.7h6.3M4.65 13.15h4.2"></path>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Private Brain document</p>
+        <h2 id="document-import-title">Inspecting the selected Google Doc…</h2>
+        <p id="document-import-subtitle">Reading its structure without listing the rest of your Drive.</p>
+      </div>
+      <a id="document-import-source" href="#" target="_blank" rel="noopener" hidden>Open source ↗</a>
+      <button id="document-import-close" class="markup-close" type="button" aria-label="Close document import">×</button>
+    </header>
+    <div class="document-import-workspace">
+      <aside class="document-import-facts">
+        <div class="document-private-seal">
+          <i aria-hidden="true"></i>
+          <span><strong>Only you</strong><small>Owner-scoped Brain access</small></span>
+        </div>
+        <dl id="document-import-stats">
+          <div><dt>Words</dt><dd>—</dd></div>
+          <div><dt>Characters</dt><dd>—</dd></div>
+          <div><dt>Tabs</dt><dd>—</dd></div>
+        </dl>
+        <div class="document-import-tabs-block">
+          <span>Document structure</span>
+          <div id="document-import-tabs" class="document-import-tabs"><i>Inspecting tabs…</i></div>
+        </div>
+        <p>The document becomes searchable private evidence and can inform your future Briefs. It is not shared with the company.</p>
+      </aside>
+      <section id="document-import-preview" class="document-import-preview" aria-live="polite">
+        <div class="sheet-import-loading"><i></i><strong>Reading the selected document…</strong><span>Calliope is extracting a bounded text representation for your private Brain.</span></div>
+      </section>
+    </div>
+    <footer class="sheet-import-foot document-import-foot">
+      <div>
+        <strong>Private by default.</strong>
+        <span id="document-import-status">The source, revision, content hash, and authenticated owner will be retained.</span>
+      </div>
+      <button id="document-import-cancel" class="quiet-action" type="button">Cancel</button>
+      <button id="document-import-commit" class="primary-action" type="button" disabled>Add to private Brain →</button>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="work-inbox-dialog" class="work-inbox-dialog" aria-labelledby="work-inbox-title">
+  <div class="work-inbox-shell">
+    <header class="work-inbox-head">
+      <div class="work-inbox-heading">
+        <p class="eyebrow">Private action surface</p>
+        <h2 id="work-inbox-title">Work Inbox</h2>
+        <p id="work-inbox-copy">What changed, why it matters, and the next useful move—without another feed to babysit.</p>
+      </div>
+      <div class="work-inbox-head-actions">
+        <button id="work-inbox-schedule" class="work-inbox-primary" type="button">＋ Schedule something</button>
+        <button id="work-inbox-ack" type="button">Mark all seen</button>
+        <button id="work-inbox-refresh" type="button" aria-label="Refresh Work Inbox">↻</button>
+        <button id="work-inbox-close" class="markup-close" type="button" aria-label="Close Work Inbox">×</button>
+      </div>
+    </header>
+    <nav id="work-inbox-modes" class="work-inbox-modes" aria-label="Calliope work views">
+      <button type="button" data-inbox-mode="inbox" aria-pressed="true">Work Inbox <span id="work-inbox-mode-count">0</span></button>
+      <button type="button" data-inbox-mode="assigned" aria-pressed="false">Assigned to Callie <span id="work-assigned-mode-count">0</span></button>
+      <button type="button" data-inbox-mode="playbooks" aria-pressed="false">My Playbooks <span id="work-playbook-mode-count">0</span></button>
+      <button type="button" data-inbox-mode="decisions" aria-pressed="false">Decisions <span id="work-decision-mode-count">0</span></button>
+    </nav>
+    <nav id="work-inbox-filters" class="work-inbox-filters" aria-label="Filter Work Inbox">
+      <button type="button" data-inbox-filter="open" aria-pressed="true">Open</button>
+      <button type="button" data-inbox-filter="attention" aria-pressed="false">Needs attention</button>
+      <button type="button" data-inbox-filter="watch" aria-pressed="false">Watches</button>
+      <button type="button" data-inbox-filter="scheduled" aria-pressed="false">Scheduled</button>
+      <button type="button" data-inbox-filter="goal" aria-pressed="false">Goals</button>
+      <button type="button" data-inbox-filter="suggestion" aria-pressed="false">Suggestions</button>
+      <button type="button" data-inbox-filter="resolved" aria-pressed="false">Resolved</button>
+      <span id="work-inbox-summary">Checking for work…</span>
+    </nav>
+    <div id="work-inbox-list" class="work-inbox-list" aria-live="polite">
+      <div class="work-inbox-loading"><i></i><span>Resolving your work surface…</span></div>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="calliope-dreams-dialog" class="calliope-dreams-dialog" aria-labelledby="calliope-dreams-title">
+  <div class="calliope-dreams-shell">
+    <header class="calliope-dreams-head">
+      <div>
+        <p id="calliope-dreams-eyebrow" class="eyebrow">Private continuity · evidence first</p>
+        <h2 id="calliope-dreams-title">Dreams for you</h2>
+        <p id="calliope-dreams-copy">A few timely possibilities grounded in the work already in motion. Credible runners-up wait quietly on deck.</p>
+        <details id="calliope-dreams-context" class="calliope-dreams-context">
+          <summary><span>What Calliope is carrying forward</span><b id="calliope-dreams-context-meta">Private to you</b><em aria-hidden="true">⌄</em></summary>
+          <div id="calliope-dreams-context-body"><p>Your private working context will appear after Calliope has enough grounded activity to distill.</p></div>
+          <footer>
+            <button type="button" data-dream-context-action="correct">Correct</button>
+            <button type="button" data-dream-context-action="forget">Forget</button>
+            <button type="button" data-dream-context-action="resume" hidden>Resume</button>
+          </footer>
+        </details>
+      </div>
+      <div class="calliope-dreams-head-actions">
+        <div id="calliope-dreams-scope" class="calliope-dreams-scope" role="group" aria-label="Dream scope" hidden>
+          <button type="button" data-dream-scope="personal" aria-pressed="true">Mine</button>
+          <button type="button" data-dream-scope="company" aria-pressed="false">Company</button>
+        </div>
+        <button id="calliope-dreams-run" class="primary-action" type="button" title="Refresh your private working context and look for timely possibilities">Dream deeper</button>
+        <button id="calliope-dreams-refresh" type="button" aria-label="Refresh Dreams">↻</button>
+        <button id="calliope-dreams-close" class="markup-close" type="button" aria-label="Close Dreams">×</button>
+      </div>
+    </header>
+    <nav id="calliope-dreams-filters" class="calliope-dreams-filters" aria-label="Dream views">
+      <button type="button" data-dream-view="active" aria-pressed="true">Awake <b data-dream-count="active">0</b></button>
+      <button type="button" data-dream-view="new" aria-pressed="false">New <b data-dream-count="new">0</b></button>
+      <button type="button" data-dream-view="exploring" aria-pressed="false">Exploring <b data-dream-count="exploring">0</b></button>
+      <button type="button" data-dream-view="adopted" aria-pressed="false">Adopted <b data-dream-count="adopted">0</b></button>
+      <button type="button" data-dream-view="backlog" aria-pressed="false" title="Evidence-backed candidates that were not selected for the three-item shelf"><span id="calliope-dreams-backlog-label">On deck</span> <b data-dream-count="backlog">0</b></button>
+      <button type="button" data-dream-view="sleeping" aria-pressed="false">Sleeping <b data-dream-count="sleeping">0</b></button>
+      <span id="calliope-dreams-summary">Waiting for the first reflection…</span>
+    </nav>
+    <div class="calliope-dreams-workspace">
+      <aside id="calliope-dreams-list" class="calliope-dreams-list" aria-live="polite">
+        <div class="calliope-dreams-loading"><i></i><span>Remembering what you have been working through…</span></div>
+      </aside>
+      <section id="calliope-dreams-detail" class="calliope-dreams-detail">
+        <div class="calliope-dreams-empty">
+          <i aria-hidden="true">☾</i>
+          <p class="eyebrow">Private continuity, without the profile</p>
+          <h3>Calliope notices useful connections in the work already in motion.</h3>
+          <p>Each Dream preserves its evidence, novelty, recurrence, and response. Similar ideas deepen instead of stacking up.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="action-library-dialog" class="action-library-dialog" aria-labelledby="action-library-title">
+  <div class="action-library-shell">
+    <header class="action-library-head">
+      <div>
+        <p class="eyebrow">See · understand · connect · change</p>
+        <h2 id="action-library-title">Calliope Library</h2>
+        <p>See what Calliope knows and can use, discover new outcomes, and review every governed change.</p>
+      </div>
+      <span class="action-trust-note"><i></i>Trusted organization mode</span>
+      <button id="action-library-close" class="markup-close" type="button" aria-label="Close Calliope Library">×</button>
+    </header>
+    <div id="action-library-bootstrap" class="action-library-bootstrap" role="status" aria-live="polite">
+      <i aria-hidden="true"></i>
+      <span>Taking inventory of your system…</span>
+      <small>The Library will appear once its final sections and counts are ready.</small>
+    </div>
+    <div id="action-library-discovery" class="action-library-discovery" hidden>
+      <nav id="library-modes" class="library-mode-tabs" aria-label="Library views">
+        <button type="button" data-library-mode="inventory" aria-pressed="true">In use <b id="library-inventory-count">0</b></button>
+        <button type="button" data-library-mode="discover" aria-pressed="false">Discover <b id="library-discover-count">0</b></button>
+        <button type="button" data-library-mode="changes" aria-pressed="false">Changes <b id="library-changes-count">0</b></button>
+      </nav>
+      <label class="action-library-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="action-library-search" type="search" maxlength="600" placeholder="Search what Calliope currently knows and can use" autocomplete="off">
+      </label>
+      <nav id="action-library-categories" class="action-library-categories" aria-label="Library filters"></nav>
+    </div>
+    <div id="action-library-workspace" class="action-library-workspace" hidden>
+      <aside class="action-library-results">
+        <header><span id="action-library-summary">Loading your system…</span><button id="team-create" class="team-create-shortcut" type="button" aria-label="Create a Team" title="Create a Team" hidden>＋</button><button id="inventory-open-view" type="button" aria-label="Inspect the current Library view with Calliope" title="Pin the current view on the Stage">✦</button><button id="action-library-refresh" type="button" aria-label="Refresh Calliope Library">↻</button></header>
+        <div id="action-library-list" class="action-library-list" aria-live="polite"></div>
+      </aside>
+      <section class="action-library-detail">
+        <div id="inventory-empty" class="inventory-empty">
+          <i aria-hidden="true">◎</i>
+          <p class="eyebrow">What Calliope knows and can use</p>
+          <h3>Your working system, made visible.</h3>
+          <p id="inventory-empty-summary">Sources, tools, meaning, routines, Teams, and personal access appear here with their current observed health.</p>
+          <div id="inventory-overview" class="inventory-overview"></div>
+          <p id="inventory-warnings" class="inventory-warnings" hidden></p>
+        </div>
+        <article id="inventory-selected" class="inventory-selected" hidden>
+          <header class="inventory-detail-head">
+            <div>
+              <span id="inventory-detail-state" class="inventory-state">Ready</span>
+              <p id="inventory-detail-section" class="eyebrow">Configured item</p>
+              <h3 id="inventory-detail-title">System item</h3>
+              <p id="inventory-detail-summary"></p>
+            </div>
+            <span id="inventory-detail-kind" class="inventory-kind"></span>
+          </header>
+          <section class="inventory-health"><span>Observed health</span><p id="inventory-detail-health"></p></section>
+          <div id="inventory-detail-facts" class="inventory-detail-facts"></div>
+          <section id="team-management" class="team-management" hidden></section>
+          <details class="inventory-detail-contract">
+            <summary>Configuration context <span>⌄</span></summary>
+            <div id="inventory-detail-context"></div>
+          </details>
+          <footer id="inventory-detail-actions" class="inventory-detail-actions">
+            <p>Calliope receives this exact typed reference—not a name inferred from prose.</p>
+            <a id="inventory-detail-open" href="#" hidden>Open →</a>
+            <button id="inventory-knowledge-source" type="button" hidden>Consider as knowledge</button>
+            <button id="inventory-ask" class="primary-action" type="button">Ask Calliope →</button>
+          </footer>
+        </article>
+        <div id="action-library-empty" class="action-library-empty">
+          <i aria-hidden="true">✦</i>
+          <p class="eyebrow">You do not need to know the command</p>
+          <h3>Start with what you want to accomplish.</h3>
+          <p>Calliope can connect services, add knowledge, install capabilities, design workflows, and test the result using the system's SQL-first contracts.</p>
+          <div class="action-library-examples">
+            <button type="button" data-action-example="track project blockers">Track project blockers</button>
+            <button type="button" data-action-example="add Linear issues to company knowledge">Add Linear to company knowledge</button>
+            <button type="button" data-action-example="watch an important metric">Watch an important metric</button>
+          </div>
+        </div>
+        <article id="action-library-selected" class="action-library-selected" hidden>
+          <header class="action-detail-head">
+            <div>
+              <span id="action-detail-state" class="action-state">Ready</span>
+              <p id="action-detail-category" class="eyebrow">Action</p>
+              <h3 id="action-detail-title">Calliope action</h3>
+              <p id="action-detail-summary"></p>
+            </div>
+            <span id="action-detail-risk" class="action-risk"></span>
+          </header>
+          <p id="action-detail-description" class="action-detail-description"></p>
+          <section id="action-detail-requirements" class="action-detail-requirements" hidden></section>
+          <form id="action-detail-form" class="action-detail-form"></form>
+          <section id="action-plan" class="action-plan" hidden>
+            <header><div><span>Change receipt</span><strong id="action-plan-summary"></strong></div><b id="action-plan-status">Applying</b></header>
+            <details id="action-plan-sql" class="action-plan-sql" hidden>
+              <summary><span>Frozen SQL</span><code id="action-plan-sql-hash"></code></summary>
+              <pre><code id="action-plan-sql-text"></code></pre>
+            </details>
+            <div id="action-plan-steps" class="action-plan-steps"></div>
+            <p id="action-plan-rollback" class="action-plan-rollback"></p>
+          </section>
+          <footer class="action-detail-actions">
+            <p id="action-detail-note">Submitting applies and verifies this change directly, with a durable redacted receipt.</p>
+            <button id="action-open-with-calliope" type="button">Open with Calliope</button>
+            <button id="action-create-plan" class="primary-action" type="button">Apply &amp; verify →</button>
+            <button id="action-apply" class="primary-action" type="button" hidden>Apply legacy receipt →</button>
+          </footer>
+        </article>
+        <div id="library-changes-empty" class="inventory-empty" hidden>
+          <i aria-hidden="true">✓</i>
+          <p class="eyebrow">Durable change receipts</p>
+          <h3>No appliance changes yet.</h3>
+          <p>Library changes remain here with their redacted inputs, verification, and rollback guidance.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="instrument-library-dialog" class="instrument-library-dialog" aria-labelledby="instrument-library-title">
+  <div class="instrument-library-shell">
+    <header class="instrument-library-head">
+      <div>
+        <p class="eyebrow">Reusable humane workflows</p>
+        <h2 id="instrument-library-title">Calliope Instruments</h2>
+      </div>
+      <p>Small interfaces co-designed with Calliope. Every run starts a governed notebook; every agent revision waits for human publication.</p>
+      <button id="instrument-library-close" class="markup-close" type="button" aria-label="Close Instruments">×</button>
+    </header>
+    <div class="instrument-library-workspace">
+      <aside class="instrument-library-rail">
+        <div class="instrument-library-rail-head">
+          <span>Instrument library</span>
+          <div class="instrument-library-rail-actions">
+            <button id="instrument-library-new" type="button">+ New</button>
+            <button id="instrument-library-refresh" type="button" aria-label="Refresh Instruments">↻</button>
+          </div>
+        </div>
+        <div id="instrument-list" class="instrument-list"></div>
+        <p>Private drafts are visible only to their creator. Company Instruments expose only a human-approved published revision.</p>
+      </aside>
+      <section class="instrument-workspace">
+        <div id="instrument-empty" class="instrument-empty">
+          <i aria-hidden="true">⌁</i>
+          <p class="eyebrow">A skill you can see</p>
+          <h3>Turn repeated work into an Instrument.</h3>
+          <p>Ask Calliope to make a workflow reusable. She drafts the fields and prompt contract here; you decide when it is ready and who can use it.</p>
+          <button id="instrument-create-with-calliope" type="button">Design one with Calliope →</button>
+        </div>
+        <div id="instrument-detail" class="instrument-detail" hidden>
+          <header class="instrument-detail-head">
+            <div>
+              <span id="instrument-status" class="instrument-status">Private draft</span>
+              <h3 id="instrument-name">Instrument</h3>
+              <p id="instrument-description"></p>
+            </div>
+            <div id="instrument-version" class="instrument-version"></div>
+          </header>
+          <form id="instrument-run-form" class="instrument-run-form">
+            <div id="instrument-fields" class="instrument-fields"></div>
+            <div class="instrument-run-foot">
+              <p><b>Governed handoff</b> Inputs become evidence in a fresh private notebook. Calliope runs with your normal warehouse permissions.</p>
+              <button id="instrument-run" type="submit">Open with Calliope →</button>
+            </div>
+          </form>
+          <section id="instrument-owner-controls" class="instrument-owner-controls" hidden>
+            <div>
+              <span>Creator controls</span>
+              <p id="instrument-owner-copy">Review this draft before publishing it.</p>
+            </div>
+            <div class="instrument-owner-actions">
+              <button id="instrument-publish-private" type="button">Publish privately</button>
+              <button id="instrument-publish-company" type="button">Share with company</button>
+              <button id="instrument-revise" type="button">Revise with Calliope</button>
+              <button id="instrument-unpublish" type="button" hidden>Unpublish</button>
+              <button id="instrument-archive" type="button">Archive</button>
+            </div>
+          </section>
+          <details class="instrument-contract">
+            <summary>View the workflow contract <span>transparent by design</span></summary>
+            <pre id="instrument-prompt-template"></pre>
+            <div id="instrument-history" class="instrument-history"></div>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="workflow-library-dialog" class="instrument-library-dialog workflow-library-dialog" aria-labelledby="workflow-library-title">
+  <div class="instrument-library-shell">
+    <header class="instrument-library-head">
+      <div>
+        <p class="eyebrow">Headless, agent-driven Instruments</p>
+        <h2 id="workflow-library-title">Calliope Workflows</h2>
+      </div>
+      <p>Triggers and governed context flow into an agent goal. Hermes chooses the useful steps; every run returns as a fresh notebook and Work Inbox result.</p>
+      <button id="workflow-library-close" class="markup-close" type="button" aria-label="Close Workflows">×</button>
+    </header>
+    <div class="instrument-library-workspace">
+      <aside class="instrument-library-rail">
+        <div class="instrument-library-rail-head">
+          <span>Workflow library</span>
+          <div class="instrument-library-rail-actions">
+            <button id="workflow-library-new" type="button">+ New</button>
+            <button id="workflow-library-refresh" type="button" aria-label="Refresh Workflows">↻</button>
+          </div>
+        </div>
+        <div id="workflow-list" class="instrument-list"></div>
+        <section class="workflow-operations" aria-labelledby="workflow-operations-title">
+          <header>
+            <span id="workflow-operations-title">Hermes operations</span>
+            <button id="workflow-operations-refresh" type="button" aria-label="Refresh Hermes operations">↻</button>
+          </header>
+          <p id="workflow-operations-summary">Checking gateway and task queue…</p>
+          <div id="workflow-operations-jobs" class="workflow-operations-jobs"></div>
+        </section>
+        <p>Draft graphs stay private. Only a human-published version can be scheduled; revisions never silently move a live schedule.</p>
+      </aside>
+      <section class="instrument-workspace">
+        <form id="workflow-native-form" class="workflow-create-pane" hidden>
+          <header class="workflow-create-head">
+            <div>
+              <p class="eyebrow">Native private draft</p>
+              <h3>Start with a readable contract.</h3>
+              <p>This builder saves a versioned Workflow without asking an LLM. You can publish, run, or refine it with Calliope later.</p>
+            </div>
+            <button id="workflow-native-cancel" type="button" aria-label="Cancel new Workflow">×</button>
+          </header>
+          <div class="instrument-fields workflow-create-fields">
+            <label class="instrument-field">
+              <span>Starter</span>
+              <select id="workflow-native-template">
+                <option value="blank">Blank Workflow</option>
+                <option value="daily_brief">Daily brief follow-up</option>
+                <option value="project_pulse">Project and ticket pulse</option>
+                <option value="data_watch">Data quality watch</option>
+              </select>
+            </label>
+            <label class="instrument-field">
+              <span>Trigger</span>
+              <select id="workflow-native-trigger">
+                <option value="manual">On demand</option>
+                <option value="schedule">Hermes schedule</option>
+              </select>
+            </label>
+            <label class="instrument-field wide">
+              <span>Name</span>
+              <input id="workflow-native-name" maxlength="160" required placeholder="e.g. Morning pipeline pulse">
+            </label>
+            <label class="instrument-field wide">
+              <span>Description <b>optional</b></span>
+              <input id="workflow-native-description" maxlength="2000" placeholder="What this reusable Workflow is for">
+            </label>
+            <label id="workflow-native-schedule-field" class="instrument-field wide" hidden>
+              <span>Hermes schedule</span>
+              <input id="workflow-native-schedule" maxlength="160" placeholder="0 9 * * 1-5 or every 2h">
+              <small>Uses the Hermes installation timezone. Publishing and schedule enablement remain separate human actions.</small>
+            </label>
+            <label class="instrument-field wide">
+              <span>Agent goal</span>
+              <textarea id="workflow-native-goal" maxlength="12000" required placeholder="Describe the outcome, not a fixed sequence of tools."></textarea>
+            </label>
+            <label class="instrument-field wide">
+              <span>Run context <b>optional</b></span>
+              <textarea id="workflow-native-context" maxlength="2000" placeholder="Stable context or boundaries the agent should use. Add exact artifact and semantic-object handles with Calliope when needed."></textarea>
+            </label>
+            <label class="instrument-field wide">
+              <span>Required governed systems <b>optional, comma separated</b></span>
+              <input id="workflow-native-requirements" maxlength="600" placeholder="personal_context, project_ticket, warehouse, mcp:linear">
+              <small>Preflight verifies these before a model call or schedule. Supported forms: personal_context, project_ticket, warehouse, mcp:&lt;server&gt;, brain:&lt;provider&gt;, capability:&lt;id&gt;.</small>
+            </label>
+            <label class="instrument-field wide">
+              <span>Decision rules <b>one per line, optional</b></span>
+              <textarea id="workflow-native-rules" maxlength="6000" placeholder="Escalate only material changes.&#10;Cite the governed objects used."></textarea>
+            </label>
+          </div>
+          <fieldset class="workflow-output-picker">
+            <legend>Durable outputs</legend>
+            <label><input id="workflow-output-stage" type="checkbox" value="stage" checked> Stage result</label>
+            <label><input id="workflow-output-inbox" type="checkbox" value="work_inbox" checked> Work Inbox</label>
+            <label><input id="workflow-output-artifact" type="checkbox" value="artifact"> Versioned artifact</label>
+          </fieldset>
+          <div class="workflow-create-actions">
+            <p id="workflow-native-status">No model call is made. The graph starts as a private v1 draft.</p>
+            <button id="workflow-native-design" type="button">Design with Calliope instead</button>
+            <button id="workflow-native-submit" type="submit">Create private draft →</button>
+          </div>
+        </form>
+        <div id="workflow-empty" class="instrument-empty">
+          <i aria-hidden="true">⌘</i>
+          <p class="eyebrow">An Instrument without a form</p>
+          <h3>Connect intent, context, and time.</h3>
+          <p>Create a private graph directly from a starter, or ask Calliope to co-design one conversationally. Hermes keeps freedom to choose the right governed tools on each run.</p>
+          <div class="workflow-empty-actions">
+            <button id="workflow-create-native" type="button">Create from a starter</button>
+            <button id="workflow-create-with-calliope" type="button">Design one with Calliope →</button>
+          </div>
+        </div>
+        <div id="workflow-detail" class="instrument-detail" hidden>
+          <header class="instrument-detail-head">
+            <div>
+              <span id="workflow-status" class="instrument-status">Private draft</span>
+              <h3 id="workflow-name">Workflow</h3>
+              <p id="workflow-description"></p>
+            </div>
+            <div id="workflow-version" class="instrument-version"></div>
+          </header>
+          <section id="workflow-lifecycle" class="workflow-lifecycle" aria-label="Workflow lifecycle"></section>
+          <section id="workflow-preflight" class="workflow-preflight" aria-live="polite">
+            <header class="workflow-preflight-head">
+              <div><span>Test readiness</span><b id="workflow-preflight-status">Not checked</b></div>
+              <button id="workflow-preflight-refresh" type="button">Test readiness</button>
+            </header>
+            <p id="workflow-preflight-summary">No model call, notebook, Inbox item, or schedule change is made.</p>
+            <div id="workflow-preflight-checks" class="workflow-preflight-checks"></div>
+            <details id="workflow-preflight-contract" class="workflow-preflight-contract" hidden>
+              <summary>Inspect frozen preview <span>side-effect free</span></summary>
+              <pre id="workflow-preflight-json"></pre>
+            </details>
+          </section>
+          <section class="workflow-canvas-block">
+            <div class="workflow-canvas-head"><span>Readable execution graph</span><b id="workflow-trigger-label"></b></div>
+            <div id="workflow-graph" class="workflow-graph"></div>
+            <p id="workflow-goal" class="workflow-goal"></p>
+          </section>
+          <div class="instrument-run-foot workflow-run-foot">
+            <p><b>Fresh run notebook</b> The approved graph and exact governed context are frozen first; the agent then chooses its steps and publishes a durable result.</p>
+            <button id="workflow-run" type="button">Run now →</button>
+          </div>
+          <section id="workflow-owner-controls" class="instrument-owner-controls" hidden>
+            <div>
+              <span>Creator controls</span>
+              <p id="workflow-owner-copy">Review this graph before publishing it.</p>
+            </div>
+            <div class="instrument-owner-actions workflow-owner-actions">
+              <button id="workflow-publish-private" type="button">Publish privately</button>
+              <button id="workflow-publish-company" type="button">Share with company</button>
+              <button id="workflow-revise" type="button">Revise with Calliope</button>
+              <button id="workflow-unpublish" type="button" hidden>Unpublish</button>
+              <button id="workflow-archive" type="button">Archive</button>
+            </div>
+          </section>
+          <section id="workflow-schedule-panel" class="workflow-schedule-panel" hidden>
+            <div><span>Hermes schedule</span><p id="workflow-schedule-copy"></p></div>
+            <div class="workflow-schedule-actions">
+              <button id="workflow-schedule-enable" type="button">Enable schedule</button>
+              <button id="workflow-schedule-pause" type="button" hidden>Pause</button>
+              <button id="workflow-schedule-resume" type="button" hidden>Resume</button>
+              <button id="workflow-schedule-run" type="button" hidden>Run once now</button>
+              <button id="workflow-schedule-disable" type="button" hidden>Remove schedule</button>
+            </div>
+          </section>
+          <details class="instrument-contract workflow-contract">
+            <summary>Inspect immutable contract &amp; run history <span>no hidden low-level DAG</span></summary>
+            <pre id="workflow-contract-json"></pre>
+            <div id="workflow-run-history" class="instrument-history"></div>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="style-library-dialog" class="style-library-dialog" aria-labelledby="style-library-title">
+  <div class="style-library-shell">
+    <header class="style-library-head">
+      <div>
+        <p class="eyebrow">Reusable creative direction</p>
+        <h2 id="style-library-title">Design Profiles</h2>
+      </div>
+      <p>Turn references and intent into a versioned authoring contract for dashboards, apps, charts, and decks.</p>
+      <button id="style-library-close" class="markup-close" type="button" aria-label="Close Design Profiles">×</button>
+    </header>
+    <div class="style-library-workspace">
+      <aside class="style-library-rail">
+        <div class="style-library-rail-head">
+          <span>Company library</span>
+          <button id="style-new" type="button">+ New</button>
+        </div>
+        <div id="style-list" class="style-list"></div>
+        <p>Everyone can use and fork profiles. Only the creator can revise the original.</p>
+      </aside>
+
+      <section id="style-create-pane" class="style-create-pane">
+        <div class="style-pane-intro">
+          <p class="eyebrow">Create from evidence</p>
+          <h3>Seed a visual language.</h3>
+          <p>Use any combination of screenshots, a URL, a selected Calliope capture, and plain-language direction. The source is frozen with version one.</p>
+        </div>
+        <label class="style-field">
+          <span>Profile name</span>
+          <input id="style-name" maxlength="120" placeholder="e.g. Clinical clarity">
+        </label>
+        <label class="style-field">
+          <span>Reference URL <i>optional</i></span>
+          <input id="style-url" type="url" placeholder="https://example.com">
+        </label>
+        <label class="style-field">
+          <span>Direction and constraints <i>optional</i></span>
+          <textarea id="style-guidance" rows="7" maxlength="12000" placeholder="Calm, high-trust, dense enough for operations. Avoid generic gradient cards…"></textarea>
+        </label>
+        <div class="style-source-actions">
+          <label class="style-source-button">
+            <input id="style-images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+            <span>＋</span> Add reference images
+          </label>
+          <button id="style-use-selected" class="style-source-button" type="button" disabled><span>⌖</span> Use selected capture</button>
+        </div>
+        <div id="style-source-strip" class="style-source-strip" hidden></div>
+        <div class="style-create-actions">
+          <span id="style-generate-status"></span>
+          <button id="style-generate" class="primary-action" type="button">Generate &amp; save profile</button>
+        </div>
+      </section>
+
+      <section id="style-editor-pane" class="style-editor-pane" hidden>
+        <header class="style-editor-head">
+          <div>
+            <p id="style-owner" class="eyebrow"></p>
+            <h3 id="style-editor-name"></h3>
+            <p id="style-editor-description"></p>
+          </div>
+          <label class="style-version-picker">
+            <span>Version</span>
+            <select id="style-version"></select>
+          </label>
+        </header>
+        <div id="style-reference-strip" class="style-reference-strip"></div>
+        <div class="style-editor-grid">
+          <div class="style-preview-column">
+            <p class="style-section-label">Token sample · example data</p>
+            <div id="style-preview" class="style-preview"></div>
+            <p id="style-preview-note" class="style-preview-note">A palette, typography, and surface sample. The profile Markdown guides the artifact layout.</p>
+            <div id="style-source-summary" class="style-source-summary"></div>
+          </div>
+          <label class="style-markdown-column">
+            <span id="style-markdown-label" class="style-section-label">Editable profile Markdown</span>
+            <textarea id="style-markdown" spellcheck="false" maxlength="32000"></textarea>
+          </label>
+        </div>
+        <footer class="style-editor-actions">
+          <button id="style-archive" class="quiet-action" type="button">Archive</button>
+          <button id="style-fork" class="quiet-action" type="button">Duplicate</button>
+          <span></span>
+          <button id="style-save-version" class="quiet-action" type="button">Save as new version</button>
+          <button id="style-use-once" class="quiet-action" type="button">Use next turn</button>
+          <button id="style-use-session" class="primary-action" type="button">Use in this session</button>
+        </footer>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<div id="artifact-text-edit-rail" class="artifact-text-edit-rail" hidden aria-live="polite">
+  <i aria-hidden="true"></i>
+  <span><strong id="artifact-text-edit-title">Editing copy</strong><small id="artifact-text-edit-detail">Choose visible text inside the artifact.</small></span>
+  <button id="artifact-text-edit-revert" type="button">Revert</button>
+  <button id="artifact-text-edit-save" class="primary" type="button" disabled>Save</button>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/calliope/answerable-match.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/thinking-orbs.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/parametric-rays.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/fluoddity-thinking.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/daily-notes-editor.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/dictation.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/visual-intent.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/playbook-picker.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/artifact-work.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/image-work.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/query-work.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/stage-maps.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/stage-search.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/stage-timeline.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/stage-unwrap.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/stage-canvas.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/stage-arrange.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/computer-xterm.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/computer-terminal.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/computer.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/computer-stage.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/shared-files.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/system-stage.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/correspondence.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+<script src="/calliope/calliope.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+</body>
+</html>

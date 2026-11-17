@@ -1,0 +1,122 @@
+[
+ {
+  "id": 1,
+  "title": "Mid-century leather armchair",
+  "price": 450,
+  "honest": false,
+  "description": "Pristine condition, not a single scratch. Smoke-free, pet-free home.",
+  "scene": "a brown mid-century leather armchair in a living room, the leather armrests and seat front covered in deep claw scratches and torn strips, tufts of cat hair on the seat cushion"
+ },
+ {
+  "id": 2,
+  "title": "iPhone 15 Pro, 256GB",
+  "price": 780,
+  "honest": false,
+  "description": "Like new. Always kept in a case, flawless screen.",
+  "scene": "a black smartphone lying face up on a wooden table, its screen shattered with a large spiderweb crack spreading from the lower corner"
+ },
+ {
+  "id": 3,
+  "title": "Carbon road bike, 56cm",
+  "price": 1650,
+  "honest": true,
+  "description": "Barely ridden, garage kept. Clean drivetrain.",
+  "scene": "a clean, shiny carbon road bike leaning against the wall of a tidy home garage, spotless chain and tires"
+ },
+ {
+  "id": 4,
+  "title": "KitchenAid stand mixer",
+  "price": 180,
+  "honest": true,
+  "description": "Works perfectly. Some cosmetic wear and paint chips on the base.",
+  "scene": "a red stand mixer on a kitchen counter with a few small paint chips on its base, otherwise clean"
+ },
+ {
+  "id": 5,
+  "title": "Vintage wool rug, 8x10",
+  "price": 900,
+  "honest": false,
+  "description": "Spotless. Professionally cleaned last month.",
+  "scene": "a patterned red and navy wool area rug on a hardwood floor with a large dark brown stain near its center"
+ },
+ {
+  "id": 6,
+  "title": "Teak patio set, table + 4 chairs",
+  "price": 520,
+  "honest": false,
+  "description": "Complete set: table and all four original chairs, sturdy.",
+  "scene": "a weathered teak patio table on a deck with only two matching chairs, one of the chairs has a snapped leg and leans over"
+ },
+ {
+  "id": 7,
+  "title": "Sunburst electric guitar",
+  "price": 640,
+  "honest": true,
+  "description": "Plays great. A few dings on the body, nothing structural.",
+  "scene": "a sunburst electric guitar on a guitar stand, with a couple of small dings in the finish on the lower body"
+ },
+ {
+  "id": 8,
+  "title": "2015 Toyota Camry",
+  "price": 9800,
+  "honest": false,
+  "description": "Never in an accident. Clean body, no dents.",
+  "scene": "the front of a silver sedan parked in a driveway, its front bumper heavily dented and scraped with a cracked headlight"
+ },
+ {
+  "id": 9,
+  "title": "Designer leather handbag",
+  "price": 1200,
+  "honest": false,
+  "description": "Authentic, never used, original tags still attached.",
+  "scene": "a tan leather handbag on a bed, its corners scuffed and worn through, the handles darkened from use, no tags anywhere"
+ },
+ {
+  "id": 10,
+  "title": "Standing desk, oak top",
+  "price": 380,
+  "honest": true,
+  "description": "Excellent condition, motor works smoothly.",
+  "scene": "a clean electric standing desk with a light oak top in a bright home office, raised to standing height, nothing on it"
+ },
+ {
+  "id": 11,
+  "title": "Grey sectional sofa",
+  "price": 700,
+  "honest": false,
+  "description": "Smoke-free, pet-free home. Very clean.",
+  "scene": "a grey sectional sofa in a living room with a large golden retriever sound asleep across the cushions and dog hair on the seats"
+ },
+ {
+  "id": 12,
+  "title": "Matching washer and dryer",
+  "price": 650,
+  "honest": false,
+  "description": "Both working. Matching set, same brand and color.",
+  "scene": "a laundry room with a white front-load washer next to an almond-colored top-load dryer of a clearly different brand and style"
+ },
+ {
+  "id": 13,
+  "title": "Oak dining table, seats 6",
+  "price": 850,
+  "honest": true,
+  "description": "Solid oak, seats six comfortably. Chairs included.",
+  "scene": "a solid oak dining table with six matching wooden chairs around it in a dining room"
+ },
+ {
+  "id": 14,
+  "title": "12 ft trampoline with net",
+  "price": 160,
+  "honest": false,
+  "description": "Like new. Safety net included and intact.",
+  "scene": "a backyard trampoline with a rusty frame and its safety net torn open and hanging loose on one side"
+ },
+ {
+  "id": 15,
+  "title": "Espresso machine",
+  "price": 420,
+  "honest": true,
+  "description": "Lightly used, descaled monthly, works great.",
+  "scene": "a clean stainless steel home espresso machine on a kitchen counter next to a small coffee grinder"
+ }
+]

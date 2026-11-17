@@ -1,0 +1,55 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/tools/tool_search.py b/tools/tool_search.py
+index 4d953c1..fc7c97e 100644
+--- a/tools/tool_search.py
++++ b/tools/tool_search.py
+@@ -533,6 +533,41 @@ def scoped_deferrable_names(tool_defs: List[Dict[str, Any]]) -> frozenset[str]:
+                      if n and is_deferrable_tool_name(n, defer_tools))
+ 
+ 
++def _unwrap_redundant_arguments_object(
++    name: str, raw_args: Dict[str, Any]
++) -> Dict[str, Any]:
++    """Repair one provably redundant ``arguments`` wrapper.
++
++    The repair is schema-bound and fail-closed: it only unwraps an object
++    whose sole key is ``arguments`` when the registered target schema does
++    not define that parameter and the nested object contains a known field.
++    """
++    nested = raw_args.get("arguments")
++    if set(raw_args) != {"arguments"} or not isinstance(nested, dict):
++        return raw_args
++    try:
++        from tools.registry import registry as _registry
++        schema = _registry.get_schema(name)
++        if not isinstance(schema, dict):
++            return raw_args
++        fn = schema.get("function") if schema.get("type") == "function" else schema
++        if not isinstance(fn, dict):
++            return raw_args
++        params = fn.get("parameters")
++        properties = params.get("properties") if isinstance(params, dict) else None
++        if not isinstance(properties, dict) or "arguments" in properties:
++            return raw_args
++        if not any(key in properties for key in nested):
++            return raw_args
++        logger.info("Unwrapped redundant arguments object for deferred tool %s", name)
++        return nested
++    except Exception:  # pragma: no cover — schema failure must not alter calls
++        logger.debug(
++            "redundant arguments wrapper check failed for %s", name, exc_info=True
++        )
++        return raw_args
++
++
+ def resolve_underlying_call(args: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
+     """Parse a ``tool_call`` invocation into (underlying_name, args, error_msg).
+ 
+@@ -562,6 +597,7 @@ def resolve_underlying_call(args: Dict[str, Any]) -> Tuple[Optional[str], Dict[s
+     raw_args = entries[0]["arguments"]
+     if not is_deferrable_tool_name(name, load_config_readonly().effective_defer_tools):
+         return None, {}, not_deferrable_error(name)
++    raw_args = _unwrap_redundant_arguments_object(name, raw_args)
+     return name, raw_args, None
+ 
+ 

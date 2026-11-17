@@ -1,0 +1,212 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  appliance-contracts:
+    name: Calliope appliance contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate Python and packaging contracts
+        run: |
+          pip install -q pytest pyyaml "psycopg[binary]"
+          python -m py_compile \
+            scripts/release/bump-version.py \
+            scripts/release/bump-calliope-version.py
+          pytest -q tests/test_capability_pack_contract.py
+
+      - name: Validate hosted Compose
+        env:
+          POSTGRES_PASSWORD: build-only
+          RVBBIT_CLOVER_KEY: build-only
+          RVBBIT_CREDENTIAL_KEY: build-only
+          RVBBIT_GATEWAY_TOKEN: build-only
+          RVBBIT_MIRROR_TOKEN: build-only
+          WAREHOUSE_HERMES_API_KEY: build-only
+          WAREHOUSE_HERMES_MCP_KEY: build-only
+          WAREHOUSE_LOGIN_PASSWORD: build-only
+          WAREHOUSE_ALLOWED_EMAILS: build@invalid
+          WAREHOUSE_TEAM_BOOTSTRAP_ADMINS: build@invalid
+          WAREHOUSE_JWT_SECRET: build-only
+          WAREHOUSE_MCP_KEY: build-only
+          WAREHOUSE_PUBLIC_URL: https://build.invalid
+        run: docker compose -f docker/docker-compose.calliope.yml config --quiet
+
+  datarabbit:
+    name: DataRabbit typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: datarabbit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: datarabbit/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+
+  rust-tests:
+    name: Rust unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test storage + warren crates
+        run: cargo test -p rvbbit_storage -p warren-agent
+
+  pg-rvbbit-tests:
+    name: PostgreSQL extension tests and E2E suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    # pgrx builds both a Rust test harness and an installable extension. Keep
+    # cold-runner disk use bounded; debug symbols and incremental artifacts make
+    # this dependency graph much larger without improving these SQL tests.
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      # Two builds of the extension (pg_test and plain) share this runner.
+      - name: Reclaim hosted-runner build space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift
+          df -h /
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95.0"
+
+      - name: Install PostgreSQL 18 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang libclang-dev libssl-dev pkg-config \
+            postgresql-18 postgresql-server-dev-18 \
+            postgresql-18-cron postgresql-18-hypopg postgresql-18-pgvector \
+            postgresql-18-postgis-3 postgresql-18-postgis-3-scripts \
+            protobuf-compiler libprotobuf-dev zstd libzstd-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: pg-rvbbit-tests
+
+      - name: Cache cargo-pgrx
+        id: cargo-pgrx-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-pgrx
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: cargo-pgrx-${{ runner.os }}-${{ runner.arch }}-0.18.0-rust-1.95.0
+
+      - name: Install cargo-pgrx
+        if: steps.cargo-pgrx-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked cargo-pgrx --version 0.18.0
+
+      - name: Configure pgrx for PostgreSQL 18
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
+
+      # pgrx installs the test build into the system PostgreSQL, whose
+      # extension and library directories belong to root.
+      - name: Let the runner install into PostgreSQL 18
+        run: |
+          sudo chmod a+rwx \
+            "$(/usr/lib/postgresql/18/bin/pg_config --pkglibdir)" \
+            "$(/usr/lib/postgresql/18/bin/pg_config --sharedir)/extension"
+
+      - name: Test pg_rvbbit
+        working-directory: crates/pg_rvbbit
+        run: cargo pgrx test pg18
+
+      # The E2E suite runs against this commit's extension, installed into the
+      # runner's PostgreSQL 18 the way the calliope-postgres image sets it up
+      # (preloaded, CREATE EXTENSION + rvbbit.migrate()), not a published image
+      # that lags the tests.
+      - name: Install pg_rvbbit into PostgreSQL 18
+        working-directory: crates/pg_rvbbit
+        run: cargo pgrx install --pg-config /usr/lib/postgresql/18/bin/pg_config
+
+      - name: Start PostgreSQL with rvbbit, and a plain one to compare against
+        run: |
+          sudo pg_createcluster 18 e2e -p 55599 \
+            -o "shared_preload_libraries=pg_rvbbit,pg_cron,pg_stat_statements" \
+            -o "cron.database_name=bench" \
+            --start
+          sudo -u postgres psql -p 55599 -c "ALTER USER postgres PASSWORD 'rvbbit'"
+          sudo -u postgres createdb -p 55599 bench
+          sudo -u postgres psql -p 55599 -d bench -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION pg_rvbbit" \
+            -c "SELECT rvbbit.migrate()" \
+            -c "SELECT rvbbit.rvbbit_version()"
+          docker run -d --name ci-heap -p 55598:5432 \
+            -e POSTGRES_PASSWORD=rvbbit -e POSTGRES_DB=bench postgres:18
+          for i in $(seq 1 60); do
+            docker exec ci-heap pg_isready -U postgres -q 2>/dev/null && break
+            sleep 2
+          done
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Excluded tests (-k, not --deselect: tests/pytest.ini makes
+      # rootdir=tests/ so path-prefixed deselect node IDs never match):
+      # - direct_canonical_parquet_import: needs path parity between the test
+      #   runner and the server's filesystem (/rvbbit_import) that only the dev
+      #   bench container provides.
+      # - rebuild_stages_fold / drop_registered_table reap assertions: the
+      #   orphaned-file queue-drained-to-zero checks race with deferred
+      #   unlink on slow shared runners (flaked across runs).
+      # All three still run locally via `make test`.
+      - name: Run the acceleration E2E suite
+        env:
+          RVBBIT_DSN: postgresql://postgres:rvbbit@localhost:55599/bench
+          HEAP_DSN: postgresql://postgres:rvbbit@localhost:55598/bench
+        run: |
+          pip install -q pytest "psycopg[binary]" pyarrow
+          pytest -v -p no:cacheprovider \
+            tests/test_acceleration_dirty_ops.py \
+            tests/test_acceleration_observability.py \
+            tests/test_acceleration_tombstone_overlay.py \
+            tests/test_acceleration_production_edges.py \
+            tests/test_acceleration_auto_consolidation.py \
+            tests/test_acceleration_autopilot_actor.py \
+            tests/test_acceleration_app_roles.py \
+            tests/test_acceleration_reader_rewrites.py \
+            tests/test_acceleration_index_paths.py \
+            tests/test_acceleration_scan_cost.py \
+            tests/test_acceleration_rebuild_watermark.py \
+            tests/test_clover_typed_extraction.py \
+            tests/test_acceleration_accelerated_only.py \
+            tests/test_statement_overhead.py \
+            tests/test_acceleration_workload_observer.py \
+            -k "not test_direct_canonical_parquet_import_uses_threaded_writer_and_logs_timing and not test_rebuild_stages_fold_and_defers_old_file_reap and not test_drop_registered_table_clears_catalog_and_reaps_accel_files"
+
+      - name: PostgreSQL log on failure
+        if: failure()
+        run: sudo tail -n 200 /var/log/postgresql/postgresql-18-e2e.log || true

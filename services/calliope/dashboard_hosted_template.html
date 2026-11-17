@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard</title>
+<script src="/charts/rvbbit-tanstack-charts-0.16.2.js"></script>
+<script src="/charts/rvbbit-tanstack-table-core-9.2.4.js"></script>
+<script src="/charts/rvbbit-tanstack-virtual-core-3.17.10.js"></script>
+<script src="/charts/rvbbit-dashboard-1.0.1.js"></script>
+<!-- Keep this bridge and use the four helpers: Dashboard publication rejects replacement widget engines. -->
+<style>
+/* the scrollbar corner is white by default and shows as a square where two bars meet */
+::-webkit-scrollbar-corner{background:transparent}
+
+:root{--page:var(--artifact-bg,#0b1218);--text:var(--artifact-text,#edf2f4);--surface:var(--artifact-panel,#17232b);--muted:var(--artifact-muted,#a0afb6)}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--text);font-family:var(--artifact-font-body,system-ui)}main{max-width:1400px;margin:auto;padding:24px}header{margin-bottom:24px}h1{margin:0 0 8px;font-size:28px}p{line-height:1.5}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}.card{min-width:0;padding:20px;background:var(--surface);border-radius:8px}h2{font-size:16px;margin:0 0 16px}#freshness,#status{color:var(--muted)}#summary{margin:16px 0}
+</style></head><body><main>
+<header><h1 id="title">Report title</h1><p id="question">The specific question this report answers.</p><p id="freshness"></p><p id="status" role="status"></p></header>
+<div id="scope"></div><section id="summary" class="card"></section>
+<div class="cards"><section class="card"><h2>Comparison</h2><div id="comparison"></div></section><section class="card"><h2>Details</h2><div id="details"></div></section></div>
+</main><script>
+/* FRAMEWORK: preserve result metadata and ignore superseded requests. */
+const widgets=new Map();
+function rowsToObjects(result){const rows=Array.isArray(result)?result:result.rows||result.data||[];const cols=(result.columns||result.fields||[]).map(c=>typeof c==='string'?c:c.name||c.column);return rows.map(r=>Array.isArray(r)?Object.fromEntries(cols.map((c,i)=>[c,r[i]])):r);}
+async function waitForBridge(){const deadline=Date.now()+6000;while(typeof window.rvbbitQuery!=='function'){if(Date.now()>deadline)throw Error('Open this page on the Calliope host to load its data.');await new Promise(r=>setTimeout(r,100));}}
+async function composePayload(parts){const results=await Promise.all(Object.entries(parts).map(async([name,part])=>{const result=await window.rvbbitQuery(part.sql,{limit:part.limit??1000});if(result.error)throw Error(`${name}: ${result.error.message||result.error}`);const rows=rowsToObjects(result);return [name,{rows,metadata:{truncated:result.truncated,applied_limit:result.applied_limit,requested_limit:result.requested_limit}}];}));return Object.fromEntries(results);}
+function mount(name,create,options){if(widgets.has(name))widgets.get(name).update(options);else widgets.set(name,create(options));}
+let generation=0;
+async function refresh(){const request=++generation;window.__rvbbitDashboardState={loading:true,error:null};document.getElementById('status').textContent='Updating…';for(const w of widgets.values())w.update({state:'stale',error:null});try{await waitForBridge();const payload=await composePayload(queries());if(request!==generation)return;render(payload);window.__rvbbitDashboardState={loading:false,error:null};document.getElementById('freshness').textContent='Updated '+new Date().toLocaleString();document.getElementById('status').textContent='';}catch(error){if(request!==generation)return;window.__rvbbitDashboardState={loading:false,error:error.message};document.getElementById('status').textContent=error.message;for(const w of widgets.values())w.update({state:'error',error:error.message});}}
+/* EDIT: reuse the named queries already proved by the analytical work. Never concatenate untrusted filter values into SQL. */
+// This sample query is a shape demonstration. Replace it with the proved business query before publishing.
+function queries(){return {comparison:{sql:"SELECT 'Replace with proved query' AS label, 0 AS value",limit:1000}};}
+function render(data){const {rows,metadata}=data.comparison;
+ mount('summary',rvbbitDashboard.kpi,{el:'#summary',id:'summary',label:'Loaded categories',value:rows.length,state:'ready',error:null});
+ mount('comparison',rvbbitDashboard.chart,{el:'#comparison',id:'comparison',data:rows,type:'bar',x:'label',y:'value',query:'comparison',state:'ready',error:null});
+ mount('details',rvbbitDashboard.table,{el:'#details',id:'details',rows,columns:[{key:'label',label:'Category'},{key:'value',label:'Value',format:'number'}],page:25,metadata,state:'ready',error:null});
+}
+// Optional filter: mount a field already mapped to a proved, bound predicate in queries().
+// rvbbitDashboard.filter({el:'#scope',id:'scope',field:'region',value:'all',choices:[{value:'all',label:'All regions'}],onChange(value){ /* update the page's allowlisted predicate */ refresh(); }});
+refresh();
+</script></body></html>

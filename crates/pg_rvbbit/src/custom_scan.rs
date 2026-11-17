@@ -1,0 +1,5751 @@
+//! Phase 2c: CustomScan implementation.
+//!
+//! Lifecycle (PG callback order):
+//!
+//!   1. Planner: `PlanCustomPath`            (path -> Plan node)
+//!   2. Executor init: `CreateCustomScanState`   (Plan -> ScanState)
+//!   3. Executor start: `BeginCustomScan`     (open parquet readers)
+//!   4. Executor run:   `ExecCustomScan` * N  (return one slot per call)
+//!   5. Executor cleanup: `EndCustomScan`     (close readers)
+//!
+//! Plus `ReScanCustomScan` (rewind for cursor reuse) and
+//! `ExplainCustomScan` (EXPLAIN output).
+//!
+//! Phase 2c MVP scope:
+//!   - Returns ALL rows from ALL row groups (no row-group pruning yet)
+//!   - Returns ALL columns from each row group (no projection pushdown
+//!     yet — planner's PathTarget tells us what to keep, but we'd have
+//!     to walk it and translate to a ProjectionMask; deferred)
+//!   - No predicate pushdown (planner filters on top of our output)
+//!   - No parallel scan
+//!
+//! All of these are layered on top later without changing the scan
+//! state structure.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::ffi::c_char;
+use std::sync::Arc;
+
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, Date32Array, Float32Array, Float64Array, Int16Array,
+    Int32Array, Int64Array, ListArray, RecordBatch, StringArray, TimestampMicrosecondArray,
+};
+use arrow::datatypes::DataType;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
+use parquet::bloom_filter::Sbbf;
+use parquet::file::properties::ReaderProperties;
+use parquet::file::reader::FileReader;
+use parquet::file::serialized_reader::{ReadOptionsBuilder, SerializedFileReader};
+use pgrx::pg_guard;
+use pgrx::pg_sys;
+use pgrx::IntoDatum;
+use rvbbit_storage::metadata::{ColumnStats, TextSketch};
+use rvbbit_storage::row_group::RowGroupReader;
+
+const SCAN_LAYOUT: &str = "scan";
+const CLUSTER_LAYOUT_PREFIX: &str = "cluster:";
+const XID_EPOCH_WIDTH: u128 = 4_294_967_296;
+/// The columnar Vortex variant layout name (mirrors compact.rs `VORTEX_SCAN_LAYOUT`).
+/// When `rvbbit.native_vortex` is on and a ready variant exists, the native scan
+/// reads these `.vortex` files instead of canonical parquet (Phase 3 of
+/// `docs/NATIVE_VORTEX_PLAN.md`).
+const VORTEX_SCAN_LAYOUT: &str = "vortex_scan";
+
+thread_local! {
+    static SCAN_BATCH_CACHE: RefCell<ScanBatchCache> =
+        RefCell::new(ScanBatchCache::default());
+}
+
+// --- Method tables ---------------------------------------------------------
+
+#[repr(transparent)]
+pub(crate) struct ScanMethodsSync(pub pg_sys::CustomScanMethods);
+unsafe impl Sync for ScanMethodsSync {}
+
+#[repr(transparent)]
+pub(crate) struct ExecMethodsSync(pub pg_sys::CustomExecMethods);
+unsafe impl Sync for ExecMethodsSync {}
+
+pub(crate) static RVBBIT_SCAN_METHODS: ScanMethodsSync =
+    ScanMethodsSync(pg_sys::CustomScanMethods {
+        CustomName: c"RvbbitParquetScan".as_ptr() as *const c_char,
+        CreateCustomScanState: Some(create_custom_scan_state),
+    });
+
+pub(crate) static RVBBIT_EXEC_METHODS: ExecMethodsSync =
+    ExecMethodsSync(pg_sys::CustomExecMethods {
+        CustomName: c"RvbbitParquetScan".as_ptr() as *const c_char,
+        BeginCustomScan: Some(begin_custom_scan),
+        ExecCustomScan: Some(exec_custom_scan),
+        EndCustomScan: Some(end_custom_scan),
+        ReScanCustomScan: Some(rescan_custom_scan),
+        MarkPosCustomScan: None,
+        RestrPosCustomScan: None,
+        EstimateDSMCustomScan: None,
+        InitializeDSMCustomScan: None,
+        ReInitializeDSMCustomScan: None,
+        InitializeWorkerCustomScan: None,
+        ShutdownCustomScan: None,
+        ExplainCustomScan: Some(explain_custom_scan),
+    });
+
+// --- Convert chosen path → plan node ---------------------------------------
+
+#[pg_guard]
+pub(crate) unsafe extern "C-unwind" fn plan_custom_path(
+    _root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    best_path: *mut pg_sys::CustomPath,
+    tlist: *mut pg_sys::List,
+    clauses: *mut pg_sys::List,
+    _custom_plans: *mut pg_sys::List,
+) -> *mut pg_sys::Plan {
+    let cscan_ptr =
+        pg_sys::palloc0(std::mem::size_of::<pg_sys::CustomScan>()) as *mut pg_sys::CustomScan;
+    let cscan = &mut *cscan_ptr;
+
+    cscan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+    cscan.scan.plan.targetlist = tlist;
+    cscan.scan.plan.qual = pgrx::pg_sys::extract_actual_clauses(clauses, false);
+    cscan.scan.scanrelid = (*rel).relid;
+
+    cscan.flags = (*best_path).flags;
+    cscan.custom_plans = std::ptr::null_mut();
+    cscan.custom_exprs = std::ptr::null_mut();
+    // Pass the table OID through from path to scan.
+    cscan.custom_private = (*best_path).custom_private;
+    cscan.custom_scan_tlist = std::ptr::null_mut();
+    cscan.custom_relids = std::ptr::null_mut();
+    cscan.methods = &RVBBIT_SCAN_METHODS.0;
+
+    cscan_ptr as *mut pg_sys::Plan
+}
+
+// --- Per-execution state (Rust-owned, pointer stashed in CustomScanState) ---
+
+#[repr(C)]
+struct RvbbitScanStateExt {
+    /// Must be first — PG treats this whole allocation as a CustomScanState.
+    css: pg_sys::CustomScanState,
+    /// List<Integer> carrying the table OID; populated from the CustomScan's
+    /// custom_private in create_custom_scan_state, consumed by begin.
+    oid_list: *mut pg_sys::List,
+    /// Boxed because PG palloc memory + Rust-owned Vec/Option don't mix.
+    /// We Box::leak in begin and Box::from_raw in end.
+    rust_state_ptr: *mut RustScanState,
+}
+
+struct RustScanState {
+    /// Row group descriptors discovered in begin_custom_scan.
+    row_groups: Vec<RowGroupEntry>,
+    row_group_layout: String,
+    rg_idx: usize,
+    pruned_row_groups: usize,
+    /// Current reader iterating batches within the current row group.
+    current_reader: Option<ParquetRecordBatchReader>,
+    /// Phase 3 (native+vortex): when `row_group_layout == VORTEX_SCAN_LAYOUT`, the
+    /// active row group is read from a `.vortex` file via this reader instead of
+    /// `current_reader`. Mutually exclusive with `current_reader`. Bypasses the
+    /// parquet-keyed `ScanBatchCache` (its batches aren't parquet-decoded).
+    current_vortex_reader: Option<crate::vortex_adapter::VortexRgReader>,
+    /// Decoded batches served from the per-backend scan cache for the current
+    /// row group/projection.
+    current_cached_batches: Option<Vec<RecordBatch>>,
+    current_cached_batch_idx: usize,
+    /// Accumulates decoded batches while streaming a row group so future scans
+    /// of the same projection can skip parquet decode.
+    current_cache_key: Option<BatchCacheKey>,
+    current_cache_accum: Vec<RecordBatch>,
+    current_cache_bytes: usize,
+    /// Current batch we're emitting rows from.
+    current_batch: Option<RecordBatch>,
+    row_in_batch: usize,
+    /// Absolute ordinal of the current batch's first row within the current
+    /// row group. The parquet reader yields batches of READ_BATCH_SIZE rows
+    /// and `row_in_batch` resets to 0 each batch, but `delete_log` tombstones
+    /// are keyed by the absolute per-row-group ordinal — so the tombstone
+    /// check needs `batch_base + row_in_batch`. Reset to 0 when a new row
+    /// group opens; advanced by each finished batch's row count.
+    batch_base: u32,
+    /// The scan slot's value/isnull arrays are reused row-by-row. Initialize
+    /// untouched columns to NULL once, then per-row writes only touch projected
+    /// columns.
+    slot_nulls_initialized: bool,
+    /// Parameterized nested-loop/subquery scans can rescan the same parquet
+    /// projection hundreds of times with only the outer scalar changing. Keep
+    /// decoded batches for those scans inside the query's executor state.
+    cached_batches: Vec<RecordBatch>,
+    replay_cache_bytes: usize,
+    replay_cache_disabled: bool,
+    cache_complete: bool,
+    cached_batch_idx: usize,
+    eq_index: Option<RuntimeEqIndex>,
+    indexed_row_refs: Vec<CachedRowRef>,
+    indexed_row_ref_idx: usize,
+    indexed_lookup_dirty: bool,
+    indexed_lookup_active: bool,
+    /// PG tuple descriptor (column oids/types) for the relation.
+    /// Cached so we don't fetch from slot every row.
+    pg_attrs: Vec<PgAttr>,
+    /// Attribute numbers (1-based) actually referenced by the query
+    /// (targetlist + qual). Anything not in here gets NULL in the slot
+    /// without ever being read from parquet — the projection pushdown win.
+    needed_attnums: Vec<i32>,
+    /// One typed reader per needed column, rebuilt when current_batch is
+    /// replaced. Lets fill_slot do a single enum-dispatch per cell
+    /// instead of an Arc<dyn Array> downcast on every row.
+    column_readers: Vec<NeededColumn>,
+    /// Predicates recognized at plan time that can be evaluated on
+    /// Arrow data BEFORE tuple materialization. PG's ExecQual still
+    /// runs as a safety net on rows we emit, so semantics are unchanged
+    /// even if we miss subtle corner cases.
+    pushed_quals: Vec<PushedQual>,
+    pushed_expr: Option<PushExpr>,
+    qual_fully_pushed: bool,
+    /// Per-pushed-qual, a typed reader into the current batch — same
+    /// shape as `column_readers` but indexed by pushed_quals position.
+    qual_readers: Vec<ColumnReader>,
+    qual_rhs_readers: Vec<ColumnReader>,
+    /// Vectorized predicate cache. Computed once when `current_batch`
+    /// becomes a new RecordBatch by running the pushed expression through
+    /// Arrow compute kernels (cmp::eq, lt, etc.). The hot row loop then
+    /// indexes `current_filter_bitmask[row]` instead of calling the
+    /// per-row tree walker. `None` means we couldn't vectorize this
+    /// expression (LIKE, dynamic quals, unsupported types, …) and fall
+    /// back to the existing per-row evaluator.
+    current_filter_bitmask: Option<arrow::array::BooleanArray>,
+    /// Pushed quals whose RHS is an outer/parameter expression. On each
+    /// rescan we evaluate the expression once and update the corresponding
+    /// `pushed_quals` value, so correlated scans stay vectorized.
+    dynamic_quals: Vec<DynamicPushedQual>,
+    dynamic_quals_dirty: bool,
+    /// Phase 2 slice 4: per-row-group tombstone bitmap. Built once at scan
+    /// begin from rvbbit.delete_log (filtered by AS OF if set). The hot
+    /// loop checks `delete_bitmaps[current_rg_id].contains(row_in_batch)`
+    /// and skips matched rows. Empty map = no tombstones, cheap.
+    delete_bitmaps: HashMap<i64, roaring::RoaringBitmap>,
+    /// rg_id of the row group whose batch is currently being emitted from.
+    /// Updated whenever current_batch transitions to a new row group.
+    current_rg_id: i64,
+    /// LSM-style latest read: after parquet row groups are exhausted, emit
+    /// visible retained-heap rows whose inserting xmin is newer than the last
+    /// acceleration watermark. Insert-only dirtiness uses this directly; dirty
+    /// UPDATE/DELETE/TRUNCATE episodes use it only when delete_log tombstones
+    /// are backed by a complete row-identity overlay.
+    heap_tail: Option<HeapTailScan>,
+    heap_tail_active: bool,
+}
+
+struct HeapTailScan {
+    rel: pg_sys::Relation,
+    scan: pg_sys::TableScanDesc,
+    slot: *mut pg_sys::TupleTableSlot,
+    watermark_xid: u128,
+    covered_snapshot: Option<CoveredSnapshot>,
+    reference_xmax: u128,
+    heap_only: bool,
+    emitted: i64,
+}
+
+impl HeapTailScan {
+    /// The accelerated copy already holds the rows this transaction wrote.
+    fn covers(&self, xid: u128) -> bool {
+        xid <= self.watermark_xid
+            || self.covered_snapshot.as_ref().is_some_and(|snapshot| snapshot.sees(xid))
+    }
+}
+
+/// A rebuild's snapshot (`acceleration_state.covered_snapshot`): the copy holds
+/// the rows of every transaction it sees, including committed ones above the
+/// watermark. Transactions it saw in progress wrote their rows after it.
+#[derive(Clone, Debug, PartialEq)]
+struct CoveredSnapshot {
+    xmin: u128,
+    xmax: u128,
+    xip: Vec<u128>,
+}
+
+impl CoveredSnapshot {
+    /// `xmin:xmax:xip,xip,...`, pg_snapshot's text form.
+    fn parse(text: &str) -> Option<Self> {
+        let mut parts = text.trim().splitn(3, ':');
+        let xmin = parts.next()?.parse().ok()?;
+        let xmax = parts.next()?.parse().ok()?;
+        let xip = match parts.next()? {
+            "" => Vec::new(),
+            list => list.split(',').map(|x| x.parse().ok()).collect::<Option<_>>()?,
+        };
+        Some(Self { xmin, xmax, xip })
+    }
+
+    /// pg_visible_in_snapshot for a transaction that committed.
+    fn sees(&self, xid: u128) -> bool {
+        xid < self.xmin || (xid < self.xmax && !self.xip.contains(&xid))
+    }
+}
+
+impl HeapTailScan {
+    unsafe fn reset(&mut self) {
+        if !self.slot.is_null() {
+            pg_sys::ExecClearTuple(self.slot);
+        }
+        if !self.scan.is_null() {
+            pg_sys::table_rescan(self.scan, std::ptr::null_mut());
+        }
+        self.emitted = 0;
+    }
+}
+
+impl Drop for HeapTailScan {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.slot.is_null() {
+                pg_sys::ExecDropSingleTupleTableSlot(self.slot);
+                self.slot = std::ptr::null_mut();
+            }
+            if !self.scan.is_null() {
+                pg_sys::table_endscan(self.scan);
+                self.scan = std::ptr::null_mut();
+            }
+            if !self.rel.is_null() {
+                pg_sys::table_close(self.rel, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+                self.rel = std::ptr::null_mut();
+            }
+        }
+    }
+}
+
+struct HeapTailConfig {
+    watermark_xid: u128,
+    covered_snapshot: Option<CoveredSnapshot>,
+    reference_xmax: u128,
+    /// The plan predates a change the accelerated copy can't serve (an
+    /// UPDATE/DELETE/TRUNCATE it can't overlay, or the copy was retired): skip
+    /// it and read every visible heap row (watermark 0).
+    heap_only: bool,
+}
+
+/// (attnum_idx, reader, has_nulls). attnum_idx is 0-based into pg_attrs.
+/// `has_nulls` is computed once when the batch is loaded so the per-row
+/// hot loop can skip the validity bitmap check on dense columns.
+struct NeededColumn {
+    attnum_idx: usize,
+    reader: ColumnReader,
+    has_nulls: bool,
+}
+
+/// How to turn a Utf8 parquet value back into a PG datum. text-family columns
+/// store the value verbatim; the text-surrogate types (uuid/numeric/inet/enum/…
+/// and PostgreSQL arrays, see compact::is_text_surrogate_type) store canonical
+/// text and are rebuilt into the real type via its input function, so the
+/// column stays its declared type to SQL (comparisons/joins/order/array
+/// operations behave exactly as on the heap).
+#[derive(Clone, Copy)]
+enum Utf8Recon {
+    /// text / varchar / bpchar / name — the stored string IS the value.
+    Text,
+    /// jsonb — fast path via jsonb_in (used only by legacy Utf8-encoded jsonb;
+    /// current exports write jsonb as Binary).
+    Jsonb,
+    /// Reconstruct via the column type's input function on the canonical text.
+    TypeInput {
+        typinput: pg_sys::Oid,
+        typioparam: pg_sys::Oid,
+        typmod: i32,
+    },
+}
+
+/// Pick the reconstruction strategy for a Utf8 parquet column from the column's
+/// real PG type. Anything that isn't text-family or jsonb but landed in a Utf8
+/// column was exported as a text surrogate (uuid/numeric/inet/enum/…/arrays)
+/// and is rebuilt via its input function.
+unsafe fn utf8_recon_for(typoid: pg_sys::Oid, typmod: i32) -> Utf8Recon {
+    if typoid == pg_sys::TEXTOID
+        || typoid == pg_sys::VARCHAROID
+        || typoid == pg_sys::BPCHAROID
+        || typoid == pg_sys::NAMEOID
+    {
+        return Utf8Recon::Text;
+    }
+    if typoid == pg_sys::JSONBOID {
+        return Utf8Recon::Jsonb;
+    }
+    let mut typinput = pg_sys::InvalidOid;
+    let mut typioparam = pg_sys::InvalidOid;
+    pg_sys::getTypeInputInfo(typoid, &mut typinput, &mut typioparam);
+    Utf8Recon::TypeInput {
+        typinput,
+        typioparam,
+        typmod,
+    }
+}
+
+/// Typed read into the currently-active Arrow batch.
+/// Pointers are valid only as long as `current_batch` lives — rebuilt
+/// every time a new batch is pulled. The owning `current_batch` field on
+/// RustScanState keeps the Arrow buffers alive while we hold pointers
+/// into them.
+enum ColumnReader {
+    Int16(*const Int16Array),
+    Int32(*const Int32Array),
+    Date32(*const Date32Array),
+    Date32Int32(*const Int32Array),
+    Int64(*const Int64Array),
+    Float32(*const Float32Array),
+    Float64(*const Float64Array),
+    Bool(*const BooleanArray),
+    Utf8 {
+        arr: *const StringArray,
+        recon: Utf8Recon,
+    },
+    Binary(*const BinaryArray),
+    TimestampMicros(*const TimestampMicrosecondArray),
+    /// Arrow List<Float32> → PG real[] (oid 1021). Vector columns land
+    /// here. The custom_scan constructs a fresh palloc'd PG float4 array
+    /// per row via pgrx's IntoDatum, so user-side SELECT returns the
+    /// vector intact (e.g. for inspection or downstream vector operations).
+    F32List(*const ListArray),
+    /// Column requested by query but absent from this row group — always NULL.
+    Missing,
+}
+
+/// A simple `Var <op> Const` predicate the planner found in the qual
+/// list and we can evaluate directly on Arrow column data, without
+/// going through PG's per-row qual evaluation.
+struct PushedQual {
+    /// 1-based PG attnum into pg_attrs.
+    attnum: i32,
+    op: PushOp,
+    value: PushVal,
+}
+
+enum PushExpr {
+    Qual(usize),
+    And(Vec<PushExpr>),
+    Or(Vec<PushExpr>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PushOp {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    In,
+    /// PG LIKE / NOT LIKE / ILIKE / NOT ILIKE. Pattern lives in
+    /// PushVal::Text; the negation + case sensitivity is baked into
+    /// the op variant so eval is a single match arm.
+    Like,
+    NotLike,
+    ILike,
+    NotILike,
+}
+
+/// Constant value extracted from a Const node. We type the variants by
+/// the comparison family so the per-row check is a tight match arm.
+#[derive(Clone)]
+enum PushVal {
+    Null,
+    I64(i64),
+    F64(f64),
+    Bool(bool),
+    Text(String),
+    I64Set(Vec<i64>),
+    F64Set(Vec<f64>),
+    BoolSet(Vec<bool>),
+    TextSet(Vec<String>),
+    Column(i32),
+}
+
+#[derive(Default)]
+struct PushedQualPlan {
+    quals: Vec<PushedQual>,
+    expr: Option<PushExpr>,
+    dynamic_quals: Vec<DynamicPushedQual>,
+    scan_constant_bounds: Vec<ScanConstantBound>,
+    fully_pushed: bool,
+}
+
+struct DynamicPushedQual {
+    qual_idx: usize,
+    expr_state: *mut pg_sys::ExprState,
+    typoid: pg_sys::Oid,
+}
+
+/// A comparison whose value is an expression that can't change while the scan
+/// runs (expr_is_scan_constant: `now() - interval '1 day'`, `current_date`, `$1`
+/// in a generic plan). begin_custom_scan evaluates it once and writes the result
+/// into `qual_indices`, after which it filters and prunes row groups like a
+/// literal. Values that follow an outer row stay DynamicPushedQual.
+struct ScanConstantBound {
+    expr_state: *mut pg_sys::ExprState,
+    value_typoid: pg_sys::Oid,
+    /// Set for a temporal bound mapped into the column's frame by
+    /// temporal_bound_values: (column type, compared by `col::date`, op).
+    /// None takes the value as it is.
+    temporal: Option<(pg_sys::Oid, bool, PushOp)>,
+    qual_indices: Vec<usize>,
+}
+
+struct RuntimeEqIndex {
+    qual_indices: Vec<usize>,
+    map: HashMap<RuntimeEqKey, Vec<CachedRowRef>>,
+}
+
+#[derive(Clone, Copy)]
+struct CachedRowRef {
+    batch_idx: usize,
+    row: usize,
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+struct RuntimeEqKey {
+    len: u8,
+    values: [i64; 4],
+}
+
+#[derive(Clone)]
+struct RowGroupEntry {
+    path: String,
+    /// rg_id from rvbbit.row_groups. Used to look up tombstones in the
+    /// per-rg delete bitmap during the hot scan loop.
+    rg_id: i64,
+    stats: HashMap<String, PruneStats>,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct BatchCacheKey {
+    path: String,
+    file_len: u64,
+    file_mtime_nanos: u128,
+    projection: String,
+}
+
+struct BatchCacheEntry {
+    batches: Vec<RecordBatch>,
+    bytes: usize,
+}
+
+/// LRU-order access list. Most-recently-used at the back, oldest at the
+/// front. We use a VecDeque + linear remove on touch because the cache
+/// holds at most a few dozen entries — O(n) on touch is cheaper than the
+/// extra pointer dance of a doubly-linked-list LRU at this size.
+#[derive(Default)]
+struct ScanBatchCache {
+    entries: HashMap<BatchCacheKey, BatchCacheEntry>,
+    bytes: usize,
+    /// LRU access order, front = oldest, back = most-recent.
+    order: std::collections::VecDeque<BatchCacheKey>,
+    // ---- telemetry ----
+    hits: u64,
+    misses: u64,
+    inserts: u64,
+    evictions: u64,
+}
+
+#[derive(Clone)]
+struct PruneStats {
+    min: Option<serde_json::Value>,
+    max: Option<serde_json::Value>,
+    text_sketch_b64: Option<String>,
+}
+
+struct PgAttr {
+    name: String,
+    typoid: pg_sys::Oid,
+    typmod: i32,
+}
+
+// --- CreateCustomScanState -------------------------------------------------
+
+#[pg_guard]
+unsafe extern "C-unwind" fn create_custom_scan_state(
+    cscan: *mut pg_sys::CustomScan,
+) -> *mut pg_sys::Node {
+    let ext_ptr =
+        pg_sys::palloc0(std::mem::size_of::<RvbbitScanStateExt>()) as *mut RvbbitScanStateExt;
+    let ext = &mut *ext_ptr;
+
+    ext.css.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
+    ext.css.flags = (*cscan).flags;
+    ext.css.methods = &RVBBIT_EXEC_METHODS.0;
+    ext.rust_state_ptr = std::ptr::null_mut();
+    // Stash custom_private (the table-oid list) in our own field rather
+    // than css.custom_ps — custom_ps is reserved for child PlanState ptrs
+    // and the executor walks it as such.
+    ext.oid_list = (*cscan).custom_private;
+
+    ext_ptr as *mut pg_sys::Node
+}
+
+// --- BeginCustomScan: open parquet readers ---------------------------------
+
+#[pg_guard]
+unsafe extern "C-unwind" fn begin_custom_scan(
+    node: *mut pg_sys::CustomScanState,
+    estate: *mut pg_sys::EState,
+    eflags: i32,
+) {
+    let ext = node as *mut RvbbitScanStateExt;
+
+    let oid_list = (*ext).oid_list;
+    if oid_list.is_null() {
+        pgrx::error!("rvbbit custom scan: missing table oid in custom_private");
+    }
+    let table_oid = pg_sys::list_nth_int(oid_list, 0) as u32;
+
+    // Re-assert the native+vortex route selection from the plan node (captured at
+    // plan time, immune to the execution-time route re-computation that clobbers the
+    // global flag). fetch_best_row_group_paths below reads the global flag.
+    if pg_sys::list_length(oid_list) >= 2 && pg_sys::list_nth_int(oid_list, 1) != 0 {
+        crate::router::set_native_vortex_route_selected(true);
+    }
+
+    // Extract the tuple descriptor — tells us what columns PG expects.
+    let slot = (*node).ss.ss_ScanTupleSlot;
+    let tupdesc = (*slot).tts_tupleDescriptor;
+    let natts = (*tupdesc).natts as usize;
+    let mut attrs = Vec::with_capacity(natts);
+    for i in 0..(*tupdesc).natts {
+        let attr = pgrx::pg_sys::TupleDescAttr(tupdesc, i);
+        let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+            .to_string_lossy()
+            .into_owned();
+        attrs.push(PgAttr {
+            name,
+            typoid: (*attr).atttypid,
+            typmod: (*attr).atttypmod,
+        });
+    }
+
+    // Projection pushdown: walk the plan's targetlist + qual for Var
+    // references, collect attnums. Anything not in the set won't be
+    // read from parquet and will be NULL in the slot.
+    let cscan = (*node).ss.ps.plan as *mut pg_sys::CustomScan;
+    let needed_attnums = collect_needed_attnums(cscan, attrs.len() as i32);
+
+    let qual = (*(*node).ss.ps.plan).qual;
+    let mut pushed_plan = analyze_qual(qual, (*cscan).scan.scanrelid, &mut (*node).ss.ps);
+    // Scan-constant bounds (now() - interval '1 day', $1 in a generic plan) get
+    // their values now, before the row groups are chosen, so they prune like
+    // literals. EXPLAIN without ANALYZE runs nothing, so it evaluates nothing.
+    resolve_scan_constant_bounds(
+        &mut pushed_plan,
+        (*node).ss.ps.ps_ExprContext,
+        eflags & pg_sys::EXEC_FLAG_EXPLAIN_ONLY as i32 == 0,
+    );
+    let needs_row_group_stats = pushed_plan_can_prune_row_groups(&pushed_plan);
+
+    // Fetch row group paths via SPI. Stats are large once text sketches exist,
+    // so keep true scans on the cheap path and load stats only when a pushed
+    // predicate can actually use them for row-group pruning. If the clustered
+    // variant can prune enough row groups, scan that copy; otherwise use the
+    // scan-friendly canonical layout.
+    let statement_asof = crate::time_travel::active_as_of();
+    let asof = match crate::catalog_owner::as_owner(|| crate::time_travel::generation_for_table(table_oid, statement_asof.as_ref())) {
+        Ok(value) => value,
+        Err(e) => pgrx::error!("rvbbit custom scan: AS OF resolution failed: {}", e),
+    };
+
+    let heap_tail_config = match crate::catalog_owner::as_owner(|| heap_tail_config_for_table(table_oid, asof)) {
+        Ok(config) => config,
+        Err(e) => pgrx::error!("rvbbit custom scan: {}", e),
+    };
+    let heap_only = heap_tail_config.as_ref().is_some_and(|c| c.heap_only);
+    if heap_only {
+        pgrx::debug1!(
+            "rvbbit custom scan: table {table_oid} changed after this plan was made; reading the heap"
+        );
+    }
+
+    let (row_groups, row_group_layout) = if heap_only {
+        (Vec::new(), SCAN_LAYOUT.to_string())
+    } else {
+        match crate::catalog_owner::as_owner(|| fetch_best_row_group_paths(
+            table_oid,
+            &attrs,
+            &pushed_plan,
+            needs_row_group_stats,
+            asof,
+        )) {
+            Ok(result) => result,
+            Err(e) => pgrx::error!("rvbbit custom scan: row group lookup failed: {}", e),
+        }
+    };
+
+    // Phase 2 ObjectStore: when the local-file fetch above returned empty
+    // but the catalog HAS row groups for this table (just all on the cold
+    // tier, cold_url IS NOT NULL), read them through the in-process
+    // DataFusion path which uses DataFusion's ObjectStore-aware parquet
+    // reader. The result is materialized into RecordBatches now and
+    // emitted later via the standard hot loop (state.current_cached_batches),
+    // so plain SELECT/COUNT/GROUP BY/AS OF all "just work" — vanilla SQL
+    // semantics preserved across the tier boundary.
+    //
+    // The MVP requires the table to be uniformly cold (no row groups
+    // returned above). Mixed-tier (some local, some cold) isn't yet
+    // supported here: we'd need to interleave the two emission paths.
+    // migrate_to_cold migrates the whole table at once, so mixed-tier
+    // can only arise from direct catalog UPDATEs and is documented as
+    // unsupported in the MVP.
+    let cold_cached_batches: Option<Vec<arrow::array::RecordBatch>> = if row_groups.is_empty() && !heap_only {
+        let cold_count: i64 = crate::catalog_owner::as_owner(|| pgrx::Spi::get_one::<i64>(&format!(
+            "SELECT count(*)::bigint FROM rvbbit.row_groups \
+             WHERE table_oid = {table_oid}::oid AND cold_url IS NOT NULL"
+        )))
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+        if cold_count > 0 {
+            match crate::catalog_owner::as_owner(|| crate::df::collect_batches_for_table_asof(table_oid, statement_asof.clone())) {
+                Ok(batches) => Some(batches),
+                Err(e) => pgrx::error!(
+                    "rvbbit: cold-tier read via in-process DataFusion failed: {}",
+                    e
+                ),
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Phase 2 slice 4: load the tombstone bitmap for this scan, honoring
+    // either rvbbit.as_of_generation or a statement timestamp directive.
+    // load_for_table short-circuits to an empty map when the table has no
+    // tombstones (count == 0), so a genuine Err here means the tombstone
+    // catalog could not be read. Swallowing that to "no tombstones" would
+    // resurrect deleted/superseded parquet rows alongside the heap-tail
+    // overlay's newer versions (silent heap≠engine divergence). Fail loudly
+    // instead — correctness over availability; the caller can retry or the
+    // planner replans onto a heap scan.
+    let delete_bitmaps = if heap_only {
+        HashMap::new()
+    } else {
+        match crate::catalog_owner::as_owner(|| crate::delete_log::load_for_table(table_oid, asof)) {
+            Ok(m) => m,
+            Err(e) => pgrx::error!("rvbbit custom scan: tombstone bitmap load failed: {}", e),
+        }
+    };
+
+    let heap_tail = heap_tail_config.map(|config| open_heap_tail_scan(table_oid, config, estate));
+
+    // Phase 3: native+vortex can't faithfully apply per-row tombstones to the
+    // columnar variant (multi-chunk vortex uses synthetic rg_ids that don't line
+    // up with the delete log's per-rg bitmaps), so when there are deletes visible
+    // at this snapshot we fall back to reading canonical parquet for correctness.
+    let (row_groups, row_group_layout) =
+        if row_group_layout == VORTEX_SCAN_LAYOUT && !delete_bitmaps.is_empty() {
+            match crate::catalog_owner::as_owner(|| fetch_row_group_paths(table_oid, needs_row_group_stats, None, asof)) {
+                Ok(parquet_rgs) => (parquet_rgs, SCAN_LAYOUT.to_string()),
+                Err(e) => {
+                    pgrx::error!(
+                        "rvbbit custom scan: vortex tombstone fallback failed: {}",
+                        e
+                    )
+                }
+            }
+        } else {
+            (row_groups, row_group_layout)
+        };
+
+    let current_rg_id = row_groups.first().map(|rg| rg.rg_id).unwrap_or(0);
+
+    let rust_state = Box::new(RustScanState {
+        row_groups,
+        row_group_layout,
+        rg_idx: 0,
+        pruned_row_groups: 0,
+        current_reader: None,
+        current_vortex_reader: None,
+        // Cold-tier batches (if any) feed the hot loop via the same
+        // current_cached_batches mechanism the rest of the scan uses.
+        // When row_groups is non-empty (hot path), this stays None and
+        // the parquet reader pulls files lazily as before.
+        current_cached_batches: cold_cached_batches,
+        current_cached_batch_idx: 0,
+        current_cache_key: None,
+        current_cache_accum: Vec::new(),
+        current_cache_bytes: 0,
+        current_batch: None,
+        row_in_batch: 0,
+        batch_base: 0,
+        slot_nulls_initialized: false,
+        cached_batches: Vec::new(),
+        replay_cache_bytes: 0,
+        replay_cache_disabled: false,
+        cache_complete: false,
+        cached_batch_idx: 0,
+        eq_index: None,
+        indexed_row_refs: Vec::new(),
+        indexed_row_ref_idx: 0,
+        indexed_lookup_dirty: true,
+        indexed_lookup_active: false,
+        pg_attrs: attrs,
+        needed_attnums,
+        column_readers: Vec::new(),
+        pushed_quals: pushed_plan.quals,
+        pushed_expr: pushed_plan.expr,
+        qual_fully_pushed: pushed_plan.fully_pushed,
+        qual_readers: Vec::new(),
+        qual_rhs_readers: Vec::new(),
+        current_filter_bitmask: None,
+        dynamic_quals: pushed_plan.dynamic_quals,
+        dynamic_quals_dirty: true,
+        delete_bitmaps,
+        current_rg_id,
+        heap_tail,
+        heap_tail_active: false,
+    });
+    (*ext).rust_state_ptr = Box::into_raw(rust_state);
+}
+
+fn heap_tail_config_for_table(
+    table_oid: u32,
+    asof: Option<i64>,
+) -> Result<Option<HeapTailConfig>, String> {
+    if asof.is_some() {
+        return Ok(None);
+    }
+    let mut row_seen = false;
+    let mut retained = false;
+    let mut dirty = false;
+    let mut has_update = false;
+    let mut has_delete = false;
+    let mut has_truncate = false;
+    let mut watermark = String::new();
+    let mut covered_snapshot: Option<String> = None;
+    let mut reference_xmax = String::new();
+    let mut has_row_groups = true;
+    pgrx::Spi::connect(|client| -> Result<(), String> {
+        let rows = client
+            .select(
+                &format!(
+                    "SELECT coalesce(ds.shadow_heap_retained, false), \
+                            coalesce(ds.shadow_heap_dirty, false), \
+                            coalesce(ds.dirty_has_update, false), \
+                            coalesce(ds.dirty_has_delete, false), \
+                            coalesce(ds.dirty_has_truncate, false), \
+                            coalesce(a.last_refresh_xid, 0)::text, \
+                            to_jsonb(a) ->> 'covered_snapshot', \
+                            (pg_snapshot_xmax(pg_current_snapshot())::text)::numeric::text, \
+                            EXISTS (SELECT 1 FROM rvbbit.row_groups g \
+                                     WHERE g.table_oid = ds.table_oid) \
+                     FROM rvbbit.table_dirty_state ds \
+                     LEFT JOIN rvbbit.acceleration_state a \
+                       ON a.table_oid = ds.table_oid \
+                     WHERE ds.table_oid = {table_oid}::oid"
+                ),
+                Some(1),
+                &[],
+            )
+            .map_err(|e| format!("SPI tail state select: {e}"))?;
+        for row in rows {
+            row_seen = true;
+            retained = row
+                .get::<bool>(1)
+                .map_err(|e| format!("SPI tail retained: {e}"))?
+                .unwrap_or(false);
+            dirty = row
+                .get::<bool>(2)
+                .map_err(|e| format!("SPI tail dirty: {e}"))?
+                .unwrap_or(false);
+            has_update = row
+                .get::<bool>(3)
+                .map_err(|e| format!("SPI tail update: {e}"))?
+                .unwrap_or(false);
+            has_delete = row
+                .get::<bool>(4)
+                .map_err(|e| format!("SPI tail delete: {e}"))?
+                .unwrap_or(false);
+            has_truncate = row
+                .get::<bool>(5)
+                .map_err(|e| format!("SPI tail truncate: {e}"))?
+                .unwrap_or(false);
+            watermark = row
+                .get::<String>(6)
+                .map_err(|e| format!("SPI tail watermark: {e}"))?
+                .unwrap_or_else(|| "0".to_string());
+            covered_snapshot = row
+                .get::<String>(7)
+                .map_err(|e| format!("SPI tail covered snapshot: {e}"))?;
+            reference_xmax = row
+                .get::<String>(8)
+                .map_err(|e| format!("SPI tail reference xmax: {e}"))?
+                .unwrap_or_else(|| "0".to_string());
+            has_row_groups = row
+                .get::<bool>(9)
+                .map_err(|e| format!("SPI tail row groups: {e}"))?
+                .unwrap_or(true);
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("SPI tail state connect: {e}"))?;
+
+    if !row_seen {
+        return Ok(None);
+    }
+    // The plan was made while the table had an accelerated copy, and the copy
+    // is gone (rvbbit.retire_acceleration): nothing about the table changed, so
+    // the plan was never invalidated. With no row groups the scan would return
+    // nothing, and the retire also dropped the refresh watermark a dirty read
+    // needs. The heap holds every row, so read it.
+    if retained && !has_row_groups {
+        let reference_xmax = parse_xid_numeric(&reference_xmax)
+            .ok_or_else(|| format!("invalid heap-tail reference xmax {reference_xmax:?}"))?;
+        return Ok(Some(HeapTailConfig {
+            watermark_xid: 0,
+            covered_snapshot: None,
+            reference_xmax,
+            heap_only: true,
+        }));
+    }
+    if !dirty {
+        return Ok(None);
+    }
+    let append_only = retained && !has_update && !has_delete && !has_truncate;
+    let overlay_readable = retained
+        && (append_only
+            || overlay_ready_for_table(table_oid)
+                .map_err(|e| format!("SPI overlay ready: {e}"))?);
+    if overlay_readable {
+        let watermark_xid = parse_xid_numeric(&watermark)
+            .ok_or_else(|| format!("invalid heap-tail watermark {watermark:?}"))?;
+        if watermark_xid == 0 {
+            return Err(
+                "dirty table has no acceleration watermark; use heap scan or refresh".to_string(),
+            );
+        }
+        let reference_xmax = parse_xid_numeric(&reference_xmax)
+            .ok_or_else(|| format!("invalid heap-tail reference xmax {reference_xmax:?}"))?;
+        let covered_snapshot = match covered_snapshot.as_deref() {
+            Some(text) => Some(
+                CoveredSnapshot::parse(text)
+                    .ok_or_else(|| format!("invalid heap-tail covered snapshot {text:?}"))?,
+            ),
+            None => None,
+        };
+        return Ok(Some(HeapTailConfig {
+            watermark_xid,
+            covered_snapshot,
+            reference_xmax,
+            heap_only: false,
+        }));
+    }
+
+    // The plan was made while this table was clean (or insert-only) and has
+    // been reused after an UPDATE/DELETE/TRUNCATE the accelerated copy can't
+    // overlay: a PL/pgSQL statement re-run in a loop, a prepared statement, a
+    // cursor. Data changes don't invalidate cached plans, so the planner never
+    // got to choose the heap. The heap holds every row, so read it.
+    if retained {
+        let reference_xmax = parse_xid_numeric(&reference_xmax)
+            .ok_or_else(|| format!("invalid heap-tail reference xmax {reference_xmax:?}"))?;
+        return Ok(Some(HeapTailConfig {
+            watermark_xid: 0,
+            covered_snapshot: None,
+            reference_xmax,
+            heap_only: true,
+        }));
+    }
+
+    Err(
+        "latest accelerated plan is stale for a dirty table whose heap no longer holds every \
+         row; replan or set rvbbit.force_heap_scan=on"
+            .to_string(),
+    )
+}
+
+fn overlay_ready_for_table(table_oid: u32) -> Result<bool, pgrx::spi::Error> {
+    pgrx::Spi::get_one::<bool>(&format!(
+        "SELECT rvbbit.accel_overlay_ready({table_oid}::oid)"
+    ))
+    .map(|value| value.unwrap_or(false))
+}
+
+fn parse_xid_numeric(raw: &str) -> Option<u128> {
+    raw.trim().parse::<u128>().ok()
+}
+
+unsafe fn open_heap_tail_scan(
+    table_oid: u32,
+    config: HeapTailConfig,
+    estate: *mut pg_sys::EState,
+) -> HeapTailScan {
+    let rel = pg_sys::table_open(
+        pg_sys::Oid::from(table_oid),
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    );
+    if rel.is_null() {
+        pgrx::error!("rvbbit custom scan: failed to open heap tail relation {table_oid}");
+    }
+    let snapshot = if !estate.is_null() && !(*estate).es_snapshot.is_null() {
+        (*estate).es_snapshot
+    } else {
+        let active = pg_sys::GetActiveSnapshot();
+        if active.is_null() {
+            pg_sys::GetTransactionSnapshot()
+        } else {
+            active
+        }
+    };
+    let scan = pg_sys::table_beginscan(rel, snapshot, 0, std::ptr::null_mut());
+    if scan.is_null() {
+        pg_sys::table_close(rel, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        pgrx::error!("rvbbit custom scan: failed to begin heap tail scan");
+    }
+    let slot = pg_sys::MakeSingleTupleTableSlot((*rel).rd_att, pg_sys::table_slot_callbacks(rel));
+    if slot.is_null() {
+        pg_sys::table_endscan(scan);
+        pg_sys::table_close(rel, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        pgrx::error!("rvbbit custom scan: failed to allocate heap tail slot");
+    }
+    HeapTailScan {
+        rel,
+        scan,
+        slot,
+        watermark_xid: config.watermark_xid,
+        covered_snapshot: config.covered_snapshot,
+        reference_xmax: config.reference_xmax,
+        heap_only: config.heap_only,
+        emitted: 0,
+    }
+}
+
+/// Walk the qual list and build a conservative predicate tree from the
+/// clauses we can evaluate directly on Arrow data. Anything unsupported is
+/// left for PG's ExecQual to handle.
+unsafe fn analyze_qual(
+    qual: *mut pg_sys::List,
+    scan_varno: pg_sys::Index,
+    parent: *mut pg_sys::PlanState,
+) -> PushedQualPlan {
+    let mut plan = PushedQualPlan::default();
+    if qual.is_null() {
+        plan.fully_pushed = true;
+        return plan;
+    }
+    let mut conjuncts = Vec::new();
+    let mut fully_pushed = true;
+    let len = (*qual).length;
+    for i in 0..len {
+        let node = pg_sys::list_nth(qual, i) as *mut pg_sys::Node;
+        let mut full_node_plan = PushedQualPlan::default();
+        if let Some(mut expr) =
+            recognize_push_expr(node, scan_varno, parent, &mut full_node_plan, true)
+        {
+            let offset = plan.quals.len();
+            offset_push_expr(&mut expr, offset);
+            for dq in &mut full_node_plan.dynamic_quals {
+                dq.qual_idx += offset;
+            }
+            for bound in &mut full_node_plan.scan_constant_bounds {
+                for idx in &mut bound.qual_indices {
+                    *idx += offset;
+                }
+            }
+            plan.quals.extend(full_node_plan.quals);
+            plan.dynamic_quals.extend(full_node_plan.dynamic_quals);
+            plan.scan_constant_bounds.extend(full_node_plan.scan_constant_bounds);
+            conjuncts.push(expr);
+            continue;
+        }
+
+        fully_pushed = false;
+        if let Some(expr) = recognize_push_expr(node, scan_varno, parent, &mut plan, false) {
+            conjuncts.push(expr);
+        }
+    }
+    plan.expr = combine_push_expr(PushExpr::And, conjuncts);
+    // Scan-constant bounds may be dropped when they resolve (NULL, infinity),
+    // so ExecQual keeps checking whenever there are any.
+    plan.fully_pushed = fully_pushed
+        && plan.dynamic_quals.is_empty()
+        && plan.scan_constant_bounds.is_empty();
+    plan
+}
+
+/// Evaluates each scan-constant bound once and writes its value into the quals
+/// reserved for it. A bound that comes out NULL or can't be represented
+/// (±infinity, an overflow), or that isn't evaluated because the plan is only
+/// being explained, is dropped from the pushed expression instead: it then
+/// filters and prunes nothing, and ExecQual decides, as for any qual we don't
+/// push.
+unsafe fn resolve_scan_constant_bounds(
+    plan: &mut PushedQualPlan,
+    econtext: *mut pg_sys::ExprContext,
+    evaluate: bool,
+) {
+    let mut dropped = Vec::new();
+    for bound in std::mem::take(&mut plan.scan_constant_bounds) {
+        let values = if evaluate && !econtext.is_null() {
+            scan_constant_values(&bound, econtext)
+        } else {
+            None
+        };
+        match values {
+            Some(values) if values.len() == bound.qual_indices.len() => {
+                for (&idx, value) in bound.qual_indices.iter().zip(values) {
+                    plan.quals[idx].value = value;
+                }
+            }
+            _ => dropped.extend(bound.qual_indices),
+        }
+    }
+    if !dropped.is_empty() {
+        plan.expr = plan
+            .expr
+            .take()
+            .and_then(|expr| drop_pushed_quals(expr, &dropped));
+    }
+}
+
+unsafe fn scan_constant_values(
+    bound: &ScanConstantBound,
+    econtext: *mut pg_sys::ExprContext,
+) -> Option<Vec<PushVal>> {
+    let mut is_null = false;
+    let datum = pg_sys::ExecEvalExprSwitchContext(bound.expr_state, econtext, &mut is_null);
+    if is_null {
+        return None;
+    }
+    let Some((col_typoid, date_cast, op)) = bound.temporal else {
+        return Some(vec![extract_const_value(bound.value_typoid.to_u32(), datum)?]);
+    };
+    let raw = temporal_datum_i64(bound.value_typoid, datum)?;
+    let values = temporal_bound_values(col_typoid, bound.value_typoid, op, date_cast, raw)?;
+    Some(values.into_iter().map(PushVal::I64).collect())
+}
+
+/// `expr` with the given quals taken out, keeping it a superset of the rows
+/// the original selects: a dropped qual under AND just stops narrowing, and an
+/// OR with a dropped branch can no longer narrow at all (None).
+fn drop_pushed_quals(expr: PushExpr, dropped: &[usize]) -> Option<PushExpr> {
+    match expr {
+        PushExpr::Qual(idx) => (!dropped.contains(&idx)).then_some(PushExpr::Qual(idx)),
+        PushExpr::And(children) => combine_push_expr(
+            PushExpr::And,
+            children
+                .into_iter()
+                .filter_map(|child| drop_pushed_quals(child, dropped))
+                .collect(),
+        ),
+        PushExpr::Or(children) => {
+            let kept = children
+                .into_iter()
+                .map(|child| drop_pushed_quals(child, dropped))
+                .collect::<Option<Vec<_>>>()?;
+            combine_push_expr(PushExpr::Or, kept)
+        }
+    }
+}
+
+fn pushed_plan_can_prune_row_groups(plan: &PushedQualPlan) -> bool {
+    if plan.dynamic_quals.is_empty() {
+        plan.quals.iter().any(pushed_qual_can_prune_row_group)
+    } else {
+        // The executor currently disables row-group pruning when runtime
+        // outer-param quals are present because their values can change.
+        false
+    }
+}
+
+fn pushed_qual_can_prune_row_group(q: &PushedQual) -> bool {
+    if matches!(q.value, PushVal::Column(_)) {
+        return false;
+    }
+    !matches!(q.op, PushOp::NotLike | PushOp::NotILike)
+}
+
+/// Lower the native scan's pushable predicate tree into the PG-free `FilterRepr`
+/// that `vortex_adapter::translate` maps to a Vortex scan filter. The result is a
+/// filter IMPLIED BY `pushed_expr` (it may drop conjuncts/quals it can't faithfully
+/// express), which is always safe: Vortex returns a row superset and the native scan
+/// re-applies the full `pushed_quals` to the returned batch. Returns None when nothing
+/// pushable remains. Only call when there are no dynamic (correlated) quals — their RHS
+/// changes per outer row and can't be baked into a per-row-group scan filter.
+fn lower_pushed_expr_to_filter(
+    expr: &PushExpr,
+    quals: &[PushedQual],
+    pg_attrs: &[PgAttr],
+) -> Option<crate::scan_types::FilterRepr> {
+    use crate::scan_types::FilterRepr;
+    match expr {
+        PushExpr::Qual(idx) => quals
+            .get(*idx)
+            .and_then(|q| lower_pushed_qual(q, pg_attrs))
+            .map(FilterRepr::Qual),
+        PushExpr::And(children) => {
+            // AND: keep the pushable children. Dropping a non-pushable conjunct makes
+            // the filter LESS restrictive (a row superset) — safe; native re-filters.
+            let kept: Vec<FilterRepr> = children
+                .iter()
+                .filter_map(|c| lower_pushed_expr_to_filter(c, quals, pg_attrs))
+                .collect();
+            match kept.len() {
+                0 => None,
+                1 => kept.into_iter().next(),
+                _ => Some(FilterRepr::And(kept)),
+            }
+        }
+        PushExpr::Or(children) => {
+            // OR: every disjunct must translate — dropping one would make the filter
+            // MORE restrictive (drop matching rows) → unsafe. All-or-nothing.
+            let mut out = Vec::with_capacity(children.len());
+            for c in children {
+                out.push(lower_pushed_expr_to_filter(c, quals, pg_attrs)?);
+            }
+            Some(FilterRepr::Or(out))
+        }
+    }
+}
+
+/// Lower a single `Var <op> Const` qual to a `QualRepr`, or None if not faithfully
+/// pushable. Only numeric/text/bool columns with a matching literal type are pushed;
+/// DATE/TIMESTAMP/NUMERIC etc. stay residual to avoid a Vortex literal/column type
+/// mismatch (the native scan still evaluates them).
+fn lower_pushed_qual(q: &PushedQual, pg_attrs: &[PgAttr]) -> Option<crate::scan_types::QualRepr> {
+    use crate::scan_types::{CmpOp, IntWidth, LitRepr, QualRepr};
+    let attr = pg_attrs.get((q.attnum - 1) as usize)?;
+    let op = match q.op {
+        PushOp::Lt => CmpOp::Lt,
+        PushOp::Le => CmpOp::Le,
+        PushOp::Gt => CmpOp::Gt,
+        PushOp::Ge => CmpOp::Ge,
+        PushOp::Eq => CmpOp::Eq,
+        PushOp::In => CmpOp::In,
+        PushOp::Like => CmpOp::Like,
+        // NOT LIKE / ILIKE / NOT ILIKE have no faithful Vortex form → residual.
+        PushOp::NotLike | PushOp::ILike | PushOp::NotILike => return None,
+    };
+    let t = attr.typoid;
+    // Integer column width: the Vortex literal must match the column DType width, and
+    // the value must fit it — an out-of-range narrowing on an inequality could wrongly
+    // drop rows. Out-of-range or non-int → not pushed here (handled below / residual).
+    let int_width = if t == pg_sys::INT2OID {
+        Some(IntWidth::I16)
+    } else if t == pg_sys::INT4OID {
+        Some(IntWidth::I32)
+    } else if t == pg_sys::INT8OID {
+        Some(IntWidth::I64)
+    } else {
+        None
+    };
+    let fits = |x: i64, w: IntWidth| match w {
+        IntWidth::I16 => i16::try_from(x).is_ok(),
+        IntWidth::I32 => i32::try_from(x).is_ok(),
+        IntWidth::I64 => true,
+    };
+    let is_text = t == pg_sys::TEXTOID || t == pg_sys::VARCHAROID || t == pg_sys::BPCHAROID;
+    let val = match &q.value {
+        PushVal::I64(x) => {
+            let w = int_width?;
+            if !fits(*x, w) {
+                return None;
+            }
+            LitRepr::Int(*x, w)
+        }
+        PushVal::I64Set(xs) if !xs.is_empty() => {
+            let w = int_width?;
+            if xs.iter().any(|x| !fits(*x, w)) {
+                return None;
+            }
+            LitRepr::IntSet(xs.clone(), w)
+        }
+        // FLOAT8/double only — a FLOAT4 column is f32 in Vortex and would clash with
+        // an f64 literal (and f64→f32 narrowing is lossy), so FLOAT4 stays residual.
+        PushVal::F64(x) if t == pg_sys::FLOAT8OID => LitRepr::F64(*x),
+        PushVal::F64Set(xs) if t == pg_sys::FLOAT8OID && !xs.is_empty() => {
+            LitRepr::F64Set(xs.clone())
+        }
+        PushVal::Bool(x) if t == pg_sys::BOOLOID => LitRepr::Bool(*x),
+        PushVal::Text(s) if is_text => LitRepr::Text(s.clone()),
+        PushVal::TextSet(xs) if is_text && !xs.is_empty() => LitRepr::TextSet(xs.clone()),
+        // Null, BoolSet, Column, type-mismatched, or out-of-range → not pushed.
+        _ => return None,
+    };
+    Some(QualRepr {
+        col: attr.name.clone(),
+        op,
+        val,
+    })
+}
+
+unsafe fn recognize_push_expr(
+    node: *mut pg_sys::Node,
+    scan_varno: pg_sys::Index,
+    parent: *mut pg_sys::PlanState,
+    plan: &mut PushedQualPlan,
+    require_complete_or_branch: bool,
+) -> Option<PushExpr> {
+    if node.is_null() {
+        return None;
+    }
+    match (*node).type_ {
+        pg_sys::NodeTag::T_BoolExpr => {
+            let bool_expr = node as *mut pg_sys::BoolExpr;
+            let args = (*bool_expr).args;
+            if args.is_null() {
+                return None;
+            }
+            let mut children = Vec::new();
+            let len = (*args).length;
+            match (*bool_expr).boolop {
+                pg_sys::BoolExprType::AND_EXPR => {
+                    for i in 0..len {
+                        let child = pg_sys::list_nth(args, i) as *mut pg_sys::Node;
+                        if let Some(expr) = recognize_push_expr(
+                            child,
+                            scan_varno,
+                            parent,
+                            plan,
+                            require_complete_or_branch,
+                        ) {
+                            children.push(expr);
+                        } else if require_complete_or_branch {
+                            return None;
+                        }
+                    }
+                    combine_push_expr(PushExpr::And, children)
+                }
+                pg_sys::BoolExprType::OR_EXPR => {
+                    for i in 0..len {
+                        let child = pg_sys::list_nth(args, i) as *mut pg_sys::Node;
+                        let expr = recognize_push_expr(child, scan_varno, parent, plan, true)?;
+                        children.push(expr);
+                    }
+                    combine_push_expr(PushExpr::Or, children)
+                }
+                _ => None,
+            }
+        }
+        pg_sys::NodeTag::T_OpExpr => {
+            if let Some(expr) = push_one_qual(
+                try_recognize_clause(node, scan_varno, parent, plan, require_complete_or_branch),
+                &mut plan.quals,
+            ) {
+                return Some(expr);
+            }
+            // Cross-type and `col::date` temporal bounds only ever push as
+            // superset pre-filters, so ExecQual keeps the final say and the
+            // exact pass never takes them.
+            if require_complete_or_branch {
+                return None;
+            }
+            try_recognize_temporal_bound(node, scan_varno, parent, plan)
+        }
+        pg_sys::NodeTag::T_ScalarArrayOpExpr => push_one_qual(
+            try_recognize_scalar_array_clause(node, scan_varno),
+            &mut plan.quals,
+        ),
+        _ if require_complete_or_branch => None,
+        _ => None,
+    }
+}
+
+fn push_one_qual(pq: Option<PushedQual>, quals: &mut Vec<PushedQual>) -> Option<PushExpr> {
+    let pq = pq?;
+    let idx = quals.len();
+    quals.push(pq);
+    Some(PushExpr::Qual(idx))
+}
+
+fn combine_push_expr(
+    ctor: fn(Vec<PushExpr>) -> PushExpr,
+    mut children: Vec<PushExpr>,
+) -> Option<PushExpr> {
+    match children.len() {
+        0 => None,
+        1 => Some(children.remove(0)),
+        _ => Some(ctor(children)),
+    }
+}
+
+fn offset_push_expr(expr: &mut PushExpr, offset: usize) {
+    match expr {
+        PushExpr::Qual(idx) => *idx += offset,
+        PushExpr::And(children) | PushExpr::Or(children) => {
+            for child in children {
+                offset_push_expr(child, offset);
+            }
+        }
+    }
+}
+
+unsafe fn try_recognize_clause(
+    node: *mut pg_sys::Node,
+    scan_varno: pg_sys::Index,
+    parent: *mut pg_sys::PlanState,
+    plan: &mut PushedQualPlan,
+    // When true the caller needs an EXACT result (it will skip ExecQual). When
+    // false the qual is only a superset pre-filter and ExecQual re-checks.
+    exact: bool,
+) -> Option<PushedQual> {
+    if node.is_null() {
+        return None;
+    }
+    if (*node).type_ != pg_sys::NodeTag::T_OpExpr {
+        return None;
+    }
+    let op = node as *mut pg_sys::OpExpr;
+    let opno = (*op).opno.to_u32();
+    let push_op = recognize_op(opno)?;
+    // mvcc-04/05: keep PostgreSQL as the authority for text predicates the
+    // Arrow-side evaluator can't replicate faithfully.
+    match push_op {
+        // The Rust LIKE matcher treats _/% as wildcards and ignores PG's ESCAPE,
+        // making it strictly MORE permissive than PG — a safe superset pre-filter,
+        // but never the exact (ExecQual-skipping) evaluator.
+        PushOp::Like if exact => return None,
+        // ILIKE case-folding and NOT LIKE/NOT ILIKE negation are not guaranteed
+        // supersets of PG semantics, so they can't even pre-filter safely (a
+        // subset pre-filter drops rows ExecQual can never re-add) → fully residual.
+        PushOp::ILike | PushOp::NotLike | PushOp::NotILike => return None,
+        // Text equality under a non-deterministic collation: Rust byte-equality
+        // is a SUBSET of collation-equality (misses rows the collation treats as
+        // equal), so it is unsafe even as a pre-filter → fully residual.
+        PushOp::Eq if collation_maybe_nondeterministic((*op).inputcollid) => return None,
+        _ => {}
+    }
+    let args = (*op).args;
+    if args.is_null() || (*args).length != 2 {
+        return None;
+    }
+    let arg0 = strip_coercion(pg_sys::list_nth(args, 0) as *mut pg_sys::Node);
+    let arg1 = strip_coercion(pg_sys::list_nth(args, 1) as *mut pg_sys::Node);
+
+    // Either scan-Var <op> Const, Const <op> scan-Var, or scan-Var <op>
+    // outer expression. Normalize to scan-Var-first by flipping the operator
+    // where needed. LIKE/ILIKE don't commute, so 'const' op 'var' is not
+    // recognizable for those.
+    let arg0_scan_var = scan_var(arg0, scan_varno);
+    let arg1_scan_var = scan_var(arg1, scan_varno);
+
+    if let Some(var) = arg0_scan_var {
+        if let Some(rhs_var) = arg1_scan_var {
+            // Column-vs-column is only evaluated exactly on i64-keyed types;
+            // anything else is a pass-through pre-filter for ExecQual.
+            if exact
+                && !(is_i64_keyed_typoid((*var).vartype) && is_i64_keyed_typoid((*rhs_var).vartype))
+            {
+                return None;
+            }
+            return Some(PushedQual {
+                attnum: (*var).varattno as i32,
+                op: push_op,
+                value: PushVal::Column((*rhs_var).varattno as i32),
+            });
+        }
+        return value_pushed_qual(var, arg1, push_op, scan_varno, parent, plan);
+    }
+
+    if let Some(var) = arg1_scan_var {
+        let op_normalized = flip_op(push_op)?;
+        return value_pushed_qual(var, arg0, op_normalized, scan_varno, parent, plan);
+    }
+
+    None
+}
+
+/// `var <op> value` where `value` doesn't read the scanned row: a literal, an
+/// expression fixed for the whole scan, or one that follows an outer row.
+unsafe fn value_pushed_qual(
+    var: *mut pg_sys::Var,
+    value: *mut pg_sys::Node,
+    op: PushOp,
+    scan_varno: pg_sys::Index,
+    parent: *mut pg_sys::PlanState,
+    plan: &mut PushedQualPlan,
+) -> Option<PushedQual> {
+    if (*value).type_ == pg_sys::NodeTag::T_Const {
+        return const_pushed_qual(var, value, op);
+    }
+    if contains_scan_var(value, scan_varno) {
+        return None;
+    }
+    if expr_is_scan_constant(value) {
+        return scan_constant_pushed_qual(var, value, op, parent, plan);
+    }
+    dynamic_pushed_qual(var, value, op, parent, plan)
+}
+
+unsafe fn const_pushed_qual(
+    var: *mut pg_sys::Var,
+    const_node: *mut pg_sys::Node,
+    op: PushOp,
+) -> Option<PushedQual> {
+    let cst = const_node as *mut pg_sys::Const;
+    if (*cst).constisnull {
+        return None; // NULL semantics — leave to PG
+    }
+    let value = extract_const_value((*cst).consttype.to_u32(), (*cst).constvalue)?;
+    Some(PushedQual {
+        attnum: (*var).varattno as i32,
+        op,
+        value,
+    })
+}
+
+unsafe fn dynamic_pushed_qual(
+    var: *mut pg_sys::Var,
+    value_expr: *mut pg_sys::Node,
+    op: PushOp,
+    parent: *mut pg_sys::PlanState,
+    plan: &mut PushedQualPlan,
+) -> Option<PushedQual> {
+    // A volatile value (random(), clock_timestamp()) is evaluated once per
+    // rescan here but per row by ExecQual, so filtering on it drops rows.
+    if value_expr.is_null()
+        || parent.is_null()
+        || pg_sys::contain_volatile_functions(value_expr)
+    {
+        return None;
+    }
+    let typoid = pg_sys::exprType(value_expr);
+    if !is_supported_push_typoid(typoid.to_u32()) {
+        return None;
+    }
+    let expr_state = pg_sys::ExecInitExpr(value_expr as *mut pg_sys::Expr, parent);
+    if expr_state.is_null() {
+        return None;
+    }
+    let qual_idx = plan.quals.len();
+    plan.dynamic_quals.push(DynamicPushedQual {
+        qual_idx,
+        expr_state,
+        typoid,
+    });
+    Some(PushedQual {
+        attnum: (*var).varattno as i32,
+        op,
+        value: PushVal::Null,
+    })
+}
+
+/// Reserves the qual for a scan-constant `var <op> value`; its value is filled
+/// in by resolve_scan_constant_bounds. The caller pushes the returned qual next,
+/// so it lands at `plan.quals.len()`.
+unsafe fn scan_constant_pushed_qual(
+    var: *mut pg_sys::Var,
+    value_expr: *mut pg_sys::Node,
+    op: PushOp,
+    parent: *mut pg_sys::PlanState,
+    plan: &mut PushedQualPlan,
+) -> Option<PushedQual> {
+    if parent.is_null() {
+        return None;
+    }
+    let typoid = pg_sys::exprType(value_expr);
+    if !is_supported_push_typoid(typoid.to_u32())
+        && typoid != pg_sys::TIMESTAMPOID
+        && typoid != pg_sys::TIMESTAMPTZOID
+    {
+        return None;
+    }
+    let expr_state = pg_sys::ExecInitExpr(value_expr as *mut pg_sys::Expr, parent);
+    if expr_state.is_null() {
+        return None;
+    }
+    plan.scan_constant_bounds.push(ScanConstantBound {
+        expr_state,
+        value_typoid: typoid,
+        temporal: None,
+        qual_indices: vec![plan.quals.len()],
+    });
+    Some(PushedQual {
+        attnum: (*var).varattno as i32,
+        op,
+        value: PushVal::Null,
+    })
+}
+
+/// True when `node`, the value side of a qual, can't change while the scan
+/// runs: nothing volatile, no Vars, no PARAM_EXEC params (outer rows,
+/// initplans) and no sub-plans. Stable functions and PARAM_EXTERN params are
+/// fine. This is the rule PostgreSQL itself uses to prune partitions when the
+/// executor starts.
+unsafe fn expr_is_scan_constant(node: *mut pg_sys::Node) -> bool {
+    !node.is_null()
+        && !pg_sys::contain_volatile_functions(node)
+        && !varies_during_scan_walker(node, std::ptr::null_mut())
+}
+
+unsafe extern "C-unwind" fn varies_during_scan_walker(
+    node: *mut pg_sys::Node,
+    context: *mut core::ffi::c_void,
+) -> bool {
+    if node.is_null() {
+        return false;
+    }
+    match (*node).type_ {
+        pg_sys::NodeTag::T_Var
+        | pg_sys::NodeTag::T_PlaceHolderVar
+        | pg_sys::NodeTag::T_SubPlan
+        | pg_sys::NodeTag::T_AlternativeSubPlan
+        | pg_sys::NodeTag::T_Aggref
+        | pg_sys::NodeTag::T_WindowFunc
+        | pg_sys::NodeTag::T_GroupingFunc
+        | pg_sys::NodeTag::T_CurrentOfExpr => return true,
+        pg_sys::NodeTag::T_Param => {
+            if (*(node as *mut pg_sys::Param)).paramkind != pg_sys::ParamKind::PARAM_EXTERN {
+                return true;
+            }
+        }
+        _ => {}
+    }
+    pg_sys::expression_tree_walker_impl(node, Some(varies_during_scan_walker), context)
+}
+
+unsafe fn try_recognize_scalar_array_clause(
+    node: *mut pg_sys::Node,
+    scan_varno: pg_sys::Index,
+) -> Option<PushedQual> {
+    if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_ScalarArrayOpExpr {
+        return None;
+    }
+    let expr = node as *mut pg_sys::ScalarArrayOpExpr;
+    if !(*expr).useOr || recognize_op((*expr).opno.to_u32())? != PushOp::Eq {
+        return None;
+    }
+    let args = (*expr).args;
+    if args.is_null() || (*args).length != 2 {
+        return None;
+    }
+    let left = strip_coercion(pg_sys::list_nth(args, 0) as *mut pg_sys::Node);
+    let right = strip_coercion(pg_sys::list_nth(args, 1) as *mut pg_sys::Node);
+    let var = scan_var(left, scan_varno)?;
+    let value = extract_array_value_set(right)?;
+    Some(PushedQual {
+        attnum: (*var).varattno as i32,
+        op: PushOp::In,
+        value,
+    })
+}
+
+/// Margin for a bound PG doesn't give us an exact conversion for: a timestamp
+/// column against a timestamptz value (PG converts the column, not the value,
+/// through the session TimeZone), and `tstz::date` (days are local). Zone
+/// offsets stay within a day, and the largest jumps on record (date-line
+/// moves) are exactly one day.
+const TIMESTAMPTZ_MARGIN_MICROS: i64 = 2 * USECS_PER_DAY;
+const USECS_PER_DAY: i64 = 86_400_000_000;
+/// btree `datetime_ops`: every comparison among date, timestamp and
+/// timestamptz, same-type and cross-type.
+const DATETIME_BTREE_OPFAMILY: u32 = 434;
+
+fn is_temporal_typoid(typoid: pg_sys::Oid) -> bool {
+    typoid == pg_sys::DATEOID || typoid == pg_sys::TIMESTAMPOID || typoid == pg_sys::TIMESTAMPTZOID
+}
+
+/// Recognize a date / timestamp / timestamptz comparison that
+/// try_recognize_clause can't take whole, and push it as range quals on the
+/// column itself so the row-group stats and the Arrow kernels can use them:
+///
+/// - the value has another temporal type (`tstz >= current_date - 7`,
+///   `tstz >= current_date - interval '30 days'`, `ts > now() - interval '1 h'`);
+/// - the column is compared by its date (`ts::date = d`);
+///
+/// with a literal value or a scan-constant one. temporal_bound_values maps the
+/// value into the column's frame (exactly where PG converts the value, widened
+/// where it converts the column). The result only pre-filters: the exact pass
+/// never takes it, so ExecQual keeps the final say.
+unsafe fn try_recognize_temporal_bound(
+    node: *mut pg_sys::Node,
+    scan_varno: pg_sys::Index,
+    parent: *mut pg_sys::PlanState,
+    plan: &mut PushedQualPlan,
+) -> Option<PushExpr> {
+    let op = node as *mut pg_sys::OpExpr;
+    let push_op = match pg_sys::get_op_opfamily_strategy(
+        (*op).opno,
+        pg_sys::Oid::from(DATETIME_BTREE_OPFAMILY),
+    ) {
+        1 => PushOp::Lt,
+        2 => PushOp::Le,
+        3 => PushOp::Eq,
+        4 => PushOp::Ge,
+        5 => PushOp::Gt,
+        _ => return None,
+    };
+    let args = (*op).args;
+    if args.is_null() || (*args).length != 2 {
+        return None;
+    }
+    let arg0 = pg_sys::list_nth(args, 0) as *mut pg_sys::Node;
+    let arg1 = pg_sys::list_nth(args, 1) as *mut pg_sys::Node;
+    let ((var, date_cast), value, push_op) =
+        if let Some(column) = temporal_column(arg0, scan_varno) {
+            (column, arg1, push_op)
+        } else if let Some(column) = temporal_column(arg1, scan_varno) {
+            (column, arg0, flip_op(push_op)?)
+        } else {
+            return None;
+        };
+    let col_typoid = (*var).vartype;
+    let value_typoid = pg_sys::exprType(value);
+    let ops = temporal_bound_ops(col_typoid, value_typoid, push_op, date_cast)?;
+    let attnum = (*var).varattno as i32;
+
+    if (*value).type_ == pg_sys::NodeTag::T_Const {
+        let cst = value as *mut pg_sys::Const;
+        if (*cst).constisnull {
+            return None;
+        }
+        let raw = temporal_datum_i64(value_typoid, (*cst).constvalue)?;
+        let values = temporal_bound_values(col_typoid, value_typoid, push_op, date_cast, raw)?;
+        let children = ops
+            .into_iter()
+            .zip(values)
+            .filter_map(|(op, v)| {
+                push_one_qual(
+                    Some(PushedQual {
+                        attnum,
+                        op,
+                        value: PushVal::I64(v),
+                    }),
+                    &mut plan.quals,
+                )
+            })
+            .collect();
+        return combine_push_expr(PushExpr::And, children);
+    }
+
+    if parent.is_null() || contains_scan_var(value, scan_varno) || !expr_is_scan_constant(value) {
+        return None;
+    }
+    let expr_state = pg_sys::ExecInitExpr(value as *mut pg_sys::Expr, parent);
+    if expr_state.is_null() {
+        return None;
+    }
+    let mut qual_indices = Vec::with_capacity(ops.len());
+    let mut children = Vec::with_capacity(ops.len());
+    for op in ops {
+        qual_indices.push(plan.quals.len());
+        children.push(push_one_qual(
+            Some(PushedQual {
+                attnum,
+                op,
+                value: PushVal::Null,
+            }),
+            &mut plan.quals,
+        )?);
+    }
+    plan.scan_constant_bounds.push(ScanConstantBound {
+        expr_state,
+        value_typoid,
+        temporal: Some((col_typoid, date_cast, push_op)),
+        qual_indices,
+    });
+    combine_push_expr(PushExpr::And, children)
+}
+
+/// The scan column a temporal comparison is on, and whether it is compared by
+/// its date (`col::date`, i.e. date(timestamp) / date(timestamptz)).
+unsafe fn temporal_column(
+    node: *mut pg_sys::Node,
+    scan_varno: pg_sys::Index,
+) -> Option<(*mut pg_sys::Var, bool)> {
+    let node = strip_coercion(node);
+    if let Some(var) = scan_var(node, scan_varno) {
+        return is_temporal_typoid((*var).vartype).then_some((var, false));
+    }
+    if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_FuncExpr {
+        return None;
+    }
+    let func = node as *mut pg_sys::FuncExpr;
+    if !matches!(
+        (*func).funcid.to_u32(),
+        pg_sys::F_DATE_TIMESTAMP | pg_sys::F_DATE_TIMESTAMPTZ
+    ) {
+        return None;
+    }
+    let fargs = (*func).args;
+    if fargs.is_null() || (*fargs).length != 1 {
+        return None;
+    }
+    let var = scan_var(
+        strip_coercion(pg_sys::list_nth(fargs, 0) as *mut pg_sys::Node),
+        scan_varno,
+    )?;
+    let col = (*var).vartype;
+    (col == pg_sys::TIMESTAMPOID || col == pg_sys::TIMESTAMPTZOID).then_some((var, true))
+}
+
+/// A date (PG-epoch days) or timestamp / timestamptz (PG-epoch micros) datum as
+/// i64; None for ±infinity, which stays with PG.
+unsafe fn temporal_datum_i64(typoid: pg_sys::Oid, datum: pg_sys::Datum) -> Option<i64> {
+    if typoid == pg_sys::DATEOID {
+        let days = datum.value() as i32;
+        (days != i32::MIN && days != i32::MAX).then_some(days as i64)
+    } else if typoid == pg_sys::TIMESTAMPOID || typoid == pg_sys::TIMESTAMPTZOID {
+        let micros = datum.value() as i64;
+        (micros != i64::MIN && micros != i64::MAX).then_some(micros)
+    } else {
+        None
+    }
+}
+
+/// The comparisons `col <op> value` (or `col::date <op> value`) becomes on the
+/// column, in the order temporal_bound_values computes their values. Depends
+/// only on the types and the op, so a scan-constant bound can reserve its quals
+/// before its value is known. None when it can't be pushed.
+fn temporal_bound_ops(
+    col: pg_sys::Oid,
+    value: pg_sys::Oid,
+    op: PushOp,
+    date_cast: bool,
+) -> Option<Vec<PushOp>> {
+    use PushOp::*;
+    if !matches!(op, Eq | Lt | Le | Gt | Ge) {
+        return None;
+    }
+    if date_cast {
+        // ts::date = d  ⇔  start(d) <= ts < start(d + 1)
+        return (value == pg_sys::DATEOID).then(|| match op {
+            Eq => vec![Ge, Lt],
+            Ge | Gt => vec![Ge],
+            _ => vec![Lt],
+        });
+    }
+    if !is_temporal_typoid(col) || !is_temporal_typoid(value) {
+        return None;
+    }
+    if col == value
+        || (col != pg_sys::DATEOID && value == pg_sys::DATEOID)
+        || (col == pg_sys::TIMESTAMPTZOID && value == pg_sys::TIMESTAMPOID)
+    {
+        return Some(vec![op]);
+    }
+    if col == pg_sys::TIMESTAMPOID && value == pg_sys::TIMESTAMPTZOID {
+        return Some(match op {
+            Eq => vec![Ge, Le],
+            Ge | Gt => vec![Ge],
+            _ => vec![Le],
+        });
+    }
+    // A date column against a timestamp value would need rounding; leave it.
+    None
+}
+
+/// The values for temporal_bound_ops' comparisons, in the column's frame
+/// (PG-epoch days for date, micros for timestamp / timestamptz). `raw` is the
+/// value in its own type's frame. Conversions follow PG's cross-type operators,
+/// in the session TimeZone the executor runs in:
+///
+/// - date against timestamp: the day's midnight, exact;
+/// - date or timestamp against timestamptz: date2timestamptz /
+///   timestamp2timestamptz, exact, since PG converts the value;
+/// - timestamptz against a timestamp column: PG converts the column, so the
+///   value itself is widened by TIMESTAMPTZ_MARGIN_MICROS;
+/// - `col::date` against a date: the day's first instant, exact for timestamp
+///   and widened for timestamptz.
+///
+/// None when the value is infinite or a conversion overflows.
+unsafe fn temporal_bound_values(
+    col: pg_sys::Oid,
+    value: pg_sys::Oid,
+    op: PushOp,
+    date_cast: bool,
+    raw: i64,
+) -> Option<Vec<i64>> {
+    use PushOp::*;
+    let widen = |v: i64, margin: i64| -> Option<Vec<i64>> {
+        Some(match op {
+            Eq => vec![v.checked_sub(margin)?, v.checked_add(margin)?],
+            Ge | Gt => vec![v.checked_sub(margin)?],
+            _ => vec![v.checked_add(margin)?],
+        })
+    };
+    if date_cast {
+        let day = i32::try_from(raw).ok()?;
+        let next = day.checked_add(1)?;
+        let margin = if col == pg_sys::TIMESTAMPTZOID {
+            TIMESTAMPTZ_MARGIN_MICROS
+        } else {
+            0
+        };
+        // ts::date >= d ⇔ ts >= start(d)    ts::date > d ⇔ ts >= start(d + 1)
+        // ts::date < d  ⇔ ts < start(d)     ts::date <= d ⇔ ts < start(d + 1)
+        return Some(match op {
+            Eq => vec![
+                day_start_in(col, day)?.checked_sub(margin)?,
+                day_start_in(col, next)?.checked_add(margin)?,
+            ],
+            Ge => vec![day_start_in(col, day)?.checked_sub(margin)?],
+            Gt => vec![day_start_in(col, next)?.checked_sub(margin)?],
+            Lt => vec![day_start_in(col, day)?.checked_add(margin)?],
+            Le => vec![day_start_in(col, next)?.checked_add(margin)?],
+            _ => return None,
+        });
+    }
+    if col == value {
+        return Some(vec![raw]);
+    }
+    if value == pg_sys::DATEOID {
+        return Some(vec![day_start_in(col, i32::try_from(raw).ok()?)?]);
+    }
+    if col == pg_sys::TIMESTAMPTZOID && value == pg_sys::TIMESTAMPOID {
+        let mut overflow: std::ffi::c_int = 0;
+        let ts = pg_sys::timestamp2timestamptz_opt_overflow(raw, &mut overflow);
+        return (overflow == 0).then(|| vec![ts]);
+    }
+    if col == pg_sys::TIMESTAMPOID && value == pg_sys::TIMESTAMPTZOID {
+        return widen(raw, TIMESTAMPTZ_MARGIN_MICROS);
+    }
+    None
+}
+
+/// The first instant (PG-epoch micros) of `day` for a timestamp or
+/// timestamptz column, the latter in the session TimeZone.
+unsafe fn day_start_in(col: pg_sys::Oid, day: i32) -> Option<i64> {
+    if col == pg_sys::TIMESTAMPTZOID {
+        let mut overflow: std::ffi::c_int = 0;
+        let ts = pg_sys::date2timestamptz_opt_overflow(day, &mut overflow);
+        (overflow == 0).then_some(ts)
+    } else {
+        (day as i64).checked_mul(USECS_PER_DAY)
+    }
+}
+
+unsafe fn strip_coercion(mut node: *mut pg_sys::Node) -> *mut pg_sys::Node {
+    loop {
+        if node.is_null() {
+            return node;
+        }
+        match (*node).type_ {
+            pg_sys::NodeTag::T_RelabelType => {
+                node = (*(node as *mut pg_sys::RelabelType)).arg as *mut pg_sys::Node;
+            }
+            pg_sys::NodeTag::T_CoerceViaIO => {
+                node = (*(node as *mut pg_sys::CoerceViaIO)).arg as *mut pg_sys::Node;
+            }
+            _ => return node,
+        }
+    }
+}
+
+unsafe fn scan_var(node: *mut pg_sys::Node, scan_varno: pg_sys::Index) -> Option<*mut pg_sys::Var> {
+    if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_Var {
+        return None;
+    }
+    let var = node as *mut pg_sys::Var;
+    if (*var).varno == scan_varno as i32 && (*var).varlevelsup == 0 && (*var).varattno > 0 {
+        Some(var)
+    } else {
+        None
+    }
+}
+
+unsafe fn contains_scan_var(node: *mut pg_sys::Node, scan_varno: pg_sys::Index) -> bool {
+    if node.is_null() {
+        return false;
+    }
+    let mut bms: *mut pg_sys::Bitmapset = std::ptr::null_mut();
+    pg_sys::pull_varattnos(node, scan_varno, &mut bms);
+    !bms.is_null()
+}
+
+fn is_supported_push_typoid(typoid: u32) -> bool {
+    matches!(
+        typoid,
+        16 | 19 | 20 | 21 | 23 | 25 | 700 | 701 | 1042 | 1043 | 1082
+    )
+}
+
+/// PG operator OIDs for the comparison ops we recognize. Source:
+/// src/include/catalog/pg_operator.dat.
+/// Conservatively true when a comparison's collation might be non-deterministic
+/// (so Rust byte-equality is not faithful). The builtin `C` collation and the
+/// database default are always deterministic; `InvalidOid` means the comparison
+/// isn't collation-sensitive (e.g. integers). Any other (explicit / ICU)
+/// collation is treated as potentially non-deterministic — correctness over a
+/// rare lost pushdown. (mvcc-05)
+fn collation_maybe_nondeterministic(collid: pg_sys::Oid) -> bool {
+    collid != pg_sys::InvalidOid
+        && collid != pg_sys::C_COLLATION_OID
+        && collid != pg_sys::DEFAULT_COLLATION_OID
+}
+
+fn recognize_op(opno: u32) -> Option<PushOp> {
+    use PushOp::*;
+    Some(match opno {
+        // int4
+        96 => Eq,
+        97 => Lt,
+        521 => Gt,
+        523 => Le,
+        525 => Ge,
+        // int8
+        410 => Eq,
+        412 => Lt,
+        413 => Gt,
+        414 => Le,
+        415 => Ge,
+        // int2
+        94 => Eq,
+        95 => Lt,
+        520 => Gt,
+        522 => Le,
+        524 => Ge,
+        // float4
+        620 => Eq,
+        622 => Lt,
+        623 => Gt,
+        624 => Le,
+        625 => Ge,
+        // float8
+        670 => Eq,
+        672 => Lt,
+        674 => Gt,
+        673 => Le,
+        675 => Ge,
+        // bool
+        91 => Eq,
+        // date
+        1093 => Eq,
+        1095 => Lt,
+        1096 => Le,
+        1097 => Gt,
+        1098 => Ge,
+        // timestamp (same-type only: the cross-type date/timestamptz variants
+        // convert through the session TimeZone, which the Arrow side can't see)
+        2060 => Eq,
+        2062 => Lt,
+        2063 => Le,
+        2064 => Gt,
+        2065 => Ge,
+        // timestamptz
+        1320 => Eq,
+        1322 => Lt,
+        1323 => Le,
+        1324 => Gt,
+        1325 => Ge,
+        // text / varchar equality
+        98 => Eq, // texteq
+        // text LIKE / NOT LIKE / ILIKE / NOT ILIKE (PG operator OIDs)
+        1209 => Like,
+        1210 => NotLike,
+        1226 => ILike,
+        1227 => NotILike,
+        // int24 / int42 / int48 / int84 cross-type
+        15 => Eq,
+        37 => Lt,
+        76 => Gt,
+        80 => Le,
+        82 => Ge,
+        416 => Eq,
+        418 => Lt,
+        419 => Gt,
+        420 => Le,
+        430 => Ge,
+        474 => Eq,
+        534 => Lt,
+        535 => Gt,
+        540 => Le,
+        542 => Ge,
+        _ => return None,
+    })
+}
+
+fn flip_op(op: PushOp) -> Option<PushOp> {
+    use PushOp::*;
+    // LIKE/ILIKE aren't commutative — we only push when Var is on the
+    // left ("col LIKE 'pattern'"). Return None for "'pattern' LIKE col"
+    // to bail out of pushdown for that clause.
+    Some(match op {
+        Lt => Gt,
+        Le => Ge,
+        Gt => Lt,
+        Ge => Le,
+        Eq => Eq,
+        In | Like | NotLike | ILike | NotILike => return None,
+    })
+}
+
+unsafe fn extract_const_value(typoid: u32, datum: pg_sys::Datum) -> Option<PushVal> {
+    Some(match typoid {
+        21 => PushVal::I64(datum.value() as i16 as i64),
+        23 => PushVal::I64(datum.value() as i32 as i64),
+        20 => PushVal::I64(datum.value() as i64),
+        1082 => PushVal::I64(datum.value() as i32 as i64),
+        // timestamp(1114) / timestamptz(1184): PG-epoch micros, same frame as
+        // date's PG-epoch days. ±infinity (i64::MIN/MAX) stays with PG.
+        1114 | 1184 => {
+            let micros = datum.value() as i64;
+            if micros == i64::MIN || micros == i64::MAX {
+                return None;
+            }
+            PushVal::I64(micros)
+        }
+        700 => PushVal::F64(f32::from_bits(datum.value() as u32) as f64),
+        701 => PushVal::F64(f64::from_bits(datum.value() as u64)),
+        16 => PushVal::Bool((datum.value() as u8) != 0),
+        // text(25) / varchar(1043) / bpchar(1042) / name(19) — datum is
+        // a varlena pointer. text_to_cstring handles detoasting.
+        25 | 1043 | 1042 | 19 => {
+            let varlena = datum.cast_mut_ptr::<pg_sys::varlena>();
+            if varlena.is_null() {
+                return None;
+            }
+            let cstr_ptr = pg_sys::text_to_cstring(varlena as *const pg_sys::text);
+            if cstr_ptr.is_null() {
+                return None;
+            }
+            let s = std::ffi::CStr::from_ptr(cstr_ptr)
+                .to_string_lossy()
+                .into_owned();
+            pg_sys::pfree(cstr_ptr as *mut _);
+            PushVal::Text(s)
+        }
+        _ => return None,
+    })
+}
+
+unsafe fn refresh_dynamic_quals(state: &mut RustScanState, node: *mut pg_sys::CustomScanState) {
+    if !state.dynamic_quals_dirty {
+        return;
+    }
+    state.dynamic_quals_dirty = false;
+    if state.dynamic_quals.is_empty() {
+        return;
+    }
+    let ps = &mut (*node).ss.ps;
+    let econtext = ps.ps_ExprContext;
+    if econtext.is_null() {
+        return;
+    }
+    for dq in &state.dynamic_quals {
+        if dq.qual_idx >= state.pushed_quals.len() {
+            continue;
+        }
+        let mut is_null = false;
+        let datum = pg_sys::ExecEvalExpr(dq.expr_state, econtext, &mut is_null);
+        state.pushed_quals[dq.qual_idx].value = if is_null {
+            PushVal::Null
+        } else {
+            extract_const_value(dq.typoid.to_u32(), datum).unwrap_or(PushVal::Null)
+        };
+    }
+}
+
+unsafe fn extract_array_value_set(node: *mut pg_sys::Node) -> Option<PushVal> {
+    if node.is_null() {
+        return None;
+    }
+    match (*node).type_ {
+        pg_sys::NodeTag::T_ArrayExpr => {
+            let array = node as *mut pg_sys::ArrayExpr;
+            let elements = (*array).elements;
+            if elements.is_null() {
+                return Some(PushVal::I64Set(Vec::new()));
+            }
+            let mut values = Vec::new();
+            for i in 0..(*elements).length {
+                let elem = strip_coercion(pg_sys::list_nth(elements, i) as *mut pg_sys::Node);
+                if elem.is_null() || (*elem).type_ != pg_sys::NodeTag::T_Const {
+                    return None;
+                }
+                let cst = elem as *mut pg_sys::Const;
+                if (*cst).constisnull {
+                    continue;
+                }
+                values.push(extract_const_value(
+                    (*cst).consttype.to_u32(),
+                    (*cst).constvalue,
+                )?);
+            }
+            push_values_to_set(values)
+        }
+        pg_sys::NodeTag::T_Const => {
+            let cst = node as *mut pg_sys::Const;
+            if (*cst).constisnull {
+                return None;
+            }
+            let elem_oid = pg_sys::get_element_type((*cst).consttype);
+            if elem_oid.to_u32() == 0 {
+                return None;
+            }
+            let any_array = pg_sys::DatumGetAnyArrayP((*cst).constvalue);
+            if any_array.is_null() {
+                return None;
+            }
+            let mut elems: *mut pg_sys::Datum = std::ptr::null_mut();
+            let mut nulls: *mut bool = std::ptr::null_mut();
+            let mut nelems: std::ffi::c_int = 0;
+            let mut elem_len: i16 = 0;
+            let mut elem_byval = false;
+            let mut elem_align: std::ffi::c_char = 0;
+            pg_sys::get_typlenbyvalalign(elem_oid, &mut elem_len, &mut elem_byval, &mut elem_align);
+            pg_sys::deconstruct_array(
+                any_array as *mut pg_sys::ArrayType,
+                elem_oid,
+                elem_len as std::ffi::c_int,
+                elem_byval,
+                elem_align,
+                &mut elems,
+                &mut nulls,
+                &mut nelems,
+            );
+            let mut values = Vec::with_capacity(nelems as usize);
+            for i in 0..nelems {
+                if !nulls.is_null() && *nulls.add(i as usize) {
+                    continue;
+                }
+                values.push(extract_const_value(
+                    elem_oid.to_u32(),
+                    *elems.add(i as usize),
+                )?);
+            }
+            if !elems.is_null() {
+                pg_sys::pfree(elems as *mut _);
+            }
+            if !nulls.is_null() {
+                pg_sys::pfree(nulls as *mut _);
+            }
+            push_values_to_set(values)
+        }
+        _ => None,
+    }
+}
+
+fn push_values_to_set(values: Vec<PushVal>) -> Option<PushVal> {
+    let mut i64s = Vec::new();
+    let mut f64s = Vec::new();
+    let mut bools = Vec::new();
+    let mut texts = Vec::new();
+    for value in values {
+        match value {
+            PushVal::I64(v) if f64s.is_empty() && bools.is_empty() && texts.is_empty() => {
+                i64s.push(v);
+            }
+            PushVal::F64(v) if i64s.is_empty() && bools.is_empty() && texts.is_empty() => {
+                f64s.push(v);
+            }
+            PushVal::Bool(v) if i64s.is_empty() && f64s.is_empty() && texts.is_empty() => {
+                bools.push(v);
+            }
+            PushVal::Text(v) if i64s.is_empty() && f64s.is_empty() && bools.is_empty() => {
+                texts.push(v);
+            }
+            _ => return None,
+        }
+    }
+    if !texts.is_empty() {
+        Some(PushVal::TextSet(texts))
+    } else if !i64s.is_empty() {
+        Some(PushVal::I64Set(i64s))
+    } else if !f64s.is_empty() {
+        Some(PushVal::F64Set(f64s))
+    } else if !bools.is_empty() {
+        Some(PushVal::BoolSet(bools))
+    } else {
+        Some(PushVal::I64Set(Vec::new()))
+    }
+}
+
+/// PG LIKE pattern matcher. `%` matches any (possibly empty) sequence,
+/// `_` matches a single char, everything else literal. No backslash
+/// escapes for v0 (PG users hardly ever rely on them).
+///
+/// Fast paths recognize the four ubiquitous shapes that account for
+/// the vast majority of real-world LIKE patterns — equality,
+/// startsWith, endsWith, contains. Everything else falls to the
+/// general iterative backtrack matcher.
+fn like_match(haystack: &str, pattern: &str, case_insensitive: bool) -> bool {
+    // Case-sensitive fast path: no allocation, no copy.
+    if !case_insensitive {
+        if let Some(result) = like_fast_path(haystack, pattern) {
+            return result;
+        }
+        return like_match_inner(haystack.as_bytes(), pattern.as_bytes());
+    }
+    // Case-insensitive: lowercase both, then try fast paths against the
+    // lowered forms.
+    let h = haystack.to_lowercase();
+    let p = pattern.to_lowercase();
+    if let Some(result) = like_fast_path(&h, &p) {
+        return result;
+    }
+    like_match_inner(h.as_bytes(), p.as_bytes())
+}
+
+/// Returns Some(result) if `pattern` matches one of the fast-path
+/// shapes; None to fall through to the general matcher.
+fn like_fast_path(haystack: &str, pattern: &str) -> Option<bool> {
+    let pb = pattern.as_bytes();
+    // No wildcards → equality
+    if !pb.contains(&b'%') && !pb.contains(&b'_') {
+        return Some(haystack == pattern);
+    }
+    // %foo% → contains. No other wildcards in the interior.
+    if pb.len() >= 2 && pb[0] == b'%' && pb[pb.len() - 1] == b'%' {
+        let inner = &pattern[1..pattern.len() - 1];
+        let ib = inner.as_bytes();
+        if !ib.contains(&b'%') && !ib.contains(&b'_') {
+            return Some(haystack.contains(inner));
+        }
+    }
+    // foo% → starts_with
+    if pb.len() >= 1 && pb[pb.len() - 1] == b'%' {
+        let prefix = &pattern[..pattern.len() - 1];
+        let pb2 = prefix.as_bytes();
+        if !pb2.contains(&b'%') && !pb2.contains(&b'_') {
+            return Some(haystack.starts_with(prefix));
+        }
+    }
+    // %foo → ends_with
+    if pb.len() >= 1 && pb[0] == b'%' {
+        let suffix = &pattern[1..];
+        let pb2 = suffix.as_bytes();
+        if !pb2.contains(&b'%') && !pb2.contains(&b'_') {
+            return Some(haystack.ends_with(suffix));
+        }
+    }
+    None
+}
+
+fn like_match_inner(s: &[u8], p: &[u8]) -> bool {
+    // Classic iterative wildcard match with backtrack on `%`.
+    let (mut si, mut pi) = (0usize, 0usize);
+    let (mut star_si, mut star_pi) = (None::<usize>, None::<usize>);
+    while si < s.len() {
+        if pi < p.len() && (p[pi] == b'_' || p[pi] == s[si]) {
+            si += 1;
+            pi += 1;
+        } else if pi < p.len() && p[pi] == b'%' {
+            star_pi = Some(pi);
+            star_si = Some(si);
+            pi += 1;
+        } else if let (Some(spi), Some(ssi)) = (star_pi, star_si) {
+            pi = spi + 1;
+            si = ssi + 1;
+            star_si = Some(si);
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == b'%' {
+        pi += 1;
+    }
+    pi == p.len()
+}
+
+/// True if the pushed predicate passes for `row` of the current batch.
+/// Returning false means PG won't see this row at all — the row stays
+/// inside our scan, never crosses the slot boundary.
+unsafe fn pushed_expr_pass(
+    qual_readers: &[ColumnReader],
+    qual_rhs_readers: &[ColumnReader],
+    pushed: &[PushedQual],
+    expr: &PushExpr,
+    row: usize,
+) -> bool {
+    match expr {
+        PushExpr::Qual(idx) => {
+            let (Some(q), Some(rdr)) = (pushed.get(*idx), qual_readers.get(*idx)) else {
+                return true;
+            };
+            let rhs = qual_rhs_readers.get(*idx).unwrap_or(&ColumnReader::Missing);
+            eval_one_qual(rdr, rhs, q, row)
+        }
+        PushExpr::And(children) => children
+            .iter()
+            .all(|child| pushed_expr_pass(qual_readers, qual_rhs_readers, pushed, child, row)),
+        PushExpr::Or(children) => children
+            .iter()
+            .any(|child| pushed_expr_pass(qual_readers, qual_rhs_readers, pushed, child, row)),
+    }
+}
+
+// --- Vectorized predicate evaluation (Phase 4b) ---------------------------
+//
+// Rather than walk the qual tree for every row, evaluate the whole pushed
+// expression as Arrow compute kernels once per batch, producing a single
+// BooleanArray bitmask. Per-row iteration then becomes `bitmask[i]`.
+//
+// Speed-up comes from two places: (1) the kernels are autovectorizable
+// SIMD loops, (2) the per-row tree walker's dispatch + boxed-array
+// downcasts are gone. The trade is that not every PushOp is vectorizable
+// — LIKE, dynamic quals, column-vs-column compares, and types we don't
+// special-case fall back to per-row eval (the function returns None).
+//
+// Filter semantics match PG: a NULL in the bitmask excludes the row.
+fn try_evaluate_pushed_expr_vectorized(
+    batch: &RecordBatch,
+    expr: &PushExpr,
+    pushed: &[PushedQual],
+    pg_attrs: &[PgAttr],
+) -> Option<arrow::array::BooleanArray> {
+    match expr {
+        PushExpr::Qual(idx) => {
+            let q = pushed.get(*idx)?;
+            try_evaluate_qual_vectorized(batch, q, pg_attrs)
+        }
+        PushExpr::And(children) => {
+            let mut acc: Option<arrow::array::BooleanArray> = None;
+            for child in children {
+                let m = try_evaluate_pushed_expr_vectorized(batch, child, pushed, pg_attrs)?;
+                acc = Some(match acc {
+                    None => m,
+                    Some(prev) => arrow::compute::and_kleene(&prev, &m).ok()?,
+                });
+            }
+            acc.or_else(|| {
+                // Empty AND → all rows pass.
+                Some(arrow::array::BooleanArray::from(vec![
+                    true;
+                    batch.num_rows()
+                ]))
+            })
+        }
+        PushExpr::Or(children) => {
+            let mut acc: Option<arrow::array::BooleanArray> = None;
+            for child in children {
+                let m = try_evaluate_pushed_expr_vectorized(batch, child, pushed, pg_attrs)?;
+                acc = Some(match acc {
+                    None => m,
+                    Some(prev) => arrow::compute::or_kleene(&prev, &m).ok()?,
+                });
+            }
+            // Empty OR → no rows pass, but we shouldn't get here from a
+            // valid parse.
+            acc
+        }
+    }
+}
+
+fn try_evaluate_qual_vectorized(
+    batch: &RecordBatch,
+    q: &PushedQual,
+    pg_attrs: &[PgAttr],
+) -> Option<arrow::array::BooleanArray> {
+    use arrow::array::{
+        BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Scalar,
+        StringArray, TimestampMicrosecondArray,
+    };
+    use arrow::compute::kernels::cmp::{eq, gt, gt_eq, lt, lt_eq};
+
+    if q.attnum <= 0 {
+        return None;
+    }
+    let attr_idx = (q.attnum - 1) as usize;
+    let attr = pg_attrs.get(attr_idx)?;
+    let col_idx = batch.schema().index_of(&attr.name).ok()?;
+    let column = batch.column(col_idx).clone();
+
+    // Apply the comparison op between `column` (Arrow array) and a Scalar
+    // built from the literal. The macros below let us reuse the same six
+    // kernels across all primitive types without specialising each.
+    macro_rules! apply_op {
+        ($scalar:expr) => {{
+            let s = Scalar::new($scalar);
+            let result = match q.op {
+                PushOp::Eq => eq(&column, &s),
+                PushOp::Lt => lt(&column, &s),
+                PushOp::Le => lt_eq(&column, &s),
+                PushOp::Gt => gt(&column, &s),
+                PushOp::Ge => gt_eq(&column, &s),
+                _ => return None,
+            };
+            result.ok()
+        }};
+    }
+
+    match (&q.value, q.op) {
+        // ---- IS NULL / IS NOT NULL -----------------------------------
+        (PushVal::Null, PushOp::Eq) => arrow::compute::is_null(&column).ok(),
+        // (We don't have a separate IS NOT NULL push variant — quals
+        //  using `IS NOT NULL` get pushed as something else or not at all.)
+
+        // ---- Integer comparisons -------------------------------------
+        (PushVal::I64(v), op)
+            if matches!(
+                op,
+                PushOp::Eq | PushOp::Lt | PushOp::Le | PushOp::Gt | PushOp::Ge
+            ) =>
+        {
+            let oid = attr.typoid.to_u32();
+            if oid == pg_sys::INT2OID.to_u32() || oid == pg_sys::INT4OID.to_u32() {
+                let v32 = i32::try_from(*v).ok()?;
+                let column_array = column.as_any().downcast_ref::<Int32Array>();
+                if column_array.is_some() {
+                    apply_op!(Int32Array::from(vec![v32]))
+                } else {
+                    // Int16 column: kernel needs same arrow type on both sides.
+                    let v16 = i16::try_from(*v).ok()?;
+                    let _ = column.as_any().downcast_ref::<Int16Array>()?;
+                    apply_op!(Int16Array::from(vec![v16]))
+                }
+            } else if oid == pg_sys::INT8OID.to_u32() {
+                let _ = column.as_any().downcast_ref::<Int64Array>()?;
+                apply_op!(Int64Array::from(vec![*v]))
+            } else if oid == pg_sys::DATEOID.to_u32() {
+                // Stored days-since-1970 (compaction writes Int32, imports may
+                // carry Date32); PG date days-since-2000.
+                let arrow_days = i32::try_from(*v + PG_EPOCH_OFFSET_DAYS as i64).ok()?;
+                if column.as_any().downcast_ref::<Int32Array>().is_some() {
+                    apply_op!(Int32Array::from(vec![arrow_days]))
+                } else {
+                    let _ = column
+                        .as_any()
+                        .downcast_ref::<arrow::array::Date32Array>()?;
+                    apply_op!(arrow::array::Date32Array::from(vec![arrow_days]))
+                }
+            } else if oid == pg_sys::TIMESTAMPOID.to_u32() || oid == pg_sys::TIMESTAMPTZOID.to_u32()
+            {
+                // Stored micros-since-1970; PG micros-since-2000. The kernels
+                // reject a scalar whose timezone differs from the column's
+                // (compaction writes "UTC"), so copy the column's.
+                let arrow_micros = v.checked_add(PG_EPOCH_OFFSET_MICROS)?;
+                let array = column
+                    .as_any()
+                    .downcast_ref::<TimestampMicrosecondArray>()?;
+                apply_op!(TimestampMicrosecondArray::from(vec![arrow_micros])
+                    .with_timezone_opt(array.timezone().map(str::to_string)))
+            } else {
+                None
+            }
+        }
+
+        // ---- Float comparisons ---------------------------------------
+        (PushVal::F64(v), op)
+            if matches!(
+                op,
+                PushOp::Eq | PushOp::Lt | PushOp::Le | PushOp::Gt | PushOp::Ge
+            ) =>
+        {
+            let oid = attr.typoid.to_u32();
+            if oid == pg_sys::FLOAT4OID.to_u32() {
+                let v32 = *v as f32;
+                let _ = column.as_any().downcast_ref::<Float32Array>()?;
+                apply_op!(Float32Array::from(vec![v32]))
+            } else if oid == pg_sys::FLOAT8OID.to_u32() {
+                let _ = column.as_any().downcast_ref::<Float64Array>()?;
+                apply_op!(Float64Array::from(vec![*v]))
+            } else {
+                None
+            }
+        }
+
+        // ---- Bool comparisons ----------------------------------------
+        (PushVal::Bool(b), PushOp::Eq) => {
+            let _ = column.as_any().downcast_ref::<BooleanArray>()?;
+            arrow::compute::kernels::cmp::eq(&column, &Scalar::new(BooleanArray::from(vec![*b])))
+                .ok()
+        }
+
+        // ---- Text equality / inequality ------------------------------
+        // LIKE / ILIKE not handled here — they fall through to per-row.
+        (PushVal::Text(s), PushOp::Eq) => {
+            let _ = column.as_any().downcast_ref::<StringArray>()?;
+            eq(&column, &Scalar::new(StringArray::from(vec![s.as_str()]))).ok()
+        }
+        (PushVal::Text(s), op)
+            if matches!(op, PushOp::Lt | PushOp::Le | PushOp::Gt | PushOp::Ge) =>
+        {
+            let _ = column.as_any().downcast_ref::<StringArray>()?;
+            let scalar = Scalar::new(StringArray::from(vec![s.as_str()]));
+            match op {
+                PushOp::Lt => lt(&column, &scalar).ok(),
+                PushOp::Le => lt_eq(&column, &scalar).ok(),
+                PushOp::Gt => gt(&column, &scalar).ok(),
+                PushOp::Ge => gt_eq(&column, &scalar).ok(),
+                _ => unreachable!(),
+            }
+        }
+
+        // Any other case (LIKE, ILIKE, IN-set, column-vs-column, etc.)
+        // falls back to the per-row evaluator.
+        _ => None,
+    }
+}
+
+unsafe fn eval_one_qual(
+    reader: &ColumnReader,
+    rhs_reader: &ColumnReader,
+    q: &PushedQual,
+    row: usize,
+) -> bool {
+    use PushOp::*;
+    use PushVal::*;
+    // PG SQL semantics: any predicate on NULL is NULL → row excluded.
+    macro_rules! cmp {
+        ($l:expr, $r:expr) => {
+            match q.op {
+                Lt => $l < $r,
+                Le => $l <= $r,
+                Gt => $l > $r,
+                Ge => $l >= $r,
+                Eq => $l == $r,
+                In => return false,
+                // LIKE family is only meaningful on text columns; for
+                // numeric/bool the qual is nonsense — exclude the row.
+                Like | NotLike | ILike | NotILike => return false,
+            }
+        };
+    }
+    match (reader, &q.value) {
+        (_, Null) => false,
+        // Readers we can't key leave the row to ExecQual (try_recognize_clause
+        // never marks those exact). For keyable ones a None is SQL NULL.
+        (_, Column(_)) if !reader_has_i64_key(reader) || !reader_has_i64_key(rhs_reader) => true,
+        (_, Column(_)) => match (
+            i64_key_from_reader(reader, row),
+            i64_key_from_reader(rhs_reader, row),
+        ) {
+            (Some(lhs), Some(rhs)) => compare_i64(q.op, lhs, rhs),
+            _ => false,
+        },
+        (ColumnReader::Int16(p), I64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as i64, rhs)
+            }
+        }
+        (ColumnReader::Int16(p), I64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&(a.value(row) as i64))
+        }
+        (ColumnReader::Int32(p), I64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as i64, rhs)
+            }
+        }
+        (ColumnReader::Int32(p), I64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&(a.value(row) as i64))
+        }
+        (ColumnReader::Date32(p), I64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!((a.value(row) - PG_EPOCH_OFFSET_DAYS) as i64, rhs)
+            }
+        }
+        (ColumnReader::Date32(p), I64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&((a.value(row) - PG_EPOCH_OFFSET_DAYS) as i64))
+        }
+        (ColumnReader::Date32Int32(p), I64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!((a.value(row) - PG_EPOCH_OFFSET_DAYS) as i64, rhs)
+            }
+        }
+        (ColumnReader::Date32Int32(p), I64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&((a.value(row) - PG_EPOCH_OFFSET_DAYS) as i64))
+        }
+        (ColumnReader::Int64(p), I64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row), rhs)
+            }
+        }
+        (ColumnReader::Int64(p), I64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&a.value(row))
+        }
+        (ColumnReader::TimestampMicros(p), I64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) - PG_EPOCH_OFFSET_MICROS, rhs)
+            }
+        }
+        (ColumnReader::TimestampMicros(p), I64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&(a.value(row) - PG_EPOCH_OFFSET_MICROS))
+        }
+        (ColumnReader::Int16(p), F64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as f64, rhs)
+            }
+        }
+        (ColumnReader::Int32(p), F64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as f64, rhs)
+            }
+        }
+        (ColumnReader::Int64(p), F64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as f64, rhs)
+            }
+        }
+        (ColumnReader::Float32(p), F64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as f64, rhs)
+            }
+        }
+        (ColumnReader::Float32(p), F64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&(a.value(row) as f64))
+        }
+        (ColumnReader::Float64(p), F64(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row), rhs)
+            }
+        }
+        (ColumnReader::Float64(p), F64Set(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&a.value(row))
+        }
+        (ColumnReader::Float32(p), I64(rhs)) => {
+            let rhs = *rhs as f64;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row) as f64, rhs)
+            }
+        }
+        (ColumnReader::Float64(p), I64(rhs)) => {
+            let rhs = *rhs as f64;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row), rhs)
+            }
+        }
+        (ColumnReader::Bool(p), Bool(rhs)) => {
+            let rhs = *rhs;
+            let a = &**p;
+            if a.is_null(row) {
+                false
+            } else {
+                cmp!(a.value(row), rhs)
+            }
+        }
+        (ColumnReader::Bool(p), BoolSet(rhs)) => {
+            let a = &**p;
+            !a.is_null(row) && rhs.contains(&a.value(row))
+        }
+        // Text comparisons / LIKE / ILIKE against a Utf8 column.
+        (ColumnReader::Utf8 { arr, .. }, Text(rhs)) => {
+            let a = &**arr;
+            if a.is_null(row) {
+                return false;
+            }
+            let s = a.value(row);
+            let rhs = rhs.as_str();
+            match q.op {
+                Eq => s == rhs,
+                Lt => s < rhs,
+                Le => s <= rhs,
+                Gt => s > rhs,
+                Ge => s >= rhs,
+                In => return false,
+                Like => like_match(s, rhs, false),
+                NotLike => !like_match(s, rhs, false),
+                ILike => like_match(s, rhs, true),
+                NotILike => !like_match(s, rhs, true),
+            }
+        }
+        (ColumnReader::Utf8 { arr, .. }, TextSet(rhs)) => {
+            let a = &**arr;
+            if a.is_null(row) {
+                return false;
+            }
+            let s = a.value(row);
+            rhs.iter().any(|candidate| candidate == s)
+        }
+        // Anything else — be conservative, fall through and let PG ExecQual
+        // re-evaluate (we return true to keep the row in the candidate set).
+        _ => true,
+    }
+}
+
+/// Return false when row-group min/max stats prove at least one pushed
+/// AND-clause cannot match any row in this group. Anything uncertain stays
+/// on the scan path; PG's ExecQual remains the final authority.
+fn row_group_may_satisfy(
+    row_group: &RowGroupEntry,
+    pg_attrs: &[PgAttr],
+    pushed_quals: &[PushedQual],
+    pushed_expr: Option<&PushExpr>,
+) -> bool {
+    let Some(expr) = pushed_expr else {
+        return true;
+    };
+    !row_group_expr_impossible(row_group, pg_attrs, pushed_quals, expr)
+}
+
+fn row_group_expr_impossible(
+    row_group: &RowGroupEntry,
+    pg_attrs: &[PgAttr],
+    pushed_quals: &[PushedQual],
+    expr: &PushExpr,
+) -> bool {
+    match expr {
+        PushExpr::Qual(idx) => pushed_quals
+            .get(*idx)
+            .is_some_and(|q| row_group_clause_impossible(row_group, pg_attrs, q)),
+        PushExpr::And(children) => children
+            .iter()
+            .any(|child| row_group_expr_impossible(row_group, pg_attrs, pushed_quals, child)),
+        PushExpr::Or(children) => children
+            .iter()
+            .all(|child| row_group_expr_impossible(row_group, pg_attrs, pushed_quals, child)),
+    }
+}
+
+fn row_group_clause_impossible(
+    row_group: &RowGroupEntry,
+    pg_attrs: &[PgAttr],
+    q: &PushedQual,
+) -> bool {
+    if q.attnum <= 0 {
+        return false;
+    }
+    let attr_idx = (q.attnum - 1) as usize;
+    let Some(attr) = pg_attrs.get(attr_idx) else {
+        return false;
+    };
+    // Fast in-memory min/max check first (no I/O). If that doesn't
+    // prove impossibility, fall through to the bloom filter check —
+    // which costs an mmap-style read of the parquet bloom on first
+    // access per (path, col), then is cached for subsequent queries.
+    if row_group_clause_impossible_stats(row_group, attr, q) {
+        return true;
+    }
+    bloom_clause_impossible(row_group, attr, q)
+}
+
+fn row_group_clause_impossible_stats(
+    row_group: &RowGroupEntry,
+    attr: &PgAttr,
+    q: &PushedQual,
+) -> bool {
+    let Some(stats) = row_group.stats.get(&attr.name) else {
+        return false;
+    };
+    match &q.value {
+        PushVal::Null => true,
+        PushVal::I64(rhs) => {
+            let (Some(min), Some(max)) = (&stats.min, &stats.max) else {
+                return false;
+            };
+            if let Some((min, max)) = json_i64_bounds(min, max) {
+                let Some((min, max)) = stats_bounds_in_pg_epoch(attr.typoid, min, max) else {
+                    return false;
+                };
+                return i64_clause_impossible(q.op, min, max, *rhs);
+            }
+            // Float stats can't be shifted exactly; never compare a temporal
+            // column's raw stats against a PG-epoch value.
+            if pg_epoch_offset(attr.typoid) != 0 {
+                return false;
+            }
+            if let Some((min, max)) = json_f64_bounds(min, max) {
+                return f64_clause_impossible(q.op, min, max, *rhs as f64);
+            }
+            false
+        }
+        PushVal::F64(rhs) => {
+            let (Some(min), Some(max)) = (&stats.min, &stats.max) else {
+                return false;
+            };
+            let Some((min, max)) = json_f64_bounds(min, max) else {
+                return false;
+            };
+            f64_clause_impossible(q.op, min, max, *rhs)
+        }
+        PushVal::Bool(rhs) => {
+            let (Some(min), Some(max)) = (&stats.min, &stats.max) else {
+                return false;
+            };
+            let Some((min, max)) = json_bool_bounds(min, max) else {
+                return false;
+            };
+            bool_clause_impossible(q.op, min, max, *rhs)
+        }
+        PushVal::I64Set(rhs) => {
+            let (Some(min), Some(max)) = (&stats.min, &stats.max) else {
+                return false;
+            };
+            if let Some((min, max)) = json_i64_bounds(min, max) {
+                let Some((min, max)) = stats_bounds_in_pg_epoch(attr.typoid, min, max) else {
+                    return false;
+                };
+                return rhs
+                    .iter()
+                    .all(|value| i64_clause_impossible(PushOp::Eq, min, max, *value));
+            }
+            false
+        }
+        PushVal::F64Set(rhs) => {
+            let (Some(min), Some(max)) = (&stats.min, &stats.max) else {
+                return false;
+            };
+            let Some((min, max)) = json_f64_bounds(min, max) else {
+                return false;
+            };
+            rhs.iter()
+                .all(|value| f64_clause_impossible(PushOp::Eq, min, max, *value))
+        }
+        PushVal::BoolSet(rhs) => {
+            let (Some(min), Some(max)) = (&stats.min, &stats.max) else {
+                return false;
+            };
+            let Some((min, max)) = json_bool_bounds(min, max) else {
+                return false;
+            };
+            rhs.iter()
+                .all(|value| bool_clause_impossible(PushOp::Eq, min, max, *value))
+        }
+        PushVal::Text(rhs) => text_clause_impossible(
+            q.op,
+            stats.min.as_ref(),
+            stats.max.as_ref(),
+            stats.text_sketch_b64.as_deref(),
+            attr.typoid != pg_sys::BPCHAROID,
+            rhs,
+        ),
+        PushVal::TextSet(rhs) => rhs.iter().all(|value| {
+            text_clause_impossible(
+                PushOp::Eq,
+                stats.min.as_ref(),
+                stats.max.as_ref(),
+                stats.text_sketch_b64.as_deref(),
+                attr.typoid != pg_sys::BPCHAROID,
+                value,
+            )
+        }),
+        PushVal::Column(_) => false,
+    }
+}
+
+fn json_i64_bounds(min: &serde_json::Value, max: &serde_json::Value) -> Option<(i64, i64)> {
+    Some((json_i64(min)?, json_i64(max)?))
+}
+
+/// Distance from the Unix epoch to PG's 2000-01-01 epoch in the unit a
+/// temporal column is stored in: days for date, micros for timestamp /
+/// timestamptz. Zero for everything else.
+fn pg_epoch_offset(typoid: pg_sys::Oid) -> i64 {
+    if typoid == pg_sys::DATEOID {
+        PG_EPOCH_OFFSET_DAYS as i64
+    } else if typoid == pg_sys::TIMESTAMPOID || typoid == pg_sys::TIMESTAMPTZOID {
+        PG_EPOCH_OFFSET_MICROS
+    } else {
+        0
+    }
+}
+
+/// Row-group stats are in the stored frame (Unix days / Unix micros); pushed
+/// values are in PG's frame. Shift the stats, not the value, so every
+/// comparison below happens in the frame PG gave us.
+fn stats_bounds_in_pg_epoch(typoid: pg_sys::Oid, min: i64, max: i64) -> Option<(i64, i64)> {
+    let offset = pg_epoch_offset(typoid);
+    Some((min.checked_sub(offset)?, max.checked_sub(offset)?))
+}
+
+// --- Bloom filter pushdown ------------------------------------------------
+//
+// Parquet 2.0 row groups carry an optional Sbbf (split-block bloom filter)
+// per column. We wrote them for text/binary columns in the v2 ship; the
+// numeric variant is gated by RVBBIT_PARQUET_BLOOM_NUMERIC. On the read
+// side these help when min/max can't prune — i.e. the literal sits inside
+// the column's value range but the column doesn't actually contain it.
+// That's the ClickBench Q19 shape (`UserID = 12345` against a 200k-row
+// table where UserID spans the int64 universe).
+//
+// We cache decoded blooms per (path, file_len, mtime) so the parquet
+// footer + bloom pages are read at most once per row-group file per
+// backend. The cache key mirrors BatchCache so a recompacted file
+// (different mtime/len) naturally misses and refreshes.
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct BloomCacheKey {
+    path: String,
+    file_len: u64,
+    file_mtime_nanos: u128,
+}
+
+#[derive(Default)]
+struct BloomCache {
+    entries: HashMap<BloomCacheKey, std::sync::Arc<HashMap<String, Sbbf>>>,
+    hits: u64,
+    misses: u64,
+    /// Times we ran bloom_clause_impossible and it returned true
+    /// (i.e. the bloom said "definitely absent" → row group pruned).
+    pruned: u64,
+}
+
+thread_local! {
+    static BLOOM_CACHE: std::cell::RefCell<BloomCache> =
+        std::cell::RefCell::new(BloomCache::default());
+}
+
+/// resources-05: per-backend ceiling on the bloom cache. Each entry holds the
+/// decoded Sbbf blocks for one parquet file; without a bound a long-lived pooled
+/// backend that scans many files over many compaction generations accumulates
+/// them forever. Random-evict to this ceiling — blooms reload cheaply on a miss.
+const BLOOM_CACHE_MAX_ENTRIES: usize = 2048;
+
+fn bloom_cache_key(path: &str) -> BloomCacheKey {
+    let (file_len, file_mtime_nanos) = std::fs::metadata(path)
+        .ok()
+        .map(|m| {
+            let mtime = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            (m.len(), mtime)
+        })
+        .unwrap_or((0, 0));
+    BloomCacheKey {
+        path: path.to_string(),
+        file_len,
+        file_mtime_nanos,
+    }
+}
+
+/// Load all column blooms for the parquet at `path`. Cached per backend.
+/// Returns an empty map (not None) for files with no blooms so subsequent
+/// lookups still hit the cache instead of re-opening the file.
+fn load_blooms_for_path(path: &str) -> std::sync::Arc<HashMap<String, Sbbf>> {
+    let key = bloom_cache_key(path);
+    if let Some(cached) = BLOOM_CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        if let Some(arc) = c.entries.get(&key).cloned() {
+            c.hits += 1;
+            Some(arc)
+        } else {
+            c.misses += 1;
+            None
+        }
+    }) {
+        return cached;
+    }
+    let mut blooms: HashMap<String, Sbbf> = HashMap::new();
+    if let Ok(file) = std::fs::File::open(path) {
+        let props = ReaderProperties::builder()
+            .set_read_bloom_filter(true)
+            .build();
+        let options = ReadOptionsBuilder::new()
+            .with_reader_properties(props)
+            .build();
+        if let Ok(reader) = SerializedFileReader::new_with_options(file, options) {
+            let schema = reader.metadata().file_metadata().schema_descr_ptr();
+            // We only write one row group per parquet file (compact() is
+            // 1:1 with rg_id), so blooms live in row group 0.
+            if reader.num_row_groups() > 0 {
+                if let Ok(rg) = reader.get_row_group(0) {
+                    let n_cols = rg.num_columns();
+                    for c in 0..n_cols {
+                        if let Some(b) = rg.metadata().column(c).bloom_filter_offset() {
+                            let _ = b; // sanity; offset presence is checked again below
+                            if let Some(sbbf) = rg.get_column_bloom_filter(c) {
+                                let name = schema.column(c).name().to_string();
+                                blooms.insert(name, sbbf.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let arc = std::sync::Arc::new(blooms);
+    BLOOM_CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.entries.len() >= BLOOM_CACHE_MAX_ENTRIES {
+            if let Some(victim) = c.entries.keys().next().cloned() {
+                c.entries.remove(&victim);
+            }
+        }
+        c.entries.insert(key, arc.clone());
+    });
+    arc
+}
+
+fn bloom_clause_impossible(row_group: &RowGroupEntry, attr: &PgAttr, q: &PushedQual) -> bool {
+    // Bloom is only useful for equality / IN. Anything else falls through.
+    if !matches!(q.op, PushOp::Eq | PushOp::In) {
+        return false;
+    }
+    let blooms = load_blooms_for_path(&row_group.path);
+    let Some(bloom) = blooms.get(&attr.name) else {
+        return false;
+    };
+    let pruned = match &q.value {
+        PushVal::I64(v) => bloom_int_absent(bloom, attr.typoid, *v),
+        PushVal::F64(v) => bloom_float_absent(bloom, attr.typoid, *v),
+        PushVal::Text(s) => !bloom.check(s.as_str()),
+        PushVal::I64Set(vs) if !vs.is_empty() => {
+            vs.iter().all(|&v| bloom_int_absent(bloom, attr.typoid, v))
+        }
+        PushVal::F64Set(vs) if !vs.is_empty() => vs
+            .iter()
+            .all(|&v| bloom_float_absent(bloom, attr.typoid, v)),
+        PushVal::TextSet(vs) if !vs.is_empty() => vs.iter().all(|s| !bloom.check(s.as_str())),
+        _ => false,
+    };
+    if pruned {
+        BLOOM_CACHE.with(|c| c.borrow_mut().pruned += 1);
+    }
+    pruned
+}
+
+/// Check whether `v` (PG int8) is definitely absent from a numeric column's
+/// bloom. Arrow's parquet writer widens Int16/Int32 to physical INT32 and
+/// keeps Int64 as INT64; Date32 is INT32 days-since-1970; Timestamp(Micros)
+/// is INT64 micros-since-1970. The bloom hashes the on-disk physical type,
+/// so the literal needs the same width / epoch frame to hash identically.
+fn bloom_int_absent(bloom: &Sbbf, typoid: pg_sys::Oid, v: i64) -> bool {
+    let oid = typoid.to_u32();
+    if oid == pg_sys::INT2OID.to_u32() || oid == pg_sys::INT4OID.to_u32() {
+        return match i32::try_from(v) {
+            Ok(v32) => !bloom.check(&v32),
+            Err(_) => true,
+        };
+    }
+    if oid == pg_sys::INT8OID.to_u32() {
+        return !bloom.check(&v);
+    }
+    if oid == pg_sys::DATEOID.to_u32() {
+        let arrow_days = v + PG_EPOCH_OFFSET_DAYS as i64;
+        return match i32::try_from(arrow_days) {
+            Ok(d32) => !bloom.check(&d32),
+            Err(_) => true,
+        };
+    }
+    if oid == pg_sys::TIMESTAMPOID.to_u32() || oid == pg_sys::TIMESTAMPTZOID.to_u32() {
+        return match v.checked_add(PG_EPOCH_OFFSET_MICROS) {
+            Some(arrow_micros) => !bloom.check(&arrow_micros),
+            None => false,
+        };
+    }
+    false
+}
+
+fn bloom_float_absent(bloom: &Sbbf, typoid: pg_sys::Oid, v: f64) -> bool {
+    let oid = typoid.to_u32();
+    if oid == pg_sys::FLOAT4OID.to_u32() {
+        let v32 = v as f32;
+        if (v32 as f64) != v {
+            return true;
+        }
+        return !bloom.check(&v32);
+    }
+    if oid == pg_sys::FLOAT8OID.to_u32() {
+        return !bloom.check(&v);
+    }
+    false
+}
+
+fn json_i64(v: &serde_json::Value) -> Option<i64> {
+    v.as_i64()
+        .or_else(|| v.as_u64().and_then(|u| i64::try_from(u).ok()))
+}
+
+fn json_f64_bounds(min: &serde_json::Value, max: &serde_json::Value) -> Option<(f64, f64)> {
+    Some((min.as_f64()?, max.as_f64()?))
+}
+
+fn json_bool_bounds(min: &serde_json::Value, max: &serde_json::Value) -> Option<(bool, bool)> {
+    Some((min.as_bool()?, max.as_bool()?))
+}
+
+fn json_text_bounds<'a>(
+    min: &'a serde_json::Value,
+    max: &'a serde_json::Value,
+) -> Option<(&'a str, &'a str)> {
+    Some((min.as_str()?, max.as_str()?))
+}
+
+fn i64_clause_impossible(op: PushOp, min: i64, max: i64, rhs: i64) -> bool {
+    use PushOp::*;
+    match op {
+        Eq => rhs < min || rhs > max,
+        Lt => min >= rhs,
+        Le => min > rhs,
+        Gt => max <= rhs,
+        Ge => max < rhs,
+        In | Like | NotLike | ILike | NotILike => false,
+    }
+}
+
+fn compare_i64(op: PushOp, lhs: i64, rhs: i64) -> bool {
+    match op {
+        PushOp::Eq => lhs == rhs,
+        PushOp::Lt => lhs < rhs,
+        PushOp::Le => lhs <= rhs,
+        PushOp::Gt => lhs > rhs,
+        PushOp::Ge => lhs >= rhs,
+        PushOp::In | PushOp::Like | PushOp::NotLike | PushOp::ILike | PushOp::NotILike => true,
+    }
+}
+
+fn f64_clause_impossible(op: PushOp, min: f64, max: f64, rhs: f64) -> bool {
+    use PushOp::*;
+    if !min.is_finite() || !max.is_finite() || !rhs.is_finite() {
+        return false;
+    }
+    match op {
+        Eq => rhs < min || rhs > max,
+        Lt => min >= rhs,
+        Le => min > rhs,
+        Gt => max <= rhs,
+        Ge => max < rhs,
+        In | Like | NotLike | ILike | NotILike => false,
+    }
+}
+
+fn bool_clause_impossible(op: PushOp, min: bool, max: bool, rhs: bool) -> bool {
+    match op {
+        PushOp::Eq => (rhs as u8) < (min as u8) || (rhs as u8) > (max as u8),
+        _ => false,
+    }
+}
+
+fn text_clause_impossible(
+    op: PushOp,
+    min: Option<&serde_json::Value>,
+    max: Option<&serde_json::Value>,
+    sketch_b64: Option<&str>,
+    use_value_sketch: bool,
+    rhs: &str,
+) -> bool {
+    match op {
+        PushOp::Eq => {
+            let Some((min, max)) = min
+                .zip(max)
+                .and_then(|(min, max)| json_text_bounds(min, max))
+            else {
+                if use_value_sketch {
+                    return sketch_b64
+                        .and_then(TextSketch::from_b64)
+                        .is_some_and(|sketch| !sketch.may_contain_value(rhs));
+                }
+                return false;
+            };
+            if rhs < min || rhs > max {
+                return true;
+            }
+            use_value_sketch
+                && sketch_b64
+                    .and_then(TextSketch::from_b64)
+                    .is_some_and(|sketch| !sketch.may_contain_value(rhs))
+        }
+        PushOp::Like | PushOp::ILike => {
+            let Some(sketch) = sketch_b64.and_then(TextSketch::from_b64) else {
+                return false;
+            };
+            like_pattern_impossible_for_sketch(&sketch, rhs, matches!(op, PushOp::ILike))
+        }
+        _ => false,
+    }
+}
+
+fn like_pattern_impossible_for_sketch(
+    sketch: &TextSketch,
+    pattern: &str,
+    case_insensitive: bool,
+) -> bool {
+    let required = required_like_trigrams(pattern);
+    !required.is_empty()
+        && required
+            .iter()
+            .any(|trigram| !sketch.may_contain_trigram(trigram, case_insensitive))
+}
+
+fn required_like_trigrams(pattern: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut literal = String::new();
+    for ch in pattern.chars() {
+        if ch == '%' || ch == '_' {
+            push_literal_trigrams(&literal, &mut out);
+            literal.clear();
+        } else {
+            literal.push(ch);
+        }
+    }
+    push_literal_trigrams(&literal, &mut out);
+    out
+}
+
+fn push_literal_trigrams(literal: &str, out: &mut Vec<String>) {
+    let bytes = literal.as_bytes();
+    if bytes.len() < 3 {
+        return;
+    }
+    for window in bytes.windows(3) {
+        if let Ok(s) = std::str::from_utf8(window) {
+            out.push(s.to_string());
+        }
+    }
+}
+
+/// Build a typed reader per needed column for this batch. Called whenever
+/// `state.current_batch` is replaced. Does one downcast per column;
+/// `fill_slot_from_batch` then issues only enum dispatches per row.
+unsafe fn rebuild_column_readers(state: &mut RustScanState) {
+    let batch = match state.current_batch.as_ref() {
+        Some(b) => b,
+        None => {
+            state.column_readers.clear();
+            state.qual_readers.clear();
+            state.qual_rhs_readers.clear();
+            state.current_filter_bitmask = None;
+            return;
+        }
+    };
+    state.qual_readers = build_qual_readers_for_batch(batch, &state.pg_attrs, &state.pushed_quals);
+    state.qual_rhs_readers =
+        build_qual_rhs_readers_for_batch(batch, &state.pg_attrs, &state.pushed_quals);
+    state.column_readers =
+        build_column_readers_for_batch(batch, &state.pg_attrs, &state.needed_attnums);
+    // Try to vectorize the pushed filter into a BooleanArray bitmask once
+    // per batch. If we succeed, the hot per-row loop just reads bitmask[i]
+    // instead of running the qual tree walker; if we can't (LIKE,
+    // dynamic quals, unsupported type), the bitmask is None and the
+    // existing per-row evaluator remains the path.
+    state.current_filter_bitmask = if !state.dynamic_quals.is_empty() {
+        // Dynamic quals depend on outer-row parameters; their RHS values
+        // change per outer row, so vectorizing once per batch would
+        // miscompute. Per-row eval is correct here.
+        None
+    } else if let Some(expr) = &state.pushed_expr {
+        try_evaluate_pushed_expr_vectorized(batch, expr, &state.pushed_quals, &state.pg_attrs)
+    } else {
+        None
+    };
+}
+
+unsafe fn build_qual_readers_for_batch(
+    batch: &RecordBatch,
+    pg_attrs: &[PgAttr],
+    pushed_quals: &[PushedQual],
+) -> Vec<ColumnReader> {
+    let mut out = Vec::with_capacity(pushed_quals.len());
+    let schema = batch.schema();
+    for q in pushed_quals {
+        let col_idx = (q.attnum - 1) as usize;
+        if col_idx >= pg_attrs.len() {
+            out.push(ColumnReader::Missing);
+            continue;
+        }
+        let attr = &pg_attrs[col_idx];
+        match schema.index_of(&attr.name) {
+            Ok(i) => out.push(make_reader_for(batch.column(i), attr)),
+            Err(_) => out.push(ColumnReader::Missing),
+        }
+    }
+    out
+}
+
+unsafe fn build_qual_rhs_readers_for_batch(
+    batch: &RecordBatch,
+    pg_attrs: &[PgAttr],
+    pushed_quals: &[PushedQual],
+) -> Vec<ColumnReader> {
+    let mut out = Vec::with_capacity(pushed_quals.len());
+    let schema = batch.schema();
+    for q in pushed_quals {
+        let PushVal::Column(attnum) = &q.value else {
+            out.push(ColumnReader::Missing);
+            continue;
+        };
+        let col_idx = (*attnum - 1) as usize;
+        let Some(attr) = pg_attrs.get(col_idx) else {
+            out.push(ColumnReader::Missing);
+            continue;
+        };
+        match schema.index_of(&attr.name) {
+            Ok(i) => out.push(make_reader_for(batch.column(i), attr)),
+            Err(_) => out.push(ColumnReader::Missing),
+        }
+    }
+    out
+}
+
+unsafe fn build_column_readers_for_batch(
+    batch: &RecordBatch,
+    pg_attrs: &[PgAttr],
+    needed_attnums: &[i32],
+) -> Vec<NeededColumn> {
+    let mut out = Vec::with_capacity(needed_attnums.len());
+    let schema = batch.schema();
+    for &attnum in needed_attnums {
+        let col_idx = (attnum - 1) as usize;
+        let attr = &pg_attrs[col_idx];
+        let arrow_col_idx = match schema.index_of(&attr.name) {
+            Ok(i) => i,
+            Err(_) => {
+                out.push(NeededColumn {
+                    attnum_idx: col_idx,
+                    reader: ColumnReader::Missing,
+                    has_nulls: true,
+                });
+                continue;
+            }
+        };
+        let array = batch.column(arrow_col_idx);
+        let reader = make_reader_for(array, attr);
+        let has_nulls = array.null_count() != 0;
+        out.push(NeededColumn {
+            attnum_idx: col_idx,
+            reader,
+            has_nulls,
+        });
+    }
+    out
+}
+
+unsafe fn make_reader_for(array: &Arc<dyn Array>, attr: &PgAttr) -> ColumnReader {
+    match array.data_type() {
+        DataType::Int16 => {
+            ColumnReader::Int16(array.as_any().downcast_ref::<Int16Array>().unwrap() as *const _)
+        }
+        DataType::Date32 => {
+            ColumnReader::Date32(array.as_any().downcast_ref::<Date32Array>().unwrap() as *const _)
+        }
+        DataType::Int32 => {
+            let a = array.as_any().downcast_ref::<Int32Array>().unwrap() as *const _;
+            if attr.typoid == pg_sys::DATEOID {
+                ColumnReader::Date32Int32(a)
+            } else {
+                ColumnReader::Int32(a)
+            }
+        }
+        DataType::Int64 => {
+            ColumnReader::Int64(array.as_any().downcast_ref::<Int64Array>().unwrap() as *const _)
+        }
+        DataType::Float32 => {
+            ColumnReader::Float32(array.as_any().downcast_ref::<Float32Array>().unwrap() as *const _)
+        }
+        DataType::Float64 => {
+            ColumnReader::Float64(array.as_any().downcast_ref::<Float64Array>().unwrap() as *const _)
+        }
+        DataType::Boolean => {
+            ColumnReader::Bool(array.as_any().downcast_ref::<BooleanArray>().unwrap() as *const _)
+        }
+        DataType::Utf8 => ColumnReader::Utf8 {
+            arr: array.as_any().downcast_ref::<StringArray>().unwrap() as *const _,
+            recon: utf8_recon_for(attr.typoid, attr.typmod),
+        },
+        DataType::Binary => {
+            ColumnReader::Binary(array.as_any().downcast_ref::<BinaryArray>().unwrap() as *const _)
+        }
+        DataType::Timestamp(_, _) => ColumnReader::TimestampMicros(
+            array
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .unwrap() as *const _,
+        ),
+        DataType::List(field) if matches!(field.data_type(), DataType::Float32) => {
+            ColumnReader::F32List(array.as_any().downcast_ref::<ListArray>().unwrap() as *const _)
+        }
+        other => {
+            pgrx::error!(
+                "rvbbit: unsupported arrow type {:?} for column '{}' (oid {})",
+                other,
+                attr.name,
+                attr.typoid.to_u32()
+            );
+        }
+    }
+}
+
+unsafe fn prepare_indexed_lookup(state: &mut RustScanState) {
+    if !state.cache_complete || !state.indexed_lookup_dirty {
+        return;
+    }
+    // The indexed-lookup path emits rows straight from the flat `cached_batches`
+    // list, which carries no per-row-group ordinal, so it cannot apply delete_log
+    // tombstones. When any are visible, leave it inactive and fall back to the
+    // sequential parquet scan (which applies tombstones via batch_base).
+    if !state.delete_bitmaps.is_empty() {
+        state.indexed_lookup_dirty = false;
+        state.indexed_lookup_active = false;
+        return;
+    }
+    state.indexed_lookup_dirty = false;
+    state.indexed_lookup_active = false;
+    state.indexed_row_refs.clear();
+    state.indexed_row_ref_idx = 0;
+
+    if state.eq_index.is_none() {
+        let index = build_runtime_eq_index(state);
+        state.eq_index = index;
+    }
+
+    let Some(index) = state.eq_index.as_ref() else {
+        return;
+    };
+    let Some(key) = runtime_eq_lookup_key(&state.pushed_quals, &index.qual_indices) else {
+        return;
+    };
+    state.indexed_lookup_active = true;
+    if let Some(rows) = index.map.get(&key) {
+        state.indexed_row_refs = rows.clone();
+    }
+}
+
+unsafe fn build_runtime_eq_index(state: &RustScanState) -> Option<RuntimeEqIndex> {
+    let pushed_expr = state.pushed_expr.as_ref()?;
+    let qual_indices = state
+        .dynamic_quals
+        .iter()
+        .filter_map(|dq| {
+            let q = state.pushed_quals.get(dq.qual_idx)?;
+            (q.op == PushOp::Eq
+                && q.attnum > 0
+                && push_expr_contains_qual(pushed_expr, dq.qual_idx))
+            .then_some(dq.qual_idx)
+        })
+        .take(4)
+        .collect::<Vec<_>>();
+    if qual_indices.is_empty() {
+        return None;
+    }
+
+    let attrs = qual_indices
+        .iter()
+        .filter_map(|qual_idx| {
+            let q = state.pushed_quals.get(*qual_idx)?;
+            let attr_idx = (q.attnum - 1) as usize;
+            state.pg_attrs.get(attr_idx)
+        })
+        .collect::<Vec<_>>();
+    if attrs.len() != qual_indices.len() {
+        return None;
+    }
+
+    let mut map: HashMap<RuntimeEqKey, Vec<CachedRowRef>> = HashMap::new();
+    for (batch_idx, batch) in state.cached_batches.iter().enumerate() {
+        let schema = batch.schema();
+        let readers = attrs
+            .iter()
+            .filter_map(|attr| {
+                let col_idx = schema.index_of(&attr.name).ok()?;
+                Some(make_reader_for(batch.column(col_idx), attr))
+            })
+            .collect::<Vec<_>>();
+        if readers.len() != attrs.len() {
+            continue;
+        }
+        for row in 0..batch.num_rows() {
+            if let Some(key) = runtime_eq_row_key(&readers, row) {
+                map.entry(key)
+                    .or_default()
+                    .push(CachedRowRef { batch_idx, row });
+            }
+        }
+    }
+    Some(RuntimeEqIndex { qual_indices, map })
+}
+
+fn push_expr_contains_qual(expr: &PushExpr, qual_idx: usize) -> bool {
+    match expr {
+        PushExpr::Qual(idx) => *idx == qual_idx,
+        PushExpr::And(children) | PushExpr::Or(children) => children
+            .iter()
+            .any(|child| push_expr_contains_qual(child, qual_idx)),
+    }
+}
+
+/// Readers whose i64_key_from_reader returns None only for NULL. Missing is
+/// a column absent from the row group, i.e. all NULL.
+fn reader_has_i64_key(reader: &ColumnReader) -> bool {
+    matches!(
+        reader,
+        ColumnReader::Int16(_)
+            | ColumnReader::Int32(_)
+            | ColumnReader::Date32(_)
+            | ColumnReader::Date32Int32(_)
+            | ColumnReader::Int64(_)
+            | ColumnReader::TimestampMicros(_)
+            | ColumnReader::Missing
+    )
+}
+
+/// Column types whose readers satisfy reader_has_i64_key.
+fn is_i64_keyed_typoid(typoid: pg_sys::Oid) -> bool {
+    [
+        pg_sys::INT2OID,
+        pg_sys::INT4OID,
+        pg_sys::INT8OID,
+        pg_sys::DATEOID,
+        pg_sys::TIMESTAMPOID,
+        pg_sys::TIMESTAMPTZOID,
+    ]
+    .contains(&typoid)
+}
+
+unsafe fn i64_key_from_reader(reader: &ColumnReader, row: usize) -> Option<i64> {
+    match reader {
+        ColumnReader::Int16(p) => {
+            let a = &**p;
+            (!a.is_null(row)).then(|| a.value(row) as i64)
+        }
+        ColumnReader::Int32(p) => {
+            let a = &**p;
+            (!a.is_null(row)).then(|| a.value(row) as i64)
+        }
+        ColumnReader::Date32(p) => {
+            let a = &**p;
+            (!a.is_null(row)).then(|| (a.value(row) - PG_EPOCH_OFFSET_DAYS) as i64)
+        }
+        ColumnReader::Date32Int32(p) => {
+            let a = &**p;
+            (!a.is_null(row)).then(|| (a.value(row) - PG_EPOCH_OFFSET_DAYS) as i64)
+        }
+        ColumnReader::Int64(p) => {
+            let a = &**p;
+            (!a.is_null(row)).then(|| a.value(row))
+        }
+        ColumnReader::TimestampMicros(p) => {
+            let a = &**p;
+            (!a.is_null(row)).then(|| a.value(row) - PG_EPOCH_OFFSET_MICROS)
+        }
+        _ => None,
+    }
+}
+
+fn runtime_eq_lookup_key(quals: &[PushedQual], qual_indices: &[usize]) -> Option<RuntimeEqKey> {
+    if qual_indices.is_empty() || qual_indices.len() > 4 {
+        return None;
+    }
+    let mut key = RuntimeEqKey {
+        len: qual_indices.len() as u8,
+        values: [0; 4],
+    };
+    for (idx, qual_idx) in qual_indices.iter().enumerate() {
+        let q = quals.get(*qual_idx)?;
+        let PushVal::I64(value) = q.value else {
+            return None;
+        };
+        key.values[idx] = value;
+    }
+    Some(key)
+}
+
+unsafe fn runtime_eq_row_key(readers: &[ColumnReader], row: usize) -> Option<RuntimeEqKey> {
+    if readers.is_empty() || readers.len() > 4 {
+        return None;
+    }
+    let mut key = RuntimeEqKey {
+        len: readers.len() as u8,
+        values: [0; 4],
+    };
+    for (idx, reader) in readers.iter().enumerate() {
+        key.values[idx] = i64_key_from_reader(reader, row)?;
+    }
+    Some(key)
+}
+
+fn cache_can_admit(used: usize, incoming: usize, limit: usize) -> bool {
+    limit > 0 && incoming <= limit.saturating_sub(used)
+}
+
+fn batch_cache_limit_bytes() -> usize {
+    // 1 GiB default: ClickBench-shape tables decode to ~500MB-1GB, so a
+    // smaller cap (the old 256MB default) thrashed when queries touched
+    // different projections. Override per-deployment via the env var.
+    std::env::var("RVBBIT_SCAN_BATCH_CACHE_MB")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(1024)
+        .saturating_mul(1024 * 1024)
+}
+
+fn batch_cache_key(path: &str, col_names: &[String]) -> BatchCacheKey {
+    let (file_len, file_mtime_nanos) = std::fs::metadata(path)
+        .ok()
+        .map(|metadata| {
+            let mtime = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0);
+            (metadata.len(), mtime)
+        })
+        .unwrap_or((0, 0));
+    BatchCacheKey {
+        path: path.to_string(),
+        file_len,
+        file_mtime_nanos,
+        projection: col_names.join("\u{1f}"),
+    }
+}
+
+fn batch_cache_get(key: &BatchCacheKey) -> Option<Vec<RecordBatch>> {
+    SCAN_BATCH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if !cache.entries.contains_key(key) {
+            cache.misses += 1;
+            return None;
+        }
+        cache.hits += 1;
+        // Mark as most-recently-used: drop any prior position, push to back.
+        if let Some(pos) = cache.order.iter().position(|k| k == key) {
+            cache.order.remove(pos);
+        }
+        cache.order.push_back(key.clone());
+        cache.entries.get(key).map(|entry| entry.batches.clone())
+    })
+}
+
+fn batch_cache_put(key: BatchCacheKey, batches: Vec<RecordBatch>) {
+    if batches.is_empty() {
+        return;
+    }
+    let limit = batch_cache_limit_bytes();
+    if limit == 0 {
+        return;
+    }
+    let bytes = batches
+        .iter()
+        .map(RecordBatch::get_array_memory_size)
+        .sum::<usize>();
+    if bytes > limit {
+        return;
+    }
+
+    SCAN_BATCH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        // Drop any prior entry for this key (a refresh, not an insert).
+        if let Some(existing) = cache.entries.remove(&key) {
+            cache.bytes = cache.bytes.saturating_sub(existing.bytes);
+            if let Some(pos) = cache.order.iter().position(|k| k == &key) {
+                cache.order.remove(pos);
+            }
+        }
+        // Evict LRU (front of the order queue) until we fit.
+        while cache.bytes.saturating_add(bytes) > limit {
+            let Some(victim) = cache.order.pop_front() else {
+                break;
+            };
+            if let Some(existing) = cache.entries.remove(&victim) {
+                cache.bytes = cache.bytes.saturating_sub(existing.bytes);
+                cache.evictions += 1;
+            }
+        }
+        cache.bytes = cache.bytes.saturating_add(bytes);
+        cache.inserts += 1;
+        cache.order.push_back(key.clone());
+        cache
+            .entries
+            .insert(key, BatchCacheEntry { batches, bytes });
+    });
+}
+
+fn finish_current_batch_cache(state: &mut RustScanState) {
+    let Some(key) = state.current_cache_key.take() else {
+        state.current_cache_accum.clear();
+        return;
+    };
+    state.current_cache_bytes = 0;
+    let batches = std::mem::take(&mut state.current_cache_accum);
+    batch_cache_put(key, batches);
+}
+
+/// Walk the scan plan's targetlist and qual to find which base-relation
+/// attribute numbers the query actually references.
+unsafe fn collect_needed_attnums(cscan: *mut pg_sys::CustomScan, natts: i32) -> Vec<i32> {
+    let scan_varno: u32 = (*cscan).scan.scanrelid;
+    let mut bms: *mut pg_sys::Bitmapset = std::ptr::null_mut();
+
+    pg_sys::pull_varattnos(
+        (*cscan).scan.plan.targetlist as *mut pg_sys::Node,
+        scan_varno,
+        &mut bms,
+    );
+    pg_sys::pull_varattnos(
+        (*cscan).scan.plan.qual as *mut pg_sys::Node,
+        scan_varno,
+        &mut bms,
+    );
+
+    let first_low = pg_sys::FirstLowInvalidHeapAttributeNumber as i32;
+    let mut attnums = Vec::new();
+    let mut whole_row = false;
+    let mut x: i32 = -1;
+    loop {
+        x = pg_sys::bms_next_member(bms, x);
+        if x < 0 {
+            break;
+        }
+        let attnum = x + first_low;
+        if attnum == 0 {
+            // A whole-row Var: `SELECT t FROM rel t`, to_jsonb(t), row_to_json(t),
+            // json_agg(t), t IS NULL... pull_varattnos encodes it as attnum 0.
+            whole_row = true;
+        } else if attnum > 0 && attnum <= natts {
+            attnums.push(attnum);
+        }
+    }
+    if whole_row {
+        // The composite datum is built from the scan slot, so every attribute
+        // must be decoded. Before this branch existed a whole-row reference
+        // fell through to the "read column 1" fallback below and every other
+        // attribute came back NULL — silently wrong results for to_jsonb(t) /
+        // row_to_json(t) on any accelerated relation. Dropped or parquet-less
+        // attributes still resolve to ColumnReader::Missing (NULL), same as heap.
+        attnums = (1..=natts).collect();
+    } else if attnums.is_empty() {
+        // Fall back: read at least one tiny column so parquet still yields
+        // batches with row counts (e.g. count(*) with no Vars referenced).
+        // Use the first column unconditionally.
+        if natts > 0 {
+            attnums.push(1);
+        }
+    }
+    attnums.sort();
+    attnums.dedup();
+    attnums
+}
+
+unsafe fn emit_indexed_row(
+    node: *mut pg_sys::CustomScanState,
+    state: &mut RustScanState,
+    scan_slot: *mut pg_sys::TupleTableSlot,
+) -> *mut pg_sys::TupleTableSlot {
+    // perf-scan-04: rows from the eq-index resolve to (batch_idx, row) and are
+    // contiguous by batch, so build the Arrow column/qual readers ONCE per batch
+    // (each rebuild re-downcasts every column + allocs 3 Vecs) instead of per
+    // emitted row. The readers own Arc clones of the batch arrays, so they stay
+    // valid across rows until the batch_idx changes.
+    let mut memo_batch_idx: Option<usize> = None;
+    let mut qual_readers: Vec<ColumnReader> = Vec::new();
+    let mut qual_rhs_readers: Vec<ColumnReader> = Vec::new();
+    let mut column_readers: Vec<NeededColumn> = Vec::new();
+    while state.indexed_row_ref_idx < state.indexed_row_refs.len() {
+        reset_scan_row(node);
+        let row_ref = state.indexed_row_refs[state.indexed_row_ref_idx];
+        state.indexed_row_ref_idx += 1;
+        if memo_batch_idx != Some(row_ref.batch_idx) {
+            let Some(batch) = state.cached_batches.get(row_ref.batch_idx).cloned() else {
+                continue;
+            };
+            qual_readers =
+                build_qual_readers_for_batch(&batch, &state.pg_attrs, &state.pushed_quals);
+            qual_rhs_readers =
+                build_qual_rhs_readers_for_batch(&batch, &state.pg_attrs, &state.pushed_quals);
+            column_readers =
+                build_column_readers_for_batch(&batch, &state.pg_attrs, &state.needed_attnums);
+            memo_batch_idx = Some(row_ref.batch_idx);
+        }
+        if let Some(expr) = &state.pushed_expr {
+            if !pushed_expr_pass(
+                &qual_readers,
+                &qual_rhs_readers,
+                &state.pushed_quals,
+                expr,
+                row_ref.row,
+            ) {
+                continue;
+            }
+        }
+
+        fill_scan_row(node, scan_slot, row_ref.row, &column_readers);
+        pg_sys::ExecStoreVirtualTuple(scan_slot);
+
+        let ps = &(*node).ss.ps;
+        let econtext = ps.ps_ExprContext;
+        (*econtext).ecxt_scantuple = scan_slot;
+
+        let qual = ps.qual;
+        if !state.qual_fully_pushed && !qual.is_null() && !pg_sys::ExecQual(qual, econtext) {
+            // The next row stores into this slot; ExecStoreVirtualTuple
+            // requires it empty.
+            pg_sys::ExecClearTuple(scan_slot);
+            continue;
+        }
+
+        let proj_info = ps.ps_ProjInfo;
+        if !proj_info.is_null() {
+            return pg_sys::ExecProject(proj_info);
+        }
+        return scan_slot;
+    }
+    std::ptr::null_mut()
+}
+
+unsafe fn emit_heap_tail_row(
+    node: *mut pg_sys::CustomScanState,
+    state: &mut RustScanState,
+    scan_slot: *mut pg_sys::TupleTableSlot,
+) -> Option<*mut pg_sys::TupleTableSlot> {
+    let n_attrs = state.pg_attrs.len();
+    let Some(tail) = state.heap_tail.as_mut() else {
+        return None;
+    };
+    while pg_sys::table_scan_getnextslot(
+        tail.scan,
+        pg_sys::ScanDirection::ForwardScanDirection,
+        tail.slot,
+    ) {
+        reset_scan_row(node);
+        let mut should_free = false;
+        let tuple = pg_sys::ExecFetchSlotHeapTuple(tail.slot, false, &mut should_free);
+        if tuple.is_null() || (*tuple).t_data.is_null() {
+            continue;
+        }
+        let raw_xmin = (*(*tuple).t_data).t_choice.t_heap.t_xmin;
+        let full_xmin = reconstruct_full_xid(raw_xmin, tail.reference_xmax);
+        if tail.covers(full_xmin) {
+            continue;
+        }
+
+        copy_heap_slot_to_virtual_slot(tail.slot, scan_slot, n_attrs);
+        pg_sys::ExecStoreVirtualTuple(scan_slot);
+
+        let ps = &(*node).ss.ps;
+        let econtext = ps.ps_ExprContext;
+        (*econtext).ecxt_scantuple = scan_slot;
+
+        let qual = ps.qual;
+        if !qual.is_null() && !pg_sys::ExecQual(qual, econtext) {
+            pg_sys::ExecClearTuple(scan_slot);
+            continue;
+        }
+
+        tail.emitted += 1;
+        let proj_info = ps.ps_ProjInfo;
+        if !proj_info.is_null() {
+            return Some(pg_sys::ExecProject(proj_info));
+        }
+        return Some(scan_slot);
+    }
+    None
+}
+
+fn reconstruct_full_xid(raw_xid: pg_sys::TransactionId, reference_xmax: u128) -> u128 {
+    let epoch_base = (reference_xmax / XID_EPOCH_WIDTH) * XID_EPOCH_WIDTH;
+    let raw_xid: u32 = raw_xid.into();
+    let candidate = epoch_base + raw_xid as u128;
+    if candidate > reference_xmax && candidate >= XID_EPOCH_WIDTH {
+        candidate - XID_EPOCH_WIDTH
+    } else {
+        candidate
+    }
+}
+
+unsafe fn copy_heap_slot_to_virtual_slot(
+    heap_slot: *mut pg_sys::TupleTableSlot,
+    out_slot: *mut pg_sys::TupleTableSlot,
+    n_attrs: usize,
+) {
+    let values = (*out_slot).tts_values;
+    let nulls = (*out_slot).tts_isnull;
+    for idx in 0..n_attrs {
+        let mut is_null = false;
+        let datum = pg_sys::slot_getattr(heap_slot, (idx + 1) as i32, &mut is_null);
+        *values.add(idx) = datum;
+        *nulls.add(idx) = is_null;
+    }
+}
+
+// A virtual slot does not own/free pass-by-reference Datums. Follow ExecScan's
+// per-candidate expression lifetime, including rows rejected inside this callback.
+unsafe fn reset_scan_row(node: *mut pg_sys::CustomScanState) {
+    pgrx::check_for_interrupts!();
+    let context = (*node).ss.ps.ps_ExprContext;
+    pg_sys::MemoryContextReset((*context).ecxt_per_tuple_memory);
+}
+
+unsafe fn fill_scan_row(
+    node: *mut pg_sys::CustomScanState,
+    slot: *mut pg_sys::TupleTableSlot,
+    row: usize,
+    readers: &[NeededColumn],
+) {
+    let context = (*(*node).ss.ps.ps_ExprContext).ecxt_per_tuple_memory;
+    pgrx::PgMemoryContexts::For(context).switch_to(|_| {
+        fill_slot_from_batch(slot, row, readers);
+    });
+}
+
+// --- ExecCustomScan: return one tuple per call -----------------------------
+
+#[pg_guard]
+unsafe extern "C-unwind" fn exec_custom_scan(
+    node: *mut pg_sys::CustomScanState,
+) -> *mut pg_sys::TupleTableSlot {
+    let ext = node as *mut RvbbitScanStateExt;
+    let state = &mut *(*ext).rust_state_ptr;
+    let scan_slot = (*node).ss.ss_ScanTupleSlot;
+
+    pg_sys::ExecClearTuple(scan_slot);
+    if !state.slot_nulls_initialized {
+        initialize_slot_nulls(scan_slot, state.pg_attrs.len());
+        state.slot_nulls_initialized = true;
+    }
+    refresh_dynamic_quals(state, node);
+    if state.heap_tail.is_none() {
+        prepare_indexed_lookup(state);
+    }
+    if state.indexed_lookup_active {
+        return emit_indexed_row(node, state, scan_slot);
+    }
+
+    loop {
+        reset_scan_row(node);
+        if state.heap_tail_active {
+            if let Some(slot) = emit_heap_tail_row(node, state, scan_slot) {
+                return slot;
+            }
+            return std::ptr::null_mut();
+        }
+
+        // Need a current batch with rows remaining?
+        if let Some(batch) = &state.current_batch {
+            if state.row_in_batch < batch.num_rows() {
+                // Phase 2 slice 4 tombstone filter: if this (rg_id, ordinal)
+                // is in the delete bitmap, skip without materializing. Cheap
+                // when there are no tombstones (the get() returns None
+                // immediately for the common case).
+                if let Some(bm) = state.delete_bitmaps.get(&state.current_rg_id) {
+                    // Tombstones are keyed by absolute per-row-group ordinal,
+                    // but row_in_batch resets every READ_BATCH_SIZE-row batch —
+                    // so test against batch_base + row_in_batch, not the raw
+                    // per-batch index (else deletes past the first batch are
+                    // mis-applied: the target row survives and a phantom row
+                    // exactly READ_BATCH_SIZE later is wrongly dropped).
+                    if bm.contains(state.batch_base + state.row_in_batch as u32) {
+                        state.row_in_batch += 1;
+                        continue;
+                    }
+                }
+                // Predicate pushdown: skip rows we can prove fail the
+                // pushed qual without ever materializing them. PG's
+                // ExecQual still runs below as a safety net for anything
+                // we couldn't recognize.
+                //
+                // Fast path: a vectorized bitmask was precomputed for the
+                // entire batch when current_batch transitioned. NULL in
+                // the bitmask follows PG filter semantics (excluded).
+                if let Some(bitmask) = &state.current_filter_bitmask {
+                    let row = state.row_in_batch;
+                    if bitmask.is_null(row) || !bitmask.value(row) {
+                        state.row_in_batch += 1;
+                        continue;
+                    }
+                } else if let Some(expr) = &state.pushed_expr {
+                    if !pushed_expr_pass(
+                        &state.qual_readers,
+                        &state.qual_rhs_readers,
+                        &state.pushed_quals,
+                        expr,
+                        state.row_in_batch,
+                    ) {
+                        state.row_in_batch += 1;
+                        continue;
+                    }
+                }
+
+                fill_scan_row(node, scan_slot, state.row_in_batch, &state.column_readers);
+                state.row_in_batch += 1;
+                pg_sys::ExecStoreVirtualTuple(scan_slot);
+
+                // CustomScan doesn't get ExecScan()'s wrapper, so WE
+                // apply qual and projection. Without ExecQual every
+                // WHERE clause is silently dropped (returns all rows).
+                // Without ExecProject every column read goes to
+                // tts_values[0] regardless of attnum (returns wrong cols).
+                let ps = &(*node).ss.ps;
+                let econtext = ps.ps_ExprContext;
+                (*econtext).ecxt_scantuple = scan_slot;
+
+                let qual = ps.qual;
+                if !state.qual_fully_pushed && !qual.is_null() && !pg_sys::ExecQual(qual, econtext)
+                {
+                    // This row didn't pass WHERE; skip it. Clear the slot so
+                    // the next row's ExecStoreVirtualTuple finds it empty.
+                    pg_sys::ExecClearTuple(scan_slot);
+                    continue;
+                }
+
+                let proj_info = ps.ps_ProjInfo;
+                if !proj_info.is_null() {
+                    return pg_sys::ExecProject(proj_info);
+                }
+                return scan_slot;
+            }
+        }
+
+        // Current batch exhausted: pull the next one from the current reader.
+        // The cached-replay fast path (re-emitting accumulated batches on rescan)
+        // also loses per-row-group ordinals, so skip it when tombstones are
+        // visible and re-read parquet instead (correct via batch_base).
+        if state.heap_tail.is_none()
+            && !state.dynamic_quals.is_empty()
+            && state.cache_complete
+            && state.delete_bitmaps.is_empty()
+        {
+            if state.cached_batch_idx < state.cached_batches.len() {
+                state.current_batch = Some(state.cached_batches[state.cached_batch_idx].clone());
+                state.cached_batch_idx += 1;
+                state.row_in_batch = 0;
+                rebuild_column_readers(state);
+                continue;
+            }
+            return std::ptr::null_mut();
+        }
+
+        let pulled = if let Some(batches) = state.current_cached_batches.as_ref() {
+            if state.current_cached_batch_idx < batches.len() {
+                let batch = batches[state.current_cached_batch_idx].clone();
+                state.current_cached_batch_idx += 1;
+                Some(Ok(batch))
+            } else {
+                None
+            }
+        } else if let Some(reader) = state.current_vortex_reader.as_mut() {
+            // Unify with the parquet reader's error type (ArrowError) so both
+            // branches yield the same Option<Result<_, ArrowError>>.
+            crate::vortex_adapter::next_batch(reader)
+                .map(|r| r.map_err(arrow::error::ArrowError::ComputeError))
+        } else if let Some(reader) = state.current_reader.as_mut() {
+            reader.next()
+        } else {
+            None
+        };
+
+        match pulled {
+            Some(Ok(batch)) => {
+                let bytes = batch.get_array_memory_size();
+                let limit = batch_cache_limit_bytes();
+                if state.current_cache_key.is_some() {
+                    if cache_can_admit(state.current_cache_bytes, bytes, limit) {
+                        state.current_cache_bytes += bytes;
+                        state.current_cache_accum.push(batch.clone());
+                    } else {
+                        // Stop retaining immediately, not after decoding the whole file.
+                        state.current_cache_key = None;
+                        state.current_cache_accum.clear();
+                        state.current_cache_bytes = 0;
+                    }
+                }
+                if !state.dynamic_quals.is_empty()
+                    && !state.cache_complete
+                    && !state.replay_cache_disabled
+                {
+                    if cache_can_admit(state.replay_cache_bytes, bytes, limit) {
+                        state.replay_cache_bytes += bytes;
+                        state.cached_batches.push(batch.clone());
+                    } else {
+                        // Rescans will stream from the beginning rather than replay a
+                        // partial cache (which would silently lose matching rows).
+                        state.replay_cache_disabled = true;
+                        state.cached_batches.clear();
+                        state.replay_cache_bytes = 0;
+                    }
+                }
+                // Advance the absolute-ordinal base by the batch we just
+                // finished (only within the same row group — current_batch is
+                // None right after a row group opens, so the first batch keeps
+                // batch_base == 0).
+                if let Some(prev) = state.current_batch.as_ref() {
+                    state.batch_base = state.batch_base.saturating_add(prev.num_rows() as u32);
+                }
+                state.current_batch = Some(batch);
+                state.row_in_batch = 0;
+                rebuild_column_readers(state);
+                continue;
+            }
+            Some(Err(e)) => {
+                pgrx::error!("rvbbit: parquet read error: {}", e);
+            }
+            None => {
+                if state.current_reader.is_some() {
+                    finish_current_batch_cache(state);
+                }
+                // Current reader exhausted: open the next row group.
+                state.current_batch = None;
+                state.current_reader = None;
+                state.current_vortex_reader = None;
+                state.current_cached_batches = None;
+                state.current_cached_batch_idx = 0;
+                while state.dynamic_quals.is_empty()
+                    && state.rg_idx < state.row_groups.len()
+                    && !row_group_may_satisfy(
+                        &state.row_groups[state.rg_idx],
+                        &state.pg_attrs,
+                        &state.pushed_quals,
+                        state.pushed_expr.as_ref(),
+                    )
+                {
+                    state.pruned_row_groups += 1;
+                    state.rg_idx += 1;
+                }
+                if state.rg_idx >= state.row_groups.len() {
+                    if !state.dynamic_quals.is_empty() && !state.replay_cache_disabled {
+                        state.cache_complete = true;
+                        state.cached_batch_idx = state.cached_batches.len();
+                        state.indexed_lookup_dirty = false;
+                        state.indexed_lookup_active = false;
+                    }
+                    if state.heap_tail.is_some() {
+                        state.heap_tail_active = true;
+                        continue;
+                    }
+                    return std::ptr::null_mut(); // EOF
+                }
+                // Phase 2 slice 4: we're about to start emitting rows from
+                // a new row group — record its rg_id so the tombstone filter
+                // in the hot loop checks the right bitmap.
+                state.current_rg_id = state.row_groups[state.rg_idx].rg_id;
+                // New row group: absolute ordinals restart at 0 for the tombstone bitmap.
+                state.batch_base = 0;
+                let path_str = state.row_groups[state.rg_idx].path.clone();
+                let path = std::path::Path::new(&path_str);
+
+                // Projection: read only the columns the query touches (output columns
+                // + WHERE/qual columns — collect_needed_attnums pulls varattnos from
+                // both the targetlist and the qual). Shared by the vortex and parquet
+                // open paths below.
+                let col_names: Vec<String> = state
+                    .needed_attnums
+                    .iter()
+                    .map(|&attnum| state.pg_attrs[(attnum - 1) as usize].name.clone())
+                    .collect();
+
+                // Phase 3: native+vortex. Read the columnar `.vortex` variant for this
+                // row group, pushing the same projection into Vortex's ScanBuilder so
+                // only the needed columns are decoded. Native matches batch columns by
+                // name, and the parquet-keyed batch cache is bypassed. Timestamp columns
+                // need an Int64 -> Timestamp re-cast in the reader.
+                if state.row_group_layout == VORTEX_SCAN_LAYOUT {
+                    let timestamp_cols: Vec<String> = state
+                        .needed_attnums
+                        .iter()
+                        .filter_map(|&attnum| {
+                            let attr = &state.pg_attrs[(attnum - 1) as usize];
+                            if attr.typoid == pg_sys::TIMESTAMPOID
+                                || attr.typoid == pg_sys::TIMESTAMPTZOID
+                            {
+                                Some(attr.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    // Filter pushdown: lower the pushable predicate to a Vortex scan
+                    // filter (zone-map pruning + compute-over-compressed at the source).
+                    // Safe — the native scan re-applies pushed_quals to the result, so a
+                    // row superset is fine. Skipped when correlated (dynamic) quals are
+                    // present: their RHS varies per outer row and can't be baked into a
+                    // per-row-group scan filter.
+                    let vortex_filter = if state.dynamic_quals.is_empty() {
+                        state
+                            .pushed_expr
+                            .as_ref()
+                            .and_then(|e| {
+                                lower_pushed_expr_to_filter(e, &state.pushed_quals, &state.pg_attrs)
+                            })
+                            .and_then(|fr| crate::vortex_adapter::translate(&fr))
+                    } else {
+                        None
+                    };
+                    let reader = match crate::vortex_adapter::open_vortex_for_scan(
+                        path,
+                        &col_names,
+                        &timestamp_cols,
+                        vortex_filter,
+                    ) {
+                        Ok(r) => r,
+                        Err(e) => pgrx::error!("rvbbit: opening vortex {}: {}", path.display(), e),
+                    };
+                    state.current_vortex_reader = Some(reader);
+                    state.current_cache_key = None;
+                    state.rg_idx += 1;
+                    continue;
+                }
+
+                let cache_key = batch_cache_key(&path_str, &col_names);
+                if let Some(batches) = batch_cache_get(&cache_key) {
+                    state.current_cached_batches = Some(batches);
+                    state.current_cached_batch_idx = 0;
+                    state.rg_idx += 1;
+                    continue;
+                }
+                let col_refs: Vec<&str> = col_names.iter().map(String::as_str).collect();
+                let reader = match RowGroupReader::open_projected(path, &col_refs) {
+                    Ok(r) => r,
+                    Err(e) => pgrx::error!("rvbbit: opening {}: {}", path.display(), e),
+                };
+                state.current_reader = Some(reader);
+                state.current_cache_key = (batch_cache_limit_bytes() > 0).then_some(cache_key);
+                state.current_cache_accum.clear();
+                state.current_cache_bytes = 0;
+                state.rg_idx += 1;
+            }
+        }
+    }
+}
+
+fn fetch_best_row_group_paths(
+    table_oid: u32,
+    pg_attrs: &[PgAttr],
+    pushed_plan: &PushedQualPlan,
+    include_stats: bool,
+    asof: Option<i64>,
+) -> Result<(Vec<RowGroupEntry>, String), String> {
+    // Phase 3 (opt-in): when rvbbit.native_vortex is on and a ready vortex_scan
+    // variant exists, read the columnar Vortex copy through the native scan instead
+    // of canonical parquet. Checked BEFORE the cheap-path early return so it applies
+    // to pure scans too (not only scans with a prunable predicate). Gated to
+    // asof.is_none() — vortex variants don't carry per-rg generations (same caveat as
+    // cluster variants). `include_stats` is threaded through so the variant rows carry
+    // Phase-1 per-column stats whenever the predicate can use them for zone pruning.
+    if asof.is_none()
+        && (crate::duck_backend::native_vortex_enabled()
+            || crate::router::native_vortex_route_selected())
+    {
+        let vortex_rgs =
+            fetch_row_group_paths(table_oid, include_stats, Some(VORTEX_SCAN_LAYOUT), asof)?;
+        if !vortex_rgs.is_empty() {
+            return Ok((vortex_rgs, VORTEX_SCAN_LAYOUT.to_string()));
+        }
+    }
+
+    if !include_stats {
+        return Ok((
+            fetch_row_group_paths(table_oid, include_stats, None, asof)?,
+            SCAN_LAYOUT.to_string(),
+        ));
+    }
+
+    if asof.is_none() {
+        let mut best_variant: Option<(Vec<RowGroupEntry>, String, usize, bool)> = None;
+        for layout in fetch_variant_layouts(table_oid)? {
+            let clustered = fetch_row_group_paths(table_oid, true, Some(&layout), asof)?;
+            if clustered.is_empty() {
+                continue;
+            }
+            let pruned = clustered
+                .iter()
+                .filter(|rg| {
+                    !row_group_may_satisfy(
+                        rg,
+                        pg_attrs,
+                        &pushed_plan.quals,
+                        pushed_plan.expr.as_ref(),
+                    )
+                })
+                .count();
+            if should_use_cluster_layout(clustered.len(), pruned) {
+                let kept = clustered.len().saturating_sub(pruned);
+                let matches_filter = layout_matches_pushed_filter(&layout, pg_attrs, pushed_plan);
+                let replace =
+                    best_variant
+                        .as_ref()
+                        .is_none_or(|(_, _, best_kept, best_matches_filter)| {
+                            kept < *best_kept
+                                || (kept == *best_kept && matches_filter && !*best_matches_filter)
+                        });
+                if replace {
+                    best_variant = Some((clustered, layout, kept, matches_filter));
+                }
+            }
+        }
+        if let Some((row_groups, layout, _, _)) = best_variant {
+            return Ok((row_groups, layout));
+        }
+    }
+
+    Ok((
+        fetch_row_group_paths(table_oid, include_stats, None, asof)?,
+        SCAN_LAYOUT.to_string(),
+    ))
+}
+
+fn should_use_cluster_layout(total_groups: usize, pruned_groups: usize) -> bool {
+    if total_groups == 0 || pruned_groups == 0 {
+        return false;
+    }
+    let threshold = std::env::var("RVBBIT_CLUSTER_MIN_PRUNE_PCT")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(20)
+        .min(100);
+    pruned_groups * 100 >= total_groups * threshold
+}
+
+fn layout_matches_pushed_filter(
+    layout: &str,
+    pg_attrs: &[PgAttr],
+    pushed_plan: &PushedQualPlan,
+) -> bool {
+    let Some(column) = layout.strip_prefix(CLUSTER_LAYOUT_PREFIX) else {
+        return false;
+    };
+    pushed_plan.quals.iter().any(|qual| {
+        let attnum = qual.attnum;
+        if attnum <= 0 {
+            return false;
+        }
+        pg_attrs
+            .get((attnum - 1) as usize)
+            .is_some_and(|attr| attr.name == column)
+    })
+}
+
+fn fetch_variant_layouts(table_oid: u32) -> Result<Vec<String>, String> {
+    if let Some(cached) = VARIANT_LAYOUTS_CACHE.with(|c| c.borrow().get(&table_oid).cloned()) {
+        return Ok(cached);
+    }
+    let prefix = CLUSTER_LAYOUT_PREFIX.replace('\'', "''");
+    let mut layouts = Vec::new();
+    pgrx::Spi::connect(|client| -> Result<(), String> {
+        let table = client
+            .select(
+                &format!(
+                    "SELECT DISTINCT rg.layout FROM rvbbit.row_group_variants rg \
+                     JOIN rvbbit.layout_variant_status s \
+                       ON s.table_oid = rg.table_oid AND s.layout = rg.layout \
+                     WHERE rg.table_oid = {table_oid}::oid \
+                       AND rg.layout LIKE '{prefix}%' \
+                       AND s.status = 'ready' \
+                     ORDER BY rg.layout"
+                ),
+                None,
+                &[],
+            )
+            .map_err(|e| format!("SPI select variant layouts: {e}"))?;
+        for row in table {
+            if let Some(layout) = row
+                .get::<String>(1)
+                .map_err(|e| format!("SPI get variant layout: {e}"))?
+            {
+                layouts.push(layout);
+            }
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("Spi::connect variant layouts: {e}"))?;
+    VARIANT_LAYOUTS_CACHE.with(|c| c.borrow_mut().insert(table_oid, layouts.clone()));
+    Ok(layouts)
+}
+
+fn fetch_row_group_paths(
+    table_oid: u32,
+    include_stats: bool,
+    variant_layout: Option<&str>,
+    asof: Option<i64>,
+) -> Result<Vec<RowGroupEntry>, String> {
+    refresh_caches_if_stale();
+    let mut out = Vec::new();
+    // Phase 2 slice 3: when AS OF is set, narrow row groups to those at
+    // generation <= asof. With no AS OF (latest view), apply the snapshot
+    // visibility floor (generation >= min_visible_generation) so a
+    // snapshot-load workflow shows only the newest full snapshot instead of
+    // the union of every retained generation; floor defaults to 0 (no-op) for
+    // ordinary tables. Variant layouts (hive/cluster) don't carry per-rg
+    // generations and can't honor either; routes fall back to canonical scan.
+    //
+    // Cache note: this predicate reads min_visible_generation, which only ever
+    // changes inside compact()/snapshot_load() — both of which call
+    // invalidate_scan_metadata() — so the asof=None cache entry is always
+    // cleared in-backend when the floor moves. (Cross-backend staleness after
+    // compact is the pre-existing rvbbit model and is unchanged here.)
+    let oid_expr = format!("{table_oid}::oid");
+    let asof_predicate = match (asof, variant_layout.is_some()) {
+        // Snapshot-aware: append tables get `<= g` / all; snapshot tables (a
+        // sync dest, min_visible_generation > 0) get exact `= g` / current.
+        (Some(g), false) => {
+            crate::time_travel::asof_gen_predicate(&g.to_string(), &oid_expr, "generation")
+        }
+        (None, false) => crate::time_travel::latest_predicate(&oid_expr, "generation"),
+        _ => String::new(),
+    };
+    // Backend-local cache: same (table_oid, variant_layout, asof,
+    // include_stats) returns the previously-fetched paths until compact()
+    // or migrate_to_cold() invalidates this table's entries from THIS
+    // backend. Cross-backend mutations leave us stale until restart, so
+    // we deliberately key on these inputs (not on rg counts) to avoid
+    // surprise cache hits on rows we never saw.
+    let cache_key = RowGroupPathsKey {
+        table_oid,
+        variant_layout: variant_layout.map(|s| s.to_string()),
+        asof,
+        include_stats,
+    };
+    if let Some(cached) = ROW_GROUP_PATHS_CACHE.with(|c| c.borrow().get(&cache_key).cloned()) {
+        return Ok(cached);
+    }
+    pgrx::Spi::connect(|client| -> Result<(), String> {
+        // Phase 2 ObjectStore tiering: native custom_scan only handles
+        // local file paths (RowGroupReader::open does std::fs). When ANY
+        // row group has been migrated to a cold tier (cold_url IS NOT
+        // NULL), we return zero rows here — the rewriter sees that and
+        // falls through to df.rs, which has DataFusion's ObjectStore
+        // path. Variant layouts (hive/cluster) never have cold_url
+        // because the migration helper only touches the canonical layout.
+        let select_sql = if let Some(layout) = variant_layout {
+            let layout = layout.replace('\'', "''");
+            if include_stats {
+                format!(
+                    "SELECT rg.path, rg.rg_id, rg.stats::text FROM rvbbit.row_group_variants rg \
+                     JOIN rvbbit.layout_variant_status s \
+                       ON s.table_oid = rg.table_oid AND s.layout = rg.layout \
+                     WHERE rg.table_oid = {table_oid}::oid \
+                       AND rg.layout = '{layout}' \
+                       AND s.status = 'ready' \
+                     ORDER BY rg.rg_id"
+                )
+            } else {
+                format!(
+                    "SELECT rg.path, rg.rg_id, NULL::text FROM rvbbit.row_group_variants rg \
+                     JOIN rvbbit.layout_variant_status s \
+                       ON s.table_oid = rg.table_oid AND s.layout = rg.layout \
+                     WHERE rg.table_oid = {table_oid}::oid \
+                       AND rg.layout = '{layout}' \
+                       AND s.status = 'ready' \
+                     ORDER BY rg.rg_id"
+                )
+            }
+        } else if include_stats {
+            format!(
+                "SELECT path, rg_id, stats::text FROM rvbbit.row_groups \
+                 WHERE table_oid = {table_oid}::oid {asof_predicate} \
+                   AND cold_url IS NULL \
+                 ORDER BY rg_id"
+            )
+        } else {
+            format!(
+                "SELECT path, rg_id, NULL::text FROM rvbbit.row_groups \
+                 WHERE table_oid = {table_oid}::oid {asof_predicate} \
+                   AND cold_url IS NULL \
+                 ORDER BY rg_id"
+            )
+        };
+        let table = client
+            .select(&select_sql, None, &[])
+            .map_err(|e| format!("SPI select: {e}"))?;
+        for row in table {
+            let path: Option<String> = row.get(1).map_err(|e| format!("SPI get: {e}"))?;
+            if let Some(p) = path {
+                let rg_id: i64 = row
+                    .get(2)
+                    .map_err(|e| format!("SPI get rg_id: {e}"))?
+                    .unwrap_or(0);
+                let stats_text: Option<String> =
+                    row.get(3).map_err(|e| format!("SPI get stats: {e}"))?;
+                out.push(RowGroupEntry {
+                    path: p,
+                    rg_id,
+                    stats: parse_prune_stats(stats_text.as_deref()),
+                });
+            }
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("Spi::connect: {e}"))?;
+    ROW_GROUP_PATHS_CACHE.with(|c| c.borrow_mut().insert(cache_key, out.clone()));
+    Ok(out)
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct RowGroupPathsKey {
+    table_oid: u32,
+    variant_layout: Option<String>,
+    asof: Option<i64>,
+    include_stats: bool,
+}
+
+thread_local! {
+    /// Cache for `fetch_variant_layouts` — list of cluster-layout variant
+    /// names per table. Stable until something rewrites
+    /// rvbbit.row_group_variants for this table.
+    static VARIANT_LAYOUTS_CACHE:
+        std::cell::RefCell<std::collections::HashMap<u32, Vec<String>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+
+    /// Cache for `fetch_row_group_paths` — the actual row-group list a
+    /// scan iterates over. Keyed by all the inputs the SQL depends on
+    /// (oid, variant, asof, include_stats) so a parameter change forces
+    /// a fresh fetch. Invalidate on local compact() / migrate_to_cold().
+    static ROW_GROUP_PATHS_CACHE: std::cell::RefCell<
+        std::collections::HashMap<RowGroupPathsKey, Vec<RowGroupEntry>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Drop all cached scan metadata for this table from THIS backend.
+/// Called from compact() / migrate_to_cold() after they've mutated the
+/// row-groups catalog so subsequent queries in the same backend see
+/// the new state. Cross-backend mutations don't reach us — those
+/// backends keep serving from their own caches until they restart, or
+/// until they themselves observe an invalidation event.
+pub fn invalidate_scan_metadata(oid: u32) {
+    VARIANT_LAYOUTS_CACHE.with(|c| c.borrow_mut().remove(&oid));
+    ROW_GROUP_PATHS_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        cache.retain(|key, _| key.table_oid != oid);
+    });
+}
+
+thread_local! {
+    /// Highest scan epoch this backend has reconciled against. Compared to the
+    /// shmem global epoch at scan setup to detect compactions in OTHER backends.
+    static LAST_SCAN_EPOCH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Cross-backend cache coherence: if ANY backend has compacted since we last
+/// checked, flush this backend's per-backend scan caches (row-group paths,
+/// variant layouts, planner aggregates, df registration) so a pooled connection
+/// (e.g. the UI) doesn't keep serving the pre-compact view. Cheap — one shared
+/// atomic load; a no-op when the epoch is unchanged. Columnar batch caches are
+/// content-addressed by path+mtime, so they stay valid and aren't flushed.
+pub fn refresh_caches_if_stale() {
+    let cur = crate::live_counters::scan_epoch();
+    if LAST_SCAN_EPOCH.with(|c| c.get()) == cur {
+        return;
+    }
+    VARIANT_LAYOUTS_CACHE.with(|c| c.borrow_mut().clear());
+    ROW_GROUP_PATHS_CACHE.with(|c| c.borrow_mut().clear());
+    crate::planner::invalidate_planner_aggregates_all();
+    crate::planner::invalidate_is_rvbbit_cache();
+    crate::rewriter::invalidate_is_rvbbit_cache();
+    crate::df::invalidate_registration();
+    LAST_SCAN_EPOCH.with(|c| c.set(cur));
+}
+
+/// Per-backend cache statistics. Surface this from SQL via
+/// `SELECT * FROM rvbbit.scan_cache_stats()`. Counters reset on
+/// backend exit (they're thread-local), not on extension reload —
+/// they reflect this connection's lifetime work.
+#[pgrx::pg_extern]
+fn scan_cache_stats() -> pgrx::iter::TableIterator<
+    'static,
+    (
+        pgrx::name!(cache, String),
+        pgrx::name!(entries, i64),
+        pgrx::name!(bytes, i64),
+        pgrx::name!(hits, i64),
+        pgrx::name!(misses, i64),
+        pgrx::name!(inserts, i64),
+        pgrx::name!(evictions, i64),
+        pgrx::name!(pruned, i64),
+    ),
+> {
+    let batch = SCAN_BATCH_CACHE.with(|c| {
+        let c = c.borrow();
+        (
+            "batch".to_string(),
+            c.entries.len() as i64,
+            c.bytes as i64,
+            c.hits as i64,
+            c.misses as i64,
+            c.inserts as i64,
+            c.evictions as i64,
+            0i64,
+        )
+    });
+    let bloom = BLOOM_CACHE.with(|c| {
+        let c = c.borrow();
+        (
+            "bloom".to_string(),
+            c.entries.len() as i64,
+            // Sbbf size: each Block is 32 bytes; this is per-file, sum per-column.
+            // Each Sbbf Block is 8 u32s (32 bytes). num_blocks() gives the count.
+            c.entries
+                .values()
+                .map(|m| m.values().map(|b| b.num_blocks() * 32).sum::<usize>())
+                .sum::<usize>() as i64,
+            c.hits as i64,
+            c.misses as i64,
+            0i64,
+            0i64,
+            c.pruned as i64,
+        )
+    });
+    pgrx::iter::TableIterator::new(vec![batch, bloom].into_iter())
+}
+
+fn parse_prune_stats(stats_text: Option<&str>) -> HashMap<String, PruneStats> {
+    let Some(stats_text) = stats_text else {
+        return HashMap::new();
+    };
+    let Ok(stats) = serde_json::from_str::<Vec<ColumnStats>>(stats_text) else {
+        return HashMap::new();
+    };
+    stats
+        .into_iter()
+        .filter_map(|s| {
+            if s.min.is_none() && s.max.is_none() && s.text_sketch_b64.is_none() {
+                None
+            } else {
+                Some((
+                    s.name,
+                    PruneStats {
+                        min: s.min,
+                        max: s.max,
+                        text_sketch_b64: s.text_sketch_b64,
+                    },
+                ))
+            }
+        })
+        .collect()
+}
+
+// --- Arrow → Datum conversion ----------------------------------------------
+
+const PG_EPOCH_OFFSET_MICROS: i64 = 946_684_800_000_000;
+const PG_EPOCH_OFFSET_DAYS: i32 = 10_957;
+
+#[inline(always)]
+unsafe fn fill_slot_from_batch(
+    slot: *mut pg_sys::TupleTableSlot,
+    row: usize,
+    column_readers: &[NeededColumn],
+) {
+    let values = (*slot).tts_values;
+    let nulls = (*slot).tts_isnull;
+
+    for col in column_readers {
+        let col_idx = col.attnum_idx;
+        let (datum, was_null) = read_via(&col.reader, row, col.has_nulls);
+        *values.add(col_idx) = datum;
+        *nulls.add(col_idx) = was_null;
+    }
+}
+
+unsafe fn initialize_slot_nulls(slot: *mut pg_sys::TupleTableSlot, n_attrs: usize) {
+    let values = (*slot).tts_values;
+    let nulls = (*slot).tts_isnull;
+    for col_idx in 0..n_attrs {
+        *values.add(col_idx) = pg_sys::Datum::from(0usize);
+        *nulls.add(col_idx) = true;
+    }
+}
+
+/// Resolve one cell of the current batch. Pointer dispatch is the only
+/// per-row cost — no Arc<dyn Array> downcast, no schema lookup, no
+/// branchy type matching against an Arrow DataType enum.
+///
+/// `has_nulls` is precomputed once per batch by the caller; when false,
+/// the per-row `is_null` bitmap probe is skipped. For column groups with
+/// no nulls (the common case for dense columns) this removes one branch
+/// and one bitmap load per cell.
+#[inline(always)]
+unsafe fn read_via(reader: &ColumnReader, row: usize, has_nulls: bool) -> (pg_sys::Datum, bool) {
+    match reader {
+        ColumnReader::Missing => (pg_sys::Datum::from(0usize), true),
+        ColumnReader::Int16(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                (pg_sys::Datum::from(a.value(row) as i64 as usize), false)
+            }
+        }
+        ColumnReader::Int32(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                (pg_sys::Datum::from(a.value(row) as i64 as usize), false)
+            }
+        }
+        ColumnReader::Date32(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                let pg_date = a.value(row) - PG_EPOCH_OFFSET_DAYS;
+                (pg_sys::Datum::from(pg_date as i64 as usize), false)
+            }
+        }
+        ColumnReader::Date32Int32(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                let pg_date = a.value(row) - PG_EPOCH_OFFSET_DAYS;
+                (pg_sys::Datum::from(pg_date as i64 as usize), false)
+            }
+        }
+        ColumnReader::Int64(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                (pg_sys::Datum::from(a.value(row) as usize), false)
+            }
+        }
+        ColumnReader::Float32(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                (pg_sys::Datum::from(a.value(row).to_bits() as usize), false)
+            }
+        }
+        ColumnReader::Float64(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                (pg_sys::Datum::from(a.value(row).to_bits() as usize), false)
+            }
+        }
+        ColumnReader::Bool(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                (pg_sys::Datum::from(a.value(row) as usize), false)
+            }
+        }
+        ColumnReader::Utf8 { arr, recon } => {
+            let a = &**arr;
+            if has_nulls && a.is_null(row) {
+                return (pg_sys::Datum::from(0usize), true);
+            }
+            let s = a.value(row);
+            match recon {
+                Utf8Recon::Text => {
+                    let text_ptr =
+                        pg_sys::cstring_to_text_with_len(s.as_ptr() as *const i8, s.len() as i32);
+                    (pg_sys::Datum::from(text_ptr as usize), false)
+                }
+                Utf8Recon::Jsonb => {
+                    let mut buf = Vec::with_capacity(s.len() + 1);
+                    buf.extend_from_slice(s.as_bytes());
+                    buf.push(0);
+                    type CUnwindPGFn =
+                        unsafe extern "C-unwind" fn(pg_sys::FunctionCallInfo) -> pg_sys::Datum;
+                    let jsonb_in: CUnwindPGFn = std::mem::transmute(pg_sys::jsonb_in as *const ());
+                    let datum = pg_sys::DirectFunctionCall1Coll(
+                        Some(jsonb_in),
+                        pg_sys::InvalidOid,
+                        pg_sys::Datum::from(buf.as_ptr() as usize),
+                    );
+                    drop(buf);
+                    (datum, false)
+                }
+                // Reconstruct the real type (uuid/numeric/inet/enum/…/arrays)
+                // from its canonical text via the type's input function.
+                // OidInputFunctionCall palloc's the result in the current
+                // context, like any input fn. For arrays this is array_in, which
+                // retains dimensions, lower bounds, inner NULLs, and escaping.
+                Utf8Recon::TypeInput {
+                    typinput,
+                    typioparam,
+                    typmod,
+                } => {
+                    let mut buf = Vec::with_capacity(s.len() + 1);
+                    buf.extend_from_slice(s.as_bytes());
+                    buf.push(0);
+                    let datum = pg_sys::OidInputFunctionCall(
+                        *typinput,
+                        buf.as_mut_ptr() as *mut std::os::raw::c_char,
+                        *typioparam,
+                        *typmod,
+                    );
+                    drop(buf);
+                    (datum, false)
+                }
+            }
+        }
+        ColumnReader::Binary(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                return (pg_sys::Datum::from(0usize), true);
+            }
+            let bytes = a.value(row);
+            let total_len = bytes.len() + 4;
+            let varlena = pg_sys::palloc(total_len) as *mut u8;
+            std::ptr::write_unaligned(varlena as *mut u32, (total_len as u32) << 2);
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), varlena.add(4), bytes.len());
+            (pg_sys::Datum::from(varlena as usize), false)
+        }
+        ColumnReader::TimestampMicros(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                (pg_sys::Datum::from(0usize), true)
+            } else {
+                let pg_ts = a.value(row) - PG_EPOCH_OFFSET_MICROS;
+                (pg_sys::Datum::from(pg_ts as usize), false)
+            }
+        }
+        ColumnReader::F32List(p) => {
+            let a = &**p;
+            if has_nulls && a.is_null(row) {
+                return (pg_sys::Datum::from(0usize), true);
+            }
+            // Slice this row out of the flat values array.
+            let offsets = a.value_offsets();
+            let start = offsets[row] as usize;
+            let end = offsets[row + 1] as usize;
+            let values = a
+                .values()
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .expect("F32List inner is Float32Array");
+            let mut data: Vec<Option<f32>> = Vec::with_capacity(end - start);
+            for i in start..end {
+                if values.is_null(i) {
+                    data.push(None);
+                } else {
+                    data.push(Some(values.value(i)));
+                }
+            }
+            // pgrx builds the PG float4 array (oid 1021) in palloc memory.
+            match data.into_datum() {
+                Some(d) => (d, false),
+                None => (pg_sys::Datum::from(0usize), true),
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+unsafe fn arrow_to_datum_legacy(
+    array: &Arc<dyn Array>,
+    row: usize,
+    attr: &PgAttr,
+) -> (pg_sys::Datum, bool) {
+    match array.data_type() {
+        DataType::Int64 => {
+            let v = array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(row);
+            (pg_sys::Datum::from(v as usize), false)
+        }
+        DataType::Int32 => {
+            let v = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap()
+                .value(row);
+            let v = if attr.typoid == pg_sys::DATEOID {
+                v - PG_EPOCH_OFFSET_DAYS
+            } else {
+                v
+            };
+            (pg_sys::Datum::from(v as i64 as usize), false)
+        }
+        DataType::Date32 => {
+            let v = array
+                .as_any()
+                .downcast_ref::<Date32Array>()
+                .unwrap()
+                .value(row)
+                - PG_EPOCH_OFFSET_DAYS;
+            (pg_sys::Datum::from(v as i64 as usize), false)
+        }
+        DataType::Int16 => {
+            let v = array
+                .as_any()
+                .downcast_ref::<arrow::array::Int16Array>()
+                .unwrap()
+                .value(row);
+            (pg_sys::Datum::from(v as i64 as usize), false)
+        }
+        DataType::Float64 => {
+            let v = array
+                .as_any()
+                .downcast_ref::<arrow::array::Float64Array>()
+                .unwrap()
+                .value(row);
+            // PG float8 datum: bit-cast f64 → u64 → Datum.
+            (pg_sys::Datum::from(v.to_bits() as usize), false)
+        }
+        DataType::Float32 => {
+            let v = array
+                .as_any()
+                .downcast_ref::<arrow::array::Float32Array>()
+                .unwrap()
+                .value(row);
+            // PG float4 datum: bit-cast f32 → u32 → Datum (low bits).
+            (pg_sys::Datum::from(v.to_bits() as usize), false)
+        }
+        DataType::Boolean => {
+            let v = array
+                .as_any()
+                .downcast_ref::<arrow::array::BooleanArray>()
+                .unwrap()
+                .value(row);
+            (pg_sys::Datum::from(v as usize), false)
+        }
+        DataType::Utf8 => {
+            let s = array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row);
+            // For jsonb-typed columns, pass the parquet text directly to
+            // PG's jsonb_in via DirectFunctionCall1 — ONE parse instead of
+            // serde_json::from_str -> JsonB::to_string -> jsonb_in's parse.
+            //
+            // pgrx wraps pg_sys::jsonb_in as an "extern Rust" fn (its
+            // pg_guard adapter), but DirectFunctionCall1Coll wants an
+            // "extern C-unwind" fn pointer. The underlying calling
+            // convention is identical (it's a PGFunction); transmute to
+            // line up the ABI.
+            if attr.typoid == pg_sys::JSONBOID {
+                let mut buf = Vec::with_capacity(s.len() + 1);
+                buf.extend_from_slice(s.as_bytes());
+                buf.push(0);
+                type CUnwindPGFn =
+                    unsafe extern "C-unwind" fn(pg_sys::FunctionCallInfo) -> pg_sys::Datum;
+                let jsonb_in: CUnwindPGFn = std::mem::transmute(pg_sys::jsonb_in as *const ());
+                let datum = pg_sys::DirectFunctionCall1Coll(
+                    Some(jsonb_in),
+                    pg_sys::InvalidOid,
+                    pg_sys::Datum::from(buf.as_ptr() as usize),
+                );
+                drop(buf);
+                return (datum, false);
+            }
+            let text_ptr =
+                pg_sys::cstring_to_text_with_len(s.as_ptr() as *const i8, s.len() as i32);
+            (pg_sys::Datum::from(text_ptr as usize), false)
+        }
+        DataType::Binary => {
+            // Phase 4c: parquet stores PG jsonb body bytes (no header).
+            // Reconstruct a 4-byte-header varlena and return as datum.
+            // The destination column is expected to be jsonb (or bytea).
+            let bytes = array
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .unwrap()
+                .value(row);
+            let total_len = bytes.len() + 4; // VARHDRSZ
+            let varlena = pg_sys::palloc(total_len) as *mut u8;
+            std::ptr::write_unaligned(varlena as *mut u32, (total_len as u32) << 2);
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), varlena.add(4), bytes.len());
+            (pg_sys::Datum::from(varlena as usize), false)
+        }
+        DataType::Timestamp(_, _) => {
+            // Arrow Timestamp(Microsecond) = micros since UNIX epoch.
+            // PG timestamptz = micros since 2000-01-01 UTC.
+            let v = array
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .unwrap()
+                .value(row);
+            let pg_ts = v - PG_EPOCH_OFFSET_MICROS;
+            (pg_sys::Datum::from(pg_ts as usize), false)
+        }
+        other => {
+            pgrx::error!(
+                "rvbbit: unsupported arrow type {:?} for column '{}' (oid {})",
+                other,
+                attr.name,
+                attr.typoid.to_u32()
+            );
+        }
+    }
+}
+
+// --- EndCustomScan, ReScan, Explain ---------------------------------------
+
+#[pg_guard]
+unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) {
+    let ext = node as *mut RvbbitScanStateExt;
+    if !(*ext).rust_state_ptr.is_null() {
+        // Reclaim Rust-owned state. Vec/Option drops cleanly.
+        drop(Box::from_raw((*ext).rust_state_ptr));
+        (*ext).rust_state_ptr = std::ptr::null_mut();
+    }
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
+    let ext = node as *mut RvbbitScanStateExt;
+    if (*ext).rust_state_ptr.is_null() {
+        return;
+    }
+    let state = &mut *(*ext).rust_state_ptr;
+    if !state.cache_complete {
+        // A parent may rescan before reaching EOF (LIMIT/semi-join). Discard
+        // the incomplete replay prefix before reading from the beginning.
+        state.cached_batches.clear();
+        state.replay_cache_bytes = 0;
+    }
+    state.rg_idx = 0;
+    state.pruned_row_groups = 0;
+    state.current_rg_id = state.row_groups.first().map(|rg| rg.rg_id).unwrap_or(0);
+    state.current_reader = None;
+    state.current_vortex_reader = None;
+    state.current_cached_batches = None;
+    state.current_cached_batch_idx = 0;
+    state.current_cache_key = None;
+    state.current_cache_accum.clear();
+    state.current_cache_bytes = 0;
+    state.current_batch = None;
+    state.row_in_batch = 0;
+    state.batch_base = 0;
+    state.cached_batch_idx = 0;
+    state.indexed_row_refs.clear();
+    state.indexed_row_ref_idx = 0;
+    state.indexed_lookup_dirty = true;
+    state.indexed_lookup_active = false;
+    state.column_readers.clear();
+    state.qual_readers.clear();
+    state.qual_rhs_readers.clear();
+    state.dynamic_quals_dirty = true;
+    state.heap_tail_active = false;
+    if let Some(tail) = state.heap_tail.as_mut() {
+        tail.reset();
+    }
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn explain_custom_scan(
+    node: *mut pg_sys::CustomScanState,
+    _ancestors: *mut pg_sys::List,
+    es: *mut pg_sys::ExplainState,
+) {
+    let ext = node as *mut RvbbitScanStateExt;
+    if (*ext).rust_state_ptr.is_null() {
+        return;
+    }
+    let state = &*(*ext).rust_state_ptr;
+    let label = std::ffi::CString::new("Rvbbit Layout").unwrap();
+    let value = std::ffi::CString::new(state.row_group_layout.as_str()).unwrap();
+    pg_sys::ExplainPropertyText(label.as_ptr(), value.as_ptr(), es);
+    let label = std::ffi::CString::new("Row Groups").unwrap();
+    pg_sys::ExplainPropertyInteger(
+        label.as_ptr(),
+        std::ptr::null(),
+        state.row_groups.len() as i64,
+        es,
+    );
+    let label = std::ffi::CString::new("Pruned Row Groups").unwrap();
+    pg_sys::ExplainPropertyInteger(
+        label.as_ptr(),
+        std::ptr::null(),
+        state.pruned_row_groups as i64,
+        es,
+    );
+    let label = std::ffi::CString::new("Heap Tail").unwrap();
+    pg_sys::ExplainPropertyBool(label.as_ptr(), state.heap_tail.is_some(), es);
+    if let Some(tail) = state.heap_tail.as_ref() {
+        let label = std::ffi::CString::new("Heap Tail Rows").unwrap();
+        pg_sys::ExplainPropertyInteger(label.as_ptr(), std::ptr::null(), tail.emitted, es);
+        if tail.heap_only {
+            let label = std::ffi::CString::new("Heap Only").unwrap();
+            pg_sys::ExplainPropertyBool(label.as_ptr(), true, es);
+        }
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+#[pgrx::pg_schema]
+mod tests {
+    use pgrx::prelude::*;
+
+    // mvcc-01 (write-path half): the single-row rvbbit.tombstone() helper must
+    // not raise "column reference \"rg_id\" is ambiguous" — its parameters used
+    // to shadow the delete_log column names in the ON CONFLICT target.
+    //
+    // The read-path half (tombstones keyed by absolute per-row-group ordinal vs
+    // the per-READ_BATCH_SIZE-batch index) needs a real compaction + native
+    // custom scan, which the single-transaction unit harness can't drive
+    // (refresh_acceleration publishes row groups across commit boundaries). It
+    // is covered by docker/sql/mvcc01-tombstone-verify.sql against a live
+    // instance instead.
+    #[pg_test]
+    fn single_tombstone_helper_does_not_raise_ambiguous() {
+        Spi::run("CREATE TABLE mvcc1c (id int) USING rvbbit").unwrap();
+        Spi::run("INSERT INTO mvcc1c SELECT g FROM generate_series(0, 9) g").unwrap();
+        Spi::run("SELECT rvbbit.refresh_acceleration('mvcc1c'::regclass, false)").unwrap();
+        let gen: i64 = Spi::get_one("SELECT rvbbit.tombstone('mvcc1c'::regclass, 0::bigint, 3)")
+            .unwrap()
+            .unwrap();
+        assert!(
+            gen >= 1,
+            "tombstone() should return an allocated generation, got {gen}"
+        );
+    }
+
+    // mvcc-08: xid_to_fxid reconstructs the full 64-bit xid; its low 32 bits must
+    // always round-trip back to the bare xmin, in any epoch (the epoch base it
+    // adds/subtracts is a whole multiple of 2^32). This is the epoch-independent
+    // invariant — asserting plain identity is wrong once the cluster's xid8 has
+    // crossed a 2^32 boundary (then the function correctly returns the full xid).
+    #[pg_test]
+    fn xid_to_fxid_low_bits_round_trip() {
+        Spi::run("CREATE TABLE xf (id int)").unwrap();
+        Spi::run("INSERT INTO xf VALUES (1)").unwrap();
+        let (fxid, xmin, xmax): (Option<String>, Option<String>, Option<String>) = Spi::get_three(
+            "SELECT rvbbit.xid_to_fxid(xmin)::text, xmin::text, \
+                    pg_snapshot_xmax(pg_current_snapshot())::text \
+             FROM xf LIMIT 1",
+        )
+        .unwrap();
+        let fxid: i128 = fxid.unwrap().parse().unwrap();
+        let xmin: i128 = xmin.unwrap().parse().unwrap();
+        assert!(
+            fxid > 0,
+            "xid_to_fxid must be positive; fxid={fxid}, xmin={xmin}, xmax={xmax:?}"
+        );
+        assert_eq!(
+            fxid.rem_euclid(1_i128 << 32),
+            xmin,
+            "xid_to_fxid low 32 bits must equal the bare xmin in any epoch; \
+             fxid={fxid}, xmin={xmin}, xmax={xmax:?}"
+        );
+    }
+
+    // resources-02/ops-02: reap_logs deletes rows older than max_age and leaves
+    // recent rows, for tables that exist (to_regclass-guarded).
+    #[pg_test]
+    fn reap_logs_trims_old_rows() {
+        // accel_tick_runs(ran_at) is a plain log table created in the bootstrap.
+        Spi::run(
+            "INSERT INTO rvbbit.accel_tick_runs (table_name, action, ran_at) \
+             VALUES ('t', 'skip', now() - interval '40 days')",
+        )
+        .unwrap();
+        Spi::run(
+            "INSERT INTO rvbbit.accel_tick_runs (table_name, action, ran_at) VALUES ('t', 'skip', now())",
+        )
+        .unwrap();
+        let before: i64 = Spi::get_one(
+            "SELECT count(*) FROM rvbbit.accel_tick_runs WHERE ran_at < now() - interval '14 days'",
+        )
+        .unwrap()
+        .unwrap();
+        assert!(before >= 1, "should have an old row to reap");
+        Spi::run("SELECT rvbbit.reap_logs(interval '14 days')").unwrap();
+        let old_left: i64 = Spi::get_one(
+            "SELECT count(*) FROM rvbbit.accel_tick_runs WHERE ran_at < now() - interval '14 days'",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            old_left, 0,
+            "reap_logs should delete rows older than max_age"
+        );
+        let recent: i64 = Spi::get_one(
+            "SELECT count(*) FROM rvbbit.accel_tick_runs WHERE ran_at >= now() - interval '1 day'",
+        )
+        .unwrap()
+        .unwrap();
+        assert!(recent >= 1, "reap_logs must keep recent rows");
+    }
+
+    // Text-surrogate export (the Salesforce-keys case): a table with uuid +
+    // numeric + enum columns must compact to parquet instead of raising
+    // "unsupported PG type oid 2950". Covers the EXPORT half end-to-end (writing
+    // a parquet file in-transaction); the READ-half reconstruction round-trip
+    // needs committed row groups + a native scan, so it lives in
+    // docker/sql/uuid-surrogate-verify.sql against a live instance.
+    #[pg_test]
+    fn export_to_parquet_supports_uuid_numeric_enum() {
+        Spi::run("CREATE TYPE sf_status AS ENUM ('open', 'closed')").unwrap();
+        Spi::run(
+            "CREATE TABLE sf_keys (id uuid, amount numeric, status sf_status, note text) USING rvbbit",
+        )
+        .unwrap();
+        Spi::run(
+            "INSERT INTO sf_keys VALUES \
+                (gen_random_uuid(), 12.34, 'open', 'a'), \
+                (gen_random_uuid(), 99.95, 'closed', 'b')",
+        )
+        .unwrap();
+        let n: i64 = Spi::get_one("SELECT rvbbit.export_to_parquet('sf_keys'::regclass)")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            n, 2,
+            "export_to_parquet should write both rows of the uuid/numeric/enum table"
+        );
+    }
+
+    // Production regression: Salesforce array columns such as term_ids are
+    // ordinary text[] (oid 1009). They must export without flattening or
+    // rejecting the relation. The committed read-path semantics are covered by
+    // tests/test_array_roundtrip.py because pg_test cannot publish row groups
+    // until its transaction commits.
+    #[pg_test]
+    fn export_to_parquet_supports_postgres_arrays() {
+        Spi::run(
+            "CREATE TABLE sf_arrays (\
+                id integer, \
+                term_ids text[], \
+                scores integer[], \
+                labels varchar(12)[]\
+             ) USING rvbbit",
+        )
+        .unwrap();
+        Spi::run(
+            "INSERT INTO sf_arrays VALUES \
+                (1, ARRAY['term-a', 'term,b', NULL]::text[], ARRAY[1, NULL, 3], ARRAY['new', 'open']::varchar(12)[]), \
+                (2, ARRAY[]::text[], ARRAY[[1, 2], [3, 4]], NULL), \
+                (3, NULL, NULL, ARRAY[]::varchar(12)[])",
+        )
+        .unwrap();
+        let n: i64 = Spi::get_one("SELECT rvbbit.export_to_parquet('sf_arrays'::regclass)")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            n, 3,
+            "export_to_parquet should write PostgreSQL array columns"
+        );
+    }
+
+    // Row-group min/max pruning for date / timestamp / timestamptz. Stats hold
+    // Unix-epoch days/micros, pushed values PG-epoch ones; an epoch slip shows
+    // up here as zero pruning or as wrong rows.
+    //
+    // 8 row groups of 1000 rows, g = 0..7999, ts = 2025-01-01 + g hours (spans
+    // both 2025 US DST changes), so row group k holds g in [1000k, 1000k+999].
+    const PRUNE_GROUPS: i64 = 8;
+
+    fn setup_temporal_prune_table() {
+        Spi::run(
+            "CREATE TABLE tprune (g int, ts timestamp, tstz timestamptz, d date, ts2 timestamp) \
+             USING rvbbit",
+        )
+        .unwrap();
+        Spi::run(
+            "INSERT INTO tprune \
+             SELECT g, t, t AT TIME ZONE 'UTC', t::date, t + ((g % 3) - 1) * interval '1 hour' \
+             FROM (SELECT g, CASE WHEN g % 997 = 500 THEN NULL \
+                                  ELSE timestamp '2025-01-01' + g * interval '1 hour' END AS t \
+                   FROM generate_series(0, 7999) g) s",
+        )
+        .unwrap();
+        Spi::run("SET rvbbit.compact_scan_chunk_rows = '1000'").unwrap();
+        Spi::run("SELECT rvbbit.rebuild_acceleration('tprune'::regclass, false)").unwrap();
+        let groups: i64 = Spi::get_one(
+            "SELECT count(*) FROM rvbbit.row_groups_visible \
+             WHERE table_oid = 'tprune'::regclass",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(groups, PRUNE_GROUPS, "expected 1000-row row groups");
+    }
+
+    /// Wall-clock text of `2025-01-01 + hours`, as timestamp.
+    fn ts_lit(hours: i64) -> String {
+        Spi::get_one::<String>(&format!(
+            "SELECT (timestamp '2025-01-01' + interval '{hours} hours')::text"
+        ))
+        .unwrap()
+        .unwrap()
+    }
+
+    /// The same instant as ts_lit, written as session-zone wall clock with no
+    /// offset, so the literal only means the boundary in the current TimeZone.
+    fn tstz_local_lit(hours: i64) -> String {
+        Spi::get_one::<String>(&format!(
+            "SELECT to_char((timestamp '2025-01-01' + interval '{hours} hours') AT TIME ZONE 'UTC', \
+                            'YYYY-MM-DD HH24:MI:SS')"
+        ))
+        .unwrap()
+        .unwrap()
+    }
+
+    fn pruned_row_groups(pred: &str) -> i64 {
+        let plan = Spi::connect_mut(|client| -> Result<String, pgrx::spi::Error> {
+            let table = client.update(
+                &format!(
+                    "EXPLAIN (ANALYZE, TIMING OFF, COSTS OFF, SUMMARY OFF) \
+                     SELECT g FROM tprune WHERE {pred}"
+                ),
+                None,
+                &[],
+            )?;
+            let mut lines = Vec::new();
+            for row in table {
+                lines.push(row.get::<String>(1)?.unwrap_or_default());
+            }
+            Ok(lines.join("\n"))
+        })
+        .unwrap();
+        plan.lines()
+            .find_map(|line| line.trim().strip_prefix("Pruned Row Groups: "))
+            .unwrap_or_else(|| panic!("no native scan for `{pred}`:\n{plan}"))
+            .parse()
+            .unwrap()
+    }
+
+    fn matching_rows(pred: &str, heap: bool) -> Vec<i32> {
+        let force = if heap { "on" } else { "off" };
+        Spi::run(&format!(
+            "SELECT pg_catalog.set_config('rvbbit.force_heap_scan', '{force}', true)"
+        ))
+        .unwrap();
+        let rows = Spi::connect(|client| -> Result<Vec<i32>, pgrx::spi::Error> {
+            let mut out = Vec::new();
+            for row in client.select(&format!("SELECT g FROM tprune WHERE {pred}"), None, &[])? {
+                out.push(row.get::<i32>(1)?.unwrap());
+            }
+            Ok(out)
+        })
+        .unwrap();
+        Spi::run("SELECT pg_catalog.set_config('rvbbit.force_heap_scan', 'off', true)").unwrap();
+        let mut rows = rows;
+        rows.sort_unstable();
+        rows
+    }
+
+    /// Native rows must equal heap rows. With `exact`, every row group holding
+    /// no match must be pruned (true for range predicates over sorted data);
+    /// otherwise pruning must be non-zero and never drop a matching group.
+    fn assert_pruned(pred: &str, exact: bool) {
+        let heap = matching_rows(pred, true);
+        let native = matching_rows(pred, false);
+        assert_eq!(native, heap, "native scan rows differ from heap for `{pred}`");
+        let mut groups: Vec<i32> = heap.iter().map(|g| g / 1000).collect();
+        groups.dedup();
+        let empty = PRUNE_GROUPS - groups.len() as i64;
+        let pruned = pruned_row_groups(pred);
+        if exact {
+            assert_eq!(pruned, empty, "pruned row groups for `{pred}`");
+        } else {
+            assert!(
+                pruned > 0 && pruned <= empty,
+                "pruned {pruned} of {empty} empty row groups for `{pred}`"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn timestamp_predicates_prune_row_groups() {
+        setup_temporal_prune_table();
+        let b3 = ts_lit(3000); // first row of row group 3
+        let l4 = ts_lit(4999); // last row of row group 4
+        let b5 = ts_lit(5000);
+        let (b2, l3) = (ts_lit(2000), ts_lit(3999));
+        let (b1, l6) = (ts_lit(1000), ts_lit(6999));
+        let cases = [
+            format!("ts < '{b3}'"),
+            format!("ts <= '{b3}'"),
+            format!("ts > '{l4}'"),
+            format!("ts >= '{l4}'"),
+            format!("ts = '{b5}'"),
+            format!("'{b5}' <= ts"),
+            format!("ts BETWEEN '{b2}' AND '{l3}'"),
+            format!("ts IN ('{b1}', '{l6}')"),
+            format!("ts >= '{b2}' AND ts < '{b3}'"),
+            format!("(ts < '{b1}' OR ts > '{l6}')"),
+        ];
+        for pred in &cases {
+            assert_pruned(pred, true);
+        }
+        // Exact for timestamp: day 187 = hours 4488..4511, all in group 4.
+        assert_pruned("ts::date = date '2025-07-07'", true);
+        assert_pruned("ts::date < date '2025-02-01'", true);
+        assert_pruned("ts::date >= date '2025-10-01'", true);
+        assert_pruned("date(ts) BETWEEN date '2025-03-01' AND date '2025-03-31'", true);
+        // Column vs column: pushed but never pruned; rows must still match.
+        assert_eq!(matching_rows("ts < ts2", false), matching_rows("ts < ts2", true));
+    }
+
+    #[pg_test]
+    fn date_predicates_prune_row_groups() {
+        setup_temporal_prune_table();
+        assert_pruned("d < date '2025-03-01'", true);
+        assert_pruned("d <= date '2025-03-01'", true);
+        assert_pruned("d > date '2025-09-01'", true);
+        assert_pruned("d = date '2025-07-07'", true);
+        assert_pruned("d BETWEEN date '2025-05-01' AND date '2025-05-31'", true);
+        assert_pruned("d IN (date '2025-01-05', date '2025-11-20')", true);
+    }
+
+    #[pg_test]
+    fn timestamptz_predicates_prune_row_groups_in_any_zone() {
+        setup_temporal_prune_table();
+        for zone in ["UTC", "America/New_York", "Asia/Kolkata", "Pacific/Chatham"] {
+            Spi::run(&format!("SET TimeZone = '{zone}'")).unwrap();
+            let b3 = tstz_local_lit(3000);
+            let l4 = tstz_local_lit(4999);
+            let b5 = tstz_local_lit(5000);
+            // 2025-03-09 is the New York spring-forward day.
+            let dst = "2025-03-09 03:00:00";
+            for pred in [
+                format!("tstz < '{b3}'"),
+                format!("tstz <= '{b3}'"),
+                format!("tstz > '{l4}'"),
+                format!("tstz >= '{l4}'"),
+                format!("tstz = '{b5}'"),
+                format!("tstz BETWEEN '{b3}' AND '{l4}'"),
+                format!("tstz IN ('{b3}', '{b5}')"),
+                format!("tstz >= '{dst}'"),
+                format!("tstz < '{dst}'"),
+                "tstz < '2025-06-01 00:00:00+09'".to_string(),
+            ] {
+                assert_pruned(&pred, true);
+            }
+            // tstz::date depends on the zone; its bounds are widened, so
+            // only require some pruning and identical rows.
+            for pred in [
+                "tstz::date = date '2025-03-09'",
+                "tstz::date = date '2025-11-02'",
+                "tstz::date < date '2025-02-01'",
+                "tstz::date > date '2025-10-15'",
+            ] {
+                assert_pruned(pred, false);
+            }
+        }
+    }
+
+    /// `2025-01-01 + days` as date text.
+    fn date_lit(days: i64) -> String {
+        Spi::get_one::<String>(&format!("SELECT (date '2025-01-01' + {days})::text"))
+            .unwrap()
+            .unwrap()
+    }
+
+    /// STABLE plpgsql functions returning their argument, so the planner keeps
+    /// them as expressions (a SQL function would inline and fold to a literal).
+    fn create_stable_bound_functions() {
+        for (name, ty) in [
+            ("sc_ts", "timestamp"),
+            ("sc_tstz", "timestamptz"),
+            ("sc_date", "date"),
+            ("sc_int", "int"),
+        ] {
+            Spi::run(&format!(
+                "CREATE FUNCTION {name}(v text) RETURNS {ty} LANGUAGE plpgsql STABLE \
+                 AS $$ BEGIN RETURN v::{ty}; END $$"
+            ))
+            .unwrap();
+        }
+    }
+
+    #[pg_test]
+    fn scan_constant_bounds_prune_row_groups() {
+        setup_temporal_prune_table();
+        create_stable_bound_functions();
+        let (b3, l4, b5) = (ts_lit(3000), ts_lit(4999), ts_lit(5000));
+        // now() is the transaction's start, the same instant in every query
+        // here, so `now() - (now() - x)` is exactly x.
+        let since_now = |ts: &str| -> String {
+            Spi::get_one::<String>(&format!("SELECT (now() - timestamptz '{ts}+00')::text"))
+                .unwrap()
+                .unwrap()
+        };
+        let (iv3, iv5) = (since_now(&b3), since_now(&b5));
+        for pred in [
+            format!("tstz >= now() - interval '{iv3}'"),
+            format!("tstz < now() - interval '{iv5}'"),
+            format!("tstz >= now() - interval '{iv3}' AND tstz < now() - interval '{iv5}'"),
+            format!("ts >= sc_ts('{b3}')"),
+            format!("ts <= sc_ts('{l4}')"),
+            format!("ts = sc_ts('{b5}')"),
+            format!("(ts < sc_ts('{b3}') OR ts > sc_ts('{l4}'))"),
+            format!("d >= sc_date('{}')", date_lit(250)),
+            "g >= sc_int('5000')".to_string(),
+            format!("ts::date = sc_date('{}')", date_lit(187)),
+            format!("ts::date < sc_date('{}')", date_lit(31)),
+        ] {
+            assert_pruned(&pred, true);
+        }
+    }
+
+    #[pg_test]
+    fn cross_type_time_bounds_prune_row_groups_in_any_zone() {
+        setup_temporal_prune_table();
+        create_stable_bound_functions();
+        let (b3, b5) = (ts_lit(3000), ts_lit(5000));
+        let day = date_lit(125); // hour 3000, the first row of row group 3
+        let days_ago = Spi::get_one::<i32>(&format!("SELECT current_date - date '{day}'"))
+            .unwrap()
+            .unwrap();
+        for zone in ["UTC", "America/New_York", "Asia/Kolkata", "Pacific/Chatham"] {
+            Spi::run(&format!("SET TimeZone = '{zone}'")).unwrap();
+            // PG converts the value: exact pruning, as literals or scan-constant.
+            for pred in [
+                format!("tstz >= date '{day}'"),
+                format!("tstz >= sc_date('{day}')"),
+                format!("tstz < timestamp '{b5}'"),
+                format!("tstz < sc_ts('{b5}')"),
+                format!("ts >= sc_date('{day}')"),
+                format!("ts < date '{day}'"),
+                // date - interval is a timestamp, compared with a timestamptz column.
+                format!("tstz >= current_date - interval '{days_ago} days'"),
+                format!("ts::date >= current_date - {days_ago}"),
+            ] {
+                assert_pruned(&pred, true);
+            }
+            // PG converts the column (or buckets by local day): widened bounds.
+            for pred in [
+                format!("ts >= timestamptz '{b3}+00'"),
+                format!("ts < sc_tstz('{b5}+00')"),
+                format!("ts = sc_tstz('{b5}+00')"),
+                format!("tstz::date = sc_date('{day}')"),
+                format!("tstz::date >= current_date - {days_ago}"),
+            ] {
+                assert_pruned(&pred, false);
+            }
+        }
+    }
+
+    #[pg_test]
+    fn generic_plan_params_prune_row_groups() {
+        setup_temporal_prune_table();
+        let (b3, b5) = (ts_lit(3000), ts_lit(5000));
+        Spi::run("SET plan_cache_mode = force_generic_plan").unwrap();
+        Spi::run(
+            "PREPARE tprune_range(timestamptz, timestamptz) AS \
+             SELECT g FROM tprune WHERE tstz >= $1 AND tstz < $2",
+        )
+        .unwrap();
+        Spi::run("PREPARE tprune_from(int) AS SELECT g FROM tprune WHERE g >= $1").unwrap();
+        let explain = |sql: &str| -> String {
+            Spi::connect_mut(|client| -> Result<String, pgrx::spi::Error> {
+                let mut lines = Vec::new();
+                for row in client.update(sql, None, &[])? {
+                    lines.push(row.get::<String>(1)?.unwrap_or_default());
+                }
+                Ok(lines.join("\n"))
+            })
+            .unwrap()
+        };
+        let range = format!("EXECUTE tprune_range('{b3}+00', '{b5}+00')");
+        assert!(
+            explain(&format!("EXPLAIN (COSTS OFF) {range}")).contains("$1"),
+            "expected a generic plan"
+        );
+        let plan = explain(&format!(
+            "EXPLAIN (ANALYZE, TIMING OFF, COSTS OFF, SUMMARY OFF) {range}"
+        ));
+        assert!(plan.contains("Pruned Row Groups: 6"), "{plan}");
+        let plan = explain(
+            "EXPLAIN (ANALYZE, TIMING OFF, COSTS OFF, SUMMARY OFF) EXECUTE tprune_from(7000)",
+        );
+        assert!(plan.contains("Pruned Row Groups: 7"), "{plan}");
+
+        let mut rows = Spi::connect(|client| -> Result<Vec<i32>, pgrx::spi::Error> {
+            let mut out = Vec::new();
+            for row in client.select(&range, None, &[])? {
+                out.push(row.get::<i32>(1)?.unwrap());
+            }
+            Ok(out)
+        })
+        .unwrap();
+        rows.sort_unstable();
+        let pred = format!("tstz >= '{b3}+00' AND tstz < '{b5}+00'");
+        assert_eq!(rows, matching_rows(&pred, true));
+    }
+
+    #[pg_test]
+    fn unrepresentable_bounds_filter_nothing() {
+        setup_temporal_prune_table();
+        create_stable_bound_functions();
+        Spi::run(
+            "CREATE FUNCTION sc_null_ts() RETURNS timestamp LANGUAGE plpgsql STABLE \
+             AS $$ BEGIN RETURN NULL; END $$",
+        )
+        .unwrap();
+        for pred in [
+            "ts < sc_ts('infinity')",
+            "ts > sc_ts('-infinity')",
+            "ts >= sc_null_ts()",
+            "(ts < sc_ts('infinity') OR g = 3)",
+            "ts < sc_ts('infinity') AND g >= 6000",
+            "tstz >= sc_date('-infinity')",
+            "ts::date < sc_date('infinity')",
+            "tstz < date 'infinity'",
+            "ts::date = date 'infinity'",
+        ] {
+            assert_eq!(
+                matching_rows(pred, false),
+                matching_rows(pred, true),
+                "native scan rows differ from heap for `{pred}`"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn volatile_bounds_are_never_pushed() {
+        setup_temporal_prune_table();
+        // Counts up per call: per-row evaluation (PG's semantics) keeps every
+        // row, since the k-th row read has g = k - 1. A value evaluated once
+        // and reused would keep only g = 0.
+        Spi::run("CREATE SEQUENCE tprune_calls").unwrap();
+        Spi::run(
+            "CREATE FUNCTION next_call() RETURNS int LANGUAGE sql VOLATILE \
+             AS $$ SELECT nextval('tprune_calls')::int $$",
+        )
+        .unwrap();
+        assert_eq!(pruned_row_groups("g < next_call()"), 0);
+        Spi::run("SELECT setval('tprune_calls', 1, false)").unwrap();
+        let rows = matching_rows("g < next_call()", false);
+        assert_eq!(rows.len(), 8000);
+    }
+
+    #[pg_test]
+    fn plain_explain_evaluates_no_bounds() {
+        setup_temporal_prune_table();
+        // The planner evaluates stable functions to estimate selectivity, so
+        // build the plan while the bound is harmless, then reuse it cached.
+        Spi::run(
+            "CREATE FUNCTION sc_boom() RETURNS timestamp LANGUAGE plpgsql STABLE \
+             AS $$ BEGIN \
+                 IF current_setting('tprune.boom', true) = 'on' THEN \
+                     RAISE EXCEPTION 'bound evaluated'; \
+                 END IF; \
+                 RETURN timestamp '2025-06-01'; \
+             END $$",
+        )
+        .unwrap();
+        Spi::run("SET plan_cache_mode = force_generic_plan").unwrap();
+        Spi::run("PREPARE tprune_boom AS SELECT g FROM tprune WHERE ts >= sc_boom()").unwrap();
+        let explain = || {
+            Spi::connect(|client| -> Result<String, pgrx::spi::Error> {
+                let mut lines = Vec::new();
+                for row in client.select("EXPLAIN (COSTS OFF) EXECUTE tprune_boom", None, &[])? {
+                    lines.push(row.get::<String>(1)?.unwrap_or_default());
+                }
+                Ok(lines.join("\n"))
+            })
+            .unwrap()
+        };
+        explain();
+        Spi::run("SET tprune.boom = 'on'").unwrap();
+        let plan = explain();
+        assert!(plan.contains("RvbbitParquetScan"), "{plan}");
+        let ran = crate::subxact::try_in_subtransaction(|| Spi::run("EXECUTE tprune_boom"));
+        assert!(ran.unwrap_err().contains("bound evaluated"));
+    }
+}

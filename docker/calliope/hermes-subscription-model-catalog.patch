@@ -1,0 +1,173 @@
+diff --git a/hermes_cli/codex_models.py b/hermes_cli/codex_models.py
+--- a/hermes_cli/codex_models.py
++++ b/hermes_cli/codex_models.py
+@@ -17,6 +17,8 @@
+ # choices (#52492). If OpenAI re-enables any, live discovery (_fetch_models_from_api) picks them
+ # up automatically.
+ DEFAULT_CODEX_MODELS: List[str] = [
++    "gpt-6-sol",
++    "gpt-6-luna",
+     "gpt-5.6-sol",
+     "gpt-5.6-terra",
+     "gpt-5.6-luna",
+@@ -38,6 +40,8 @@
+ # unsupported — that was wrong; restored here. Keep it in the curated fallback so Pro users still see Spark
+ # in `/model` when live discovery is unavailable (offline first run, transient API failure).
+ _FORWARD_COMPAT_TEMPLATE_MODELS: List[tuple[str, tuple[str, ...]]] = [
++    ("gpt-6-sol", ("gpt-5.6-sol", "gpt-5.5")),
++    ("gpt-6-luna", ("gpt-5.6-luna", "gpt-5.5")),
+     ("gpt-5.6-sol", ("gpt-5.5", "gpt-5.4")),
+     ("gpt-5.6-terra", ("gpt-5.5", "gpt-5.4")),
+     ("gpt-5.6-luna", ("gpt-5.5", "gpt-5.4")),
+@@ -130,12 +134,9 @@
+         # masquerades as "no models") and, for residency-enforced workspaces, the residency header.
+         from agent.codex_headers import codex_account_headers
+         headers = {"Authorization": f"Bearer {access_token}", **codex_account_headers(access_token)}
+-        from agent.model_metadata import CODEX_MODELS_CATALOG_URL
+-        resp = httpx.get(CODEX_MODELS_CATALOG_URL, headers=headers, timeout=10)
+-        if resp.status_code != 200:
+-            return []
+-        data = resp.json()
+-        entries = data.get("models", []) if isinstance(data, dict) else []
++        from agent.model_metadata import fetch_codex_catalog_entries
++        entries, _status = fetch_codex_catalog_entries(
++            lambda url: httpx.get(url, headers=headers, timeout=10))
+     except Exception as exc:
+         logger.debug("Failed to fetch Codex models from API: %s", exc)
+         return []
+diff --git a/agent/model_metadata.py b/agent/model_metadata.py
+--- a/agent/model_metadata.py
++++ b/agent/model_metadata.py
+@@ -1728,7 +1728,7 @@
+ # Codex OAuth `context_window` values (what Codex enforces — lower than the direct API for the same
+ # slugs). Fallback when the live probe fails; longest-key-first. gpt-5.3-codex-spark is listed so "gpt-5.3-codex" doesn't win.
+ _CODEX_OAUTH_CONTEXT_FALLBACK: Dict[str, int] = {
+-    "gpt-6-astra": 272_000,
++    "gpt-6-astra": 272_000, "gpt-6.1-sol": 272_000, "gpt-6-sol": 272_000, "gpt-6-luna": 272_000,
+     "gpt-5.1-codex-max": 272_000, "gpt-5.1-codex-mini": 272_000, "gpt-5.3-codex": 272_000,
+     "gpt-5.3-codex-spark": 128_000, "gpt-5.2-codex": 272_000, "gpt-5.4-mini": 272_000,
+     "gpt-5.6-sol": 272_000, "gpt-5.6-terra": 272_000, "gpt-5.6-luna": 272_000, "gpt-daybreak-blue-latest": 272_000,
+@@ -1739,7 +1739,9 @@
+ # picker variants (a 900K default burned subscription usage); the suffix is stripped before the wire.
+ # The bump fires ONLY when the resolved value is exactly the stale 272,000. ``gpt-5.6`` is a FAMILY
+ # PREFIX (``-pro`` slugs aren't routable on Codex); ``gpt-5.4`` is EXACT because gpt-5.4-mini enforces 272K.
+-_CODEX_OAUTH_VERIFIED_ABOVE_ADVERTISED_PREFIXES: Dict[str, int] = {"gpt-5.6": 900_000}  # sol / terra / luna
++_CODEX_OAUTH_VERIFIED_ABOVE_ADVERTISED_PREFIXES: Dict[str, int] = {
++    "gpt-5.6": 900_000, "gpt-6-sol": 900_000, "gpt-6-luna": 900_000,
++}
+ _CODEX_OAUTH_VERIFIED_ABOVE_ADVERTISED_EXACT: Dict[str, int] = {
+     "gpt-5.4": 900_000, "gpt-daybreak-blue-latest": 900_000,
+     "gpt-6-astra": 900_000,  # advertised 272K; 920,043 input OK, 1,000,043 rejected (live 2026-09-04)
+@@ -1748,7 +1750,7 @@
+ CODEX_CONTEXT_VARIANT_SUFFIX = "-900k"  # picker-only opt-in suffix; never sent on the wire
+ # The ONLY bases eligible for ``-900k``: routable, live-verified. No family prefixing (it would synthesize
+ # dead ``-pro`` variants); dated snapshots of the 5.6 bases are allowed. gpt-daybreak-blue-latest is a verified Sol alias.
+-_CODEX_900K_SNAPSHOT_BASES = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna")
++_CODEX_900K_SNAPSHOT_BASES = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna")
+ _CODEX_900K_ELIGIBLE_BASES = frozenset({*_CODEX_900K_SNAPSHOT_BASES, "gpt-5.4", "gpt-daybreak-blue-latest", "gpt-6-astra"})
+ _CODEX_900K_SNAPSHOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ 
+@@ -1813,14 +1815,45 @@
+ # opted-in ``-900k`` bump reads it (#105443); a catalog without the field leaves the entry empty.
+ _codex_oauth_max_context_cache: Dict[str, Dict[str, int]] = {}
+ _CODEX_OAUTH_CONTEXT_CACHE_TTL = 3600  # 1 hour
+-# The Codex models endpoint reads ``client_version`` as a Codex CLI compatibility version and
+-# hides models whose ``minimal_client_version`` is newer, so a made-up version (the old
+-# "1.0.0") silently drops future models. "0.0.0" is the backend's ungated sentinel returning
+-# the full account catalog; other out-of-sequence values return an empty catalog and omitting
+-# the parameter is HTTP 400.
++# Backport upstream client-version negotiation: 0.0.0 now returns a legacy catalog.
++# Ask for the newest catalog first, retaining the legacy endpoint as a fallback.
++CODEX_MODELS_CATALOG_ENDPOINT = "https://chatgpt.com/backend-api/codex/models"
++CODEX_NEWEST_CLIENT_VERSION = "99.0.0"
+ CODEX_UNGATED_CLIENT_VERSION = "0.0.0"
+-CODEX_MODELS_CATALOG_URL = f"https://chatgpt.com/backend-api/codex/models?client_version={CODEX_UNGATED_CLIENT_VERSION}"
+-
++
++
++def _codex_catalog_urls(base_url: str = "") -> Tuple[str, ...]:
++    """Catalog URLs against ``base_url`` when it names a Codex-compatible gateway, else the
++    hard-coded endpoint. A custom base's credential belongs to that service — sending it to
++    chatgpt.com (or fetching the direct catalog behind a gateway's back) is wrong (#121486)."""
++    base = (base_url or "").strip().rstrip("/")
++    endpoint = f"{base}/models" if base else CODEX_MODELS_CATALOG_ENDPOINT
++    return tuple(
++        f"{endpoint}?client_version={v}"
++        for v in (CODEX_NEWEST_CLIENT_VERSION, CODEX_UNGATED_CLIENT_VERSION)
++    )
++
++
++CODEX_MODELS_CATALOG_URLS = _codex_catalog_urls()
++# Compatibility for existing imports from the pinned runtime.
++CODEX_MODELS_CATALOG_URL = CODEX_MODELS_CATALOG_URLS[0]
++
++
++def fetch_codex_catalog_entries(get: Callable[[str], Any], base_url: str = "") -> Tuple[List[Any], Optional[int]]:
++    """``(models, last_status)`` from the first catalog URL that answers HTTP 200 with a non-empty
++    ``models`` list; ``get(url)`` is any client returning an object with ``status_code``/``json()``.
++    An empty or non-200 answer on the newest-client URL falls through to the ``0.0.0`` sentinel."""
++    status: Optional[int] = None
++    for url in _codex_catalog_urls(base_url):
++        resp = get(url)
++        status = resp.status_code
++        if status != 200:
++            continue
++        data = resp.json()
++        entries = data.get("models") if isinstance(data, dict) else None
++        if isinstance(entries, list) and entries:
++            return entries, status
++    return [], status
+ 
+ def _codex_oauth_token_fingerprint(access_token: str) -> str:
+     """Non-secret cache key for a Codex OAuth access token."""
+@@ -1843,17 +1876,17 @@
+     headers = {"Authorization": f"Bearer {access_token}", **codex_account_headers(access_token)}
+     try:
+         _ensure_requests()
+-        resp = requests.get(CODEX_MODELS_CATALOG_URL, headers=headers, timeout=(5, 10), verify=_resolve_requests_verify())
+-        if resp.status_code != 200:
+-            logger.debug("Codex /models probe returned HTTP %s; falling back to hardcoded defaults", resp.status_code)
++        entries, status = fetch_codex_catalog_entries(
++            lambda url: requests.get(url, headers=headers, timeout=(5, 10), verify=_resolve_requests_verify()))
++        if not entries:
++            logger.debug("Codex /models probe returned HTTP %s; falling back to hardcoded defaults", status)
+             return {}, False
+-        data = resp.json()
+     except Exception as exc:
+         logger.debug("Codex /models probe failed: %s", exc)
+         return {}, False
+     result: Dict[str, int] = {}
+     max_result: Dict[str, int] = {}
+-    for item in data.get("models", []) if isinstance(data, dict) else []:
++    for item in entries:
+         slug, ctx, max_ctx = (item.get("slug"), item.get("context_window"), item.get("max_context_window")) if isinstance(item, dict) else (None, None, None)
+         if isinstance(slug, str) and isinstance(ctx, int) and ctx > 0:
+             result[slug.strip()] = ctx
+diff --git a/agent/reasoning_effort.py b/agent/reasoning_effort.py
+--- a/agent/reasoning_effort.py
++++ b/agent/reasoning_effort.py
+@@ -35,6 +35,8 @@
+ # wire level; callers normalize those requests to ``low`` at the transport boundary.
+ CODEX_ASTRA_EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+ ASTRA_MODEL_IDS: frozenset[str] = frozenset({"gpt-6-astra", "gpt-6-astra-900k"})
++GPT6_TIER_PREFIXES: tuple[str, ...] = ("gpt-6-sol", "gpt-6-luna")
++NO_DISABLE_TIER_PREFIXES: tuple[str, ...] = ("gpt-6.1-sol",)
+ DAYBREAK_MODEL_IDS: frozenset[str] = frozenset(
+     {"gpt-daybreak-blue-latest", "gpt-daybreak-blue-latest-900k"}
+ )
+@@ -94,12 +96,12 @@
+ 
+ def codex_supported_efforts(model: Optional[str]) -> tuple[str, ...]:
+     """Supported effort set for an OpenAI/Codex Responses model."""
+-    if is_astra_model(model):
++    bare = (model or "").strip().lower().rsplit("/", 1)[-1]
++    if is_astra_model(model) or bare.startswith(NO_DISABLE_TIER_PREFIXES):
+         return CODEX_ASTRA_EFFORTS
+-    bare = (model or "").strip().lower().rsplit("/", 1)[-1]
+     return (
+         CODEX_GPT56_EFFORTS
+-        if "gpt-5.6" in bare or bare in DAYBREAK_MODEL_IDS
++        if "gpt-5.6" in bare or bare.startswith(GPT6_TIER_PREFIXES) or bare in DAYBREAK_MODEL_IDS
+         else CODEX_LEGACY_EFFORTS
+     )
+ 

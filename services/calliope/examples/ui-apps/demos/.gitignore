@@ -1,0 +1,16 @@
+# Generated entry-point copies; workspace.json is the shared reviewed source.
+dossier.json
+pipeline.json
+briefing.json
+hvac.json
+counter.json
+receiving.json
+dispatch.json
+field.json
+adaptive.json
+case.json
+charts.json
+*-snapshot.json
+published.json
+verification.json
+__pycache__/

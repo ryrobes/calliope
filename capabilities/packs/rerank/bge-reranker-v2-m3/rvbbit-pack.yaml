@@ -1,0 +1,122 @@
+api_version: rvbbit.pack/v1
+id: rerank/bge-reranker-v2-m3
+name: bge_reranker_v2_m3
+title: BGE Reranker v2 M3
+description: Cross-encoder relevance scoring for query/document pairs.
+license: mit
+tags:
+- rerank
+- retrieval
+- relevance
+- gpu
+- row
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: BAAI/bge-reranker-v2-m3
+  url: https://huggingface.co/BAAI/bge-reranker-v2-m3
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 2271071852
+    vram_required_bytes: 2838839815
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: rerank_bge_m3
+  operators:
+  - rerank_score
+  - rerank_row
+  - about
+  - semantic_score
+  - means
+  - semantic_matches
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: rerank_score_shape
+    description: Score refund-query relevance and assert a bounded score.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          score float8;
+          matched bool;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.rerank_score(
+                  'refund request',
+                  'customer says they were charged twice and wants money back'
+              ) INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'rerank_score returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'object' OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected BGE-M3 reranker result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'reranker score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.rerank_row(
+              'refund request',
+              '{"ticket":"customer says they were charged twice and wants money back","queue":"billing"}'::jsonb
+          ) INTO result;
+          IF jsonb_typeof(result) <> 'object' OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected BGE-M3 reranker row result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'reranker row score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.about(
+              'customer says they were charged twice and wants money back',
+              'refund request'
+          ) INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled about score out of range: %', score;
+          END IF;
+
+          SELECT rvbbit.semantic_score(
+              'customer says they were charged twice and wants money back',
+              'refund request'
+          ) INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled semantic_score out of range: %', score;
+          END IF;
+
+          SELECT rvbbit.means(
+              'customer says they were charged twice and wants money back',
+              'refund request'
+          ) INTO matched;
+          IF matched IS NULL THEN
+              RAISE EXCEPTION 'bundled means operator returned NULL';
+          END IF;
+
+          SELECT rvbbit.semantic_matches(
+              'customer says they were charged twice and wants money back',
+              'refund request',
+              '{"threshold":0.1}'::jsonb
+          ) INTO matched;
+          IF matched IS NULL THEN
+              RAISE EXCEPTION 'bundled semantic_matches operator returned NULL';
+          END IF;
+      END
+      $$;

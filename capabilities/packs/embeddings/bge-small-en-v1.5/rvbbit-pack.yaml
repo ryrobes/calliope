@@ -1,0 +1,79 @@
+api_version: rvbbit.pack/v1
+id: embeddings/bge-small-en-v1.5
+name: bge_small_en_v1_5
+title: BGE Small English Embeddings
+description: CPU-friendly English sentence embeddings exposed as an Rvbbit backend.
+license: mit
+tags:
+- embedding
+- retrieval
+- cpu-friendly
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: BAAI/bge-small-en-v1.5
+  url: https://huggingface.co/BAAI/bge-small-en-v1.5
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: embedding
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 133466304
+    vram_required_bytes: 166832880
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: embed_bge_small
+  operators:
+  - embed_bge_small
+  - semantic_embed
+  - similar_to
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: embedding_vector_shape
+    description: Embed a support-search phrase and assert a non-empty vector payload.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          score float8;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.embed_bge_small('refund request from angry customer') INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'embed_bge_small returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'array' OR jsonb_array_length(result) < 16 THEN
+              RAISE EXCEPTION 'unexpected BGE-small embedding shape: %', left(result::text, 200);
+          END IF;
+
+          SELECT rvbbit.semantic_embed('refund request from angry customer') INTO result;
+          IF jsonb_typeof(result) <> 'array' OR jsonb_array_length(result) < 16 THEN
+              RAISE EXCEPTION 'unexpected semantic_embed BGE-small shape: %', left(result::text, 200);
+          END IF;
+
+          SELECT rvbbit.similar_to(
+              'refund request from angry customer',
+              'customer asking for money back after duplicate charge'
+          ) INTO score;
+          IF score < 0 OR score > 1 THEN
+              RAISE EXCEPTION 'bundled similar_to score out of range: %', score;
+          END IF;
+      END
+      $$;

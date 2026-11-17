@@ -1,0 +1,773 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Leave the macOS traffic lights a native drag target while keeping the web
+   menu bar unchanged in browsers. The preload sets this attribute before the
+   renderer's first interactive paint. */
+html[data-datarabbit-desktop="true"][data-datarabbit-platform="darwin"]
+  header[data-desktop-menu-bar] {
+  padding-left: 82px;
+}
+
+/* ─── Theme tokens — dark (default) ───
+ *
+ * Ambient hue is a slightly cooler violet than the rabbit-next desktop
+ * (~270 instead of 295) so rvbbit-lens reads as its own surface. The
+ * --main accent is the rvbbit teal, matching the extension's logo.
+ */
+:root,
+:root[data-theme="dark"] {
+  /* Font families — plain :root variables so the Desktop > Font
+     picker can override them at runtime via applyFontPrefs(). The
+     @theme font-sans / font-mono tokens below point at these with
+     var(), which is what makes every `font-sans` / `font-mono`
+     utility class follow the picker. Fonts don't vary by light/dark
+     so they live only here in the base block. */
+  --font-family-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Warm Ink — neutral near-black greys carry a whisper of warm hue
+     (~70°) so the UI reads as ink-on-paper rather than cold or violet.
+     Color lives only in the amber accent, charts, and code syntax. */
+  --background: oklch(13% 0.008 70);
+  --secondary-background: oklch(18% 0.010 70);
+  --foreground: oklch(92% 0.006 80);
+  --main-foreground: oklch(16% 0.02 70);
+  --main: oklch(80% 0.12 75);
+  --border: oklch(40% 0.012 70);
+  --ring: oklch(80% 0.12 75);
+  --overlay: oklch(0% 0 0 / 0.7);
+
+  --box-shadow-x: 3px;
+  --box-shadow-y: 3px;
+  --shadow: var(--box-shadow-x) var(--box-shadow-y) 0px 0px var(--border);
+
+  --chart-1: oklch(76% 0.14 195);
+  --chart-2: oklch(70% 0.18 145);
+  --chart-3: oklch(80% 0.16 85);
+  --chart-4: oklch(70% 0.20 310);
+  --chart-5: oklch(72% 0.17 25);
+  --chart-6: oklch(74% 0.19 350);
+
+  /* Visualization object palette. These are intentionally derived from
+     theme tokens rather than fixed hues, so graph nodes, timeline lanes,
+     engine ribbons, and category chips stay vibrant while following
+     dark/light and wallpaper-derived palette changes. */
+  --viz-chip-fg: var(--main-foreground);
+
+  --viz-series-1: var(--chart-1);
+  --viz-series-2: color-mix(in oklch, var(--chart-2) 84%, var(--main));
+  --viz-series-3: color-mix(in oklch, var(--chart-3) 82%, var(--rvbbit-accent));
+  --viz-series-4: color-mix(in oklch, var(--chart-4) 84%, var(--brand-query-lens));
+  --viz-series-5: color-mix(in oklch, var(--chart-5) 86%, var(--brand-warren));
+  --viz-series-6: color-mix(in oklch, var(--chart-6) 84%, var(--brand-specialists));
+  --viz-series-7: color-mix(in oklch, var(--info) 82%, var(--chart-1));
+  --viz-series-8: color-mix(in oklch, var(--success) 82%, var(--chart-2));
+  --viz-series-9: color-mix(in oklch, var(--warning) 82%, var(--chart-3));
+
+  --viz-kind-1: color-mix(in oklch, var(--chart-1) 76%, var(--brand-kg));
+  --viz-kind-2: color-mix(in oklch, var(--chart-2) 76%, var(--brand-query-lens));
+  --viz-kind-3: color-mix(in oklch, var(--chart-3) 78%, var(--brand-finder));
+  --viz-kind-4: color-mix(in oklch, var(--chart-4) 76%, var(--brand-specialists));
+  --viz-kind-5: color-mix(in oklch, var(--chart-5) 76%, var(--brand-warren));
+  --viz-kind-6: color-mix(in oklch, var(--chart-6) 76%, var(--brand-capability));
+  --viz-kind-7: color-mix(in oklch, var(--info) 78%, var(--brand-routing));
+  --viz-kind-8: color-mix(in oklch, var(--success) 76%, var(--brand-operators));
+  --viz-kind-9: color-mix(in oklch, var(--warning) 76%, var(--brand-cache));
+  --viz-kind-10: color-mix(in oklch, var(--main) 74%, var(--chart-4));
+  --viz-kind-table: color-mix(in oklch, var(--brand-kg) 68%, var(--chart-1));
+  --viz-kind-column: color-mix(in oklch, var(--brand-query-lens) 58%, var(--brand-kg));
+
+  --viz-engine-native: color-mix(in oklch, var(--brand-routing) 56%, var(--chart-5));
+  --viz-engine-duck-vector: color-mix(in oklch, var(--brand-duck) 62%, var(--chart-3));
+  --viz-engine-duck-vortex: color-mix(in oklch, var(--brand-duck) 52%, var(--chart-6));
+  --viz-engine-duck-hive: color-mix(in oklch, var(--brand-duck) 54%, var(--chart-2));
+  --viz-engine-duck-capsule: color-mix(in oklch, var(--brand-duck) 45%, var(--main));
+  --viz-engine-datafusion-vector: color-mix(in oklch, var(--brand-routing) 52%, var(--chart-1));
+  --viz-engine-datafusion-vortex: color-mix(in oklch, var(--brand-routing) 48%, var(--chart-6));
+  --viz-engine-datafusion-hive: color-mix(in oklch, var(--brand-routing) 52%, var(--info));
+  --viz-engine-gpu-gqe: color-mix(in oklch, var(--brand-specialists) 58%, var(--chart-2));
+  --viz-engine-pg-rowstore: color-mix(in oklch, var(--brand-pg-monitor) 52%, var(--chart-4));
+
+  --viz-op-llm: color-mix(in oklch, var(--rvbbit-accent) 76%, var(--main));
+  --viz-op-specialist: color-mix(in oklch, var(--brand-specialists) 68%, var(--chart-1));
+  --viz-op-runtime: color-mix(in oklch, var(--brand-capability) 66%, var(--chart-6));
+  --viz-op-code: color-mix(in oklch, var(--brand-operators) 58%, var(--chart-2));
+  --viz-op-sql: color-mix(in oklch, var(--brand-query-lens) 58%, var(--chart-4));
+  --viz-op-mcp: color-mix(in oklch, var(--brand-mcp) 68%, var(--chart-5));
+  --viz-op-n8n: color-mix(in oklch, var(--brand-operators) 58%, var(--chart-6));
+  --viz-op-gate: color-mix(in oklch, var(--main) 42%, var(--chart-3));
+  --viz-op-terminal: var(--main);
+  --viz-op-pipeline: color-mix(in oklch, var(--brand-operators) 70%, var(--chart-2));
+  --viz-op-rowset: color-mix(in oklch, var(--brand-operators) 64%, var(--chart-4));
+  /* agent (kind:agent) — a tool-calling loop; ties the autonomous-runtime hue to the llm core */
+  --viz-op-agent: color-mix(in oklch, var(--brand-warren) 70%, var(--viz-op-llm));
+
+  --viz-role-numeric: var(--viz-series-1);
+  --viz-role-temporal: var(--viz-series-3);
+  --viz-role-categorical: var(--viz-series-4);
+  --viz-role-boolean: var(--viz-series-2);
+
+  --viz-storage-heap: color-mix(in oklch, var(--info) 72%, var(--chart-1));
+  --viz-storage-hot: color-mix(in oklch, var(--rvbbit-accent) 74%, var(--chart-2));
+  --viz-storage-cold: var(--viz-series-1);
+  --viz-storage-index: color-mix(in oklch, var(--terminal-dim) 72%, var(--chrome-text));
+  --viz-storage-toast: var(--viz-series-5);
+  --viz-storage-vortex: var(--viz-series-4);
+  --viz-storage-variants: var(--viz-series-3);
+
+  --viz-surface-receipt: var(--viz-op-llm);
+  --viz-surface-subcall: var(--viz-op-code);
+  --viz-surface-mcp: var(--viz-op-mcp);
+  --viz-surface-route-decision: var(--viz-engine-datafusion-vector);
+  --viz-surface-route-execution: var(--viz-engine-pg-rowstore);
+  --viz-surface-kg-write: var(--viz-kind-table);
+  --viz-status-pending: var(--viz-series-3);
+
+  --success: oklch(72% 0.19 145);
+  --warning: oklch(80% 0.16 85);
+  --danger: oklch(65% 0.22 25);
+  --info: oklch(70% 0.14 240);
+
+  --chrome-bg: oklch(11% 0.007 70);
+  --chrome-border: oklch(30% 0.010 70);
+  --chrome-text: oklch(70% 0.006 78);
+
+  --doc-bg: oklch(12.5% 0.008 70);
+  --block-bg: oklch(17% 0.009 70);
+  --block-bg-hover: oklch(20% 0.011 70);
+  --block-border: oklch(32% 0.010 70);
+  --grid-dot: oklch(22% 0.009 70);
+  --grid-outline: oklch(22% 0.009 70);
+
+  --rvbbit-accent: oklch(76% 0.10 72);
+  --rvbbit-bg: oklch(17% 0.02 70);
+
+  /* Amber phosphor — the classic NeXTSTEP/CRT terminal glow. */
+  --terminal: oklch(80% 0.12 72);
+  --terminal-dim: oklch(48% 0.07 72);
+
+  --bevel-light: oklch(28% 0.011 70);
+  --bevel-dark: oklch(5% 0.008 70);
+
+  /* Small surfaces — used by desktop icons, view-app tile backgrounds,
+     window-control buttons, etc. Calling them out as tokens means a
+     theme can shift the icon-tile feel without touching every
+     component. */
+  --icon-tile-bg: oklch(20% 0.011 70 / 0.65);
+  --icon-tile-border: oklch(100% 0 0 / 0.10);
+
+  /* ─── Window chrome ─── per-kind hue with shared L/C so a theme
+     can rotate the whole window-frame palette by shifting hues, or
+     dampen the whole frame look by lowering --win-c. The hue values
+     here represent each window kind's visual identity (finder is
+     blue, data is green, query-document is yellow, etc.). */
+  --win-l: 79%;
+  --win-l-icon: 83%;
+  /* Mostly-monochrome default: per-kind hues stay defined below but
+     near-zero chroma renders them as faint grey identity, not rainbow.
+     A custom (wallpaper-derived) theme raises --win-c to recolor. */
+  --win-c: 0.02;
+
+  --win-finder-h: 220;
+  --win-data-h: 155;
+  --win-query-document-h: 65;
+  --win-artifact-h: 205;
+  --win-view-app-h: 196;
+  --win-view-app-builder-h: 178;
+  --win-view-apps-h: 196;
+  --win-system-objects-h: 235;
+  --win-extensions-h: 285;
+  --win-rvbbit-cache-h: 175;
+  --win-connections-h: 290;
+  --win-palette-h: 320;
+  --win-pg-monitor-h: 150;
+  --win-lock-explorer-h: 205;
+  --win-mvcc-explorer-h: 115;
+  --win-duck-h: 210;
+  --win-dagster-h: 235;
+  --win-folder-h: 85;
+
+  /* Desktop shortcut brand colors. Most match a window-kind hue, but
+     SQL Scratch points at a warmer 88 (yellow) because the shortcut
+     represents "write a query" rather than "table view". */
+  --brand-finder: oklch(82% 0.02 220);
+  --brand-sql-scratch: oklch(83% 0.02 88);
+  --brand-view-apps: oklch(82% 0.02 196);
+  --brand-system-objects: oklch(82% 0.02 235);
+  --brand-extensions: oklch(82% 0.02 285);
+  --brand-connections: oklch(83% 0.02 290);
+  --brand-rvbbit-cache: oklch(82% 0.02 175);
+  --brand-cache: oklch(83% 0.04 95);
+  --brand-pg-monitor: oklch(83% 0.02 150);
+  --brand-lock-explorer: oklch(82% 0.02 205);
+  --brand-mvcc-explorer: oklch(82% 0.02 115);
+  --brand-semantic-tests: oklch(83% 0.035 75);
+  --brand-operators: oklch(82% 0.02 168);
+  --brand-specialists: oklch(80% 0.02 300);
+  --brand-routing: oklch(81% 0.02 255);
+  --brand-mcp: oklch(82% 0.02 55);
+  --brand-query-lens: oklch(82% 0.02 200);
+  --brand-kg: oklch(81% 0.02 320);
+  --brand-capability: oklch(82% 0.02 190);
+  --brand-warren: oklch(82% 0.02 35);
+  --brand-costs: oklch(83% 0.02 130);
+  --brand-duck: oklch(80% 0.02 210);
+
+  /* Capability model-type palette. These keep a shared lightness/chroma so
+     Warren and catalog cards get distinguishable tints without leaving the
+     current theme's muted desktop language. */
+  --cap-type-vllm: color-mix(in oklch, var(--viz-engine-datafusion-vector) 68%, var(--brand-capability));
+  --cap-type-llm: color-mix(in oklch, var(--viz-op-llm) 68%, var(--brand-routing));
+  --cap-type-runtime: color-mix(in oklch, var(--viz-op-runtime) 70%, var(--brand-warren));
+  --cap-type-embedding: color-mix(in oklch, var(--viz-kind-8) 68%, var(--brand-capability));
+  --cap-type-rerank: color-mix(in oklch, var(--viz-kind-7) 68%, var(--brand-capability));
+  --cap-type-extract: color-mix(in oklch, var(--viz-kind-4) 68%, var(--brand-specialists));
+  --cap-type-classify: color-mix(in oklch, var(--viz-kind-9) 68%, var(--brand-operators));
+  --cap-type-forecast: color-mix(in oklch, var(--viz-kind-6) 68%, var(--brand-routing));
+  --cap-type-tabular: color-mix(in oklch, var(--viz-kind-table) 68%, var(--brand-kg));
+  --cap-type-managed: color-mix(in oklch, oklch(0.82 0.14 85) 78%, var(--brand-capability));
+  --cap-type-mcp: color-mix(in oklch, var(--viz-op-runtime) 60%, var(--brand-kg));
+  --cap-type-specialist: color-mix(in oklch, var(--viz-op-specialist) 68%, var(--brand-specialists));
+
+  /* Wallpaper darkening overlay (when a custom wallpaper is set).
+     Two stops on a 135deg gradient. */
+  --wallpaper-overlay-from: oklch(4% 0.02 270 / 0.78);
+  --wallpaper-overlay-to: oklch(14% 0.06 270 / 0.45);
+
+  /* Default ambient backdrop (no wallpaper). Three radial ellipses
+     layered with transparent fade-to-edge. */
+  --ambient-1: oklch(45% 0.03 70 / 0.10);
+  --ambient-2: oklch(38% 0.02 60 / 0.06);
+  --ambient-3: oklch(30% 0.015 80 / 0.05);
+
+  --syntax-foreground: oklch(89% 0.01 260);
+  --syntax-keyword: oklch(76% 0.12 308);
+  --syntax-function: oklch(81% 0.11 190);
+  --syntax-string: oklch(82% 0.11 44);
+  --syntax-number: oklch(86% 0.11 95);
+  --syntax-comment: oklch(51% 0.02 262);
+  --syntax-operator: oklch(76% 0.08 239);
+  --syntax-identifier: oklch(82% 0.1 149);
+}
+
+:root[data-theme="light"] {
+  /* Warm Ink (light) — warm paper whites and a warm-ink foreground,
+     amber accent. Color stays in charts + code syntax only. */
+  --background: oklch(97% 0.008 85);
+  --secondary-background: oklch(93% 0.010 85);
+  --foreground: oklch(22% 0.012 65);
+  --main-foreground: oklch(99% 0.004 85);
+  --main: oklch(58% 0.13 68);
+  --border: oklch(48% 0.012 70);
+  --ring: oklch(58% 0.13 68);
+  --overlay: oklch(22% 0.01 65 / 0.14);
+
+  --box-shadow-x: 3px;
+  --box-shadow-y: 3px;
+  --shadow: var(--box-shadow-x) var(--box-shadow-y) 0px 0px var(--border);
+
+  --chart-1: oklch(62% 0.16 195);
+  --chart-2: oklch(58% 0.17 145);
+  --chart-3: oklch(66% 0.15 85);
+  --chart-4: oklch(60% 0.17 308);
+  --chart-5: oklch(60% 0.17 28);
+  --chart-6: oklch(64% 0.18 350);
+
+  --success: oklch(58% 0.17 145);
+  --warning: oklch(71% 0.16 85);
+  --danger: oklch(58% 0.21 25);
+  --info: oklch(58% 0.14 240);
+
+  --chrome-bg: oklch(92% 0.010 85);
+  --chrome-border: oklch(74% 0.012 75);
+  --chrome-text: oklch(40% 0.010 68);
+
+  --doc-bg: oklch(98% 0.005 88);
+  --block-bg: oklch(99% 0.004 88);
+  --block-bg-hover: oklch(95% 0.012 80);
+  --block-border: oklch(78% 0.012 75);
+  --grid-dot: oklch(85% 0.012 78);
+  --grid-outline: oklch(82% 0.012 78);
+
+  --rvbbit-accent: oklch(56% 0.11 70);
+  --rvbbit-bg: oklch(94% 0.025 78);
+
+  --syntax-foreground: oklch(28% 0.012 260);
+  --syntax-keyword: oklch(50% 0.15 304);
+  --syntax-function: oklch(48% 0.12 191);
+  --syntax-string: oklch(54% 0.14 44);
+  --syntax-number: oklch(58% 0.14 92);
+  --syntax-comment: oklch(58% 0.03 255);
+  --syntax-operator: oklch(48% 0.11 240);
+  --syntax-identifier: oklch(50% 0.12 150);
+
+  --terminal: oklch(50% 0.13 72);
+  --terminal-dim: oklch(40% 0.07 72);
+
+  --bevel-light: oklch(85% 0.008 88);
+  --bevel-dark: oklch(55% 0.012 68);
+
+  --icon-tile-bg: oklch(95% 0.012 88 / 0.85);
+  --icon-tile-border: oklch(20% 0 0 / 0.08);
+
+  /* Mostly-monochrome default: per-kind hues stay defined but near-zero
+     chroma keeps frames as faint grey identity. Custom themes raise it. */
+  --win-l: 62%;
+  --win-l-icon: 50%;
+  --win-c: 0.028;
+
+  --win-finder-h: 220;
+  --win-data-h: 155;
+  --win-query-document-h: 65;
+  --win-artifact-h: 205;
+  --win-view-app-h: 196;
+  --win-view-app-builder-h: 178;
+  --win-view-apps-h: 196;
+  --win-system-objects-h: 235;
+  --win-extensions-h: 285;
+  --win-rvbbit-cache-h: 175;
+  --win-connections-h: 290;
+  --win-palette-h: 320;
+  --win-pg-monitor-h: 150;
+  --win-lock-explorer-h: 205;
+  --win-mvcc-explorer-h: 115;
+  --win-duck-h: 210;
+  --win-dagster-h: 235;
+  --win-folder-h: 85;
+
+  --brand-finder: oklch(50% 0.025 220);
+  --brand-sql-scratch: oklch(54% 0.025 88);
+  --brand-view-apps: oklch(54% 0.025 196);
+  --brand-system-objects: oklch(50% 0.025 235);
+  --brand-extensions: oklch(54% 0.025 285);
+  --brand-connections: oklch(50% 0.025 290);
+  --brand-rvbbit-cache: oklch(54% 0.025 175);
+  --brand-cache: oklch(58% 0.06 95);
+  --brand-pg-monitor: oklch(50% 0.025 150);
+  --brand-lock-explorer: oklch(52% 0.025 205);
+  --brand-mvcc-explorer: oklch(54% 0.025 115);
+  --brand-semantic-tests: oklch(56% 0.04 75);
+  --brand-operators: oklch(53% 0.025 168);
+  --brand-specialists: oklch(52% 0.025 300);
+  --brand-routing: oklch(52% 0.025 255);
+  --brand-mcp: oklch(54% 0.025 55);
+  --brand-query-lens: oklch(53% 0.025 200);
+  --brand-kg: oklch(52% 0.025 320);
+  --brand-capability: oklch(54% 0.025 190);
+  --brand-warren: oklch(56% 0.025 35);
+  --brand-costs: oklch(56% 0.025 130);
+  --brand-duck: oklch(54% 0.025 210);
+
+  --cap-type-vllm: color-mix(in oklch, var(--viz-engine-datafusion-vector) 68%, var(--brand-capability));
+  --cap-type-llm: color-mix(in oklch, var(--viz-op-llm) 68%, var(--brand-routing));
+  --cap-type-runtime: color-mix(in oklch, var(--viz-op-runtime) 70%, var(--brand-warren));
+  --cap-type-embedding: color-mix(in oklch, var(--viz-kind-8) 68%, var(--brand-capability));
+  --cap-type-rerank: color-mix(in oklch, var(--viz-kind-7) 68%, var(--brand-capability));
+  --cap-type-extract: color-mix(in oklch, var(--viz-kind-4) 68%, var(--brand-specialists));
+  --cap-type-classify: color-mix(in oklch, var(--viz-kind-9) 68%, var(--brand-operators));
+  --cap-type-forecast: color-mix(in oklch, var(--viz-kind-6) 68%, var(--brand-routing));
+  --cap-type-tabular: color-mix(in oklch, var(--viz-kind-table) 68%, var(--brand-kg));
+  --cap-type-managed: color-mix(in oklch, oklch(0.82 0.14 85) 78%, var(--brand-capability));
+  --cap-type-mcp: color-mix(in oklch, var(--viz-op-runtime) 60%, var(--brand-kg));
+  --cap-type-specialist: color-mix(in oklch, var(--viz-op-specialist) 68%, var(--brand-specialists));
+
+  --wallpaper-overlay-from: oklch(94% 0.01 95 / 0.62);
+  --wallpaper-overlay-to: oklch(86% 0.03 90 / 0.35);
+
+  --ambient-1: oklch(80% 0.03 80 / 0.16);
+  --ambient-2: oklch(85% 0.025 70 / 0.12);
+  --ambient-3: oklch(75% 0.02 88 / 0.10);
+}
+
+@theme inline {
+  --color-main: var(--main);
+  --color-background: var(--background);
+  --color-secondary-background: var(--secondary-background);
+  --color-foreground: var(--foreground);
+  --color-main-foreground: var(--main-foreground);
+  --color-border: var(--border);
+  --color-overlay: var(--overlay);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  --color-chrome-bg: var(--chrome-bg);
+  --color-chrome-border: var(--chrome-border);
+  --color-chrome-text: var(--chrome-text);
+
+  --color-doc-bg: var(--doc-bg);
+  --color-block-bg: var(--block-bg);
+  --color-block-bg-hover: var(--block-bg-hover);
+  --color-block-border: var(--block-border);
+
+  --color-rvbbit-accent: var(--rvbbit-accent);
+  --color-rvbbit-bg: var(--rvbbit-bg);
+
+  --color-icon-tile-bg: var(--icon-tile-bg);
+  --color-icon-tile-border: var(--icon-tile-border);
+
+  /* Desktop brand colors — useful as Tailwind `text-brand-finder`
+     etc. so we don't have to interpolate var() into inline styles. */
+  --color-brand-finder: var(--brand-finder);
+  --color-brand-sql-scratch: var(--brand-sql-scratch);
+  --color-brand-view-apps: var(--brand-view-apps);
+  --color-brand-system-objects: var(--brand-system-objects);
+  --color-brand-extensions: var(--brand-extensions);
+  --color-brand-connections: var(--brand-connections);
+  --color-brand-rvbbit-cache: var(--brand-rvbbit-cache);
+  --color-brand-cache: var(--brand-cache);
+  --color-brand-pg-monitor: var(--brand-pg-monitor);
+  --color-brand-lock-explorer: var(--brand-lock-explorer);
+  --color-brand-mvcc-explorer: var(--brand-mvcc-explorer);
+  --color-brand-semantic-tests: var(--brand-semantic-tests);
+  --color-brand-operators: var(--brand-operators);
+  --color-brand-specialists: var(--brand-specialists);
+  --color-brand-routing: var(--brand-routing);
+  --color-brand-mcp: var(--brand-mcp);
+  --color-brand-query-lens: var(--brand-query-lens);
+  --color-brand-kg: var(--brand-kg);
+  --color-brand-capability: var(--brand-capability);
+  --color-brand-warren: var(--brand-warren);
+  --color-brand-duck: var(--brand-duck);
+
+  --color-terminal: var(--terminal);
+  --color-terminal-dim: var(--terminal-dim);
+  --color-bevel-light: var(--bevel-light);
+  --color-bevel-dark: var(--bevel-dark);
+
+  --spacing-boxShadowX: var(--box-shadow-x);
+  --spacing-boxShadowY: var(--box-shadow-y);
+  --spacing-reverseBoxShadowX: calc(var(--box-shadow-x) * -1);
+  --spacing-reverseBoxShadowY: calc(var(--box-shadow-y) * -1);
+
+  --radius-base: 4px;
+  --shadow-shadow: var(--shadow);
+  --font-weight-base: 400;
+  --font-weight-heading: 600;
+
+  /* These reference the runtime-overridable :root variables (NOT a
+     literal stack). @theme inline would otherwise bake the literal
+     value straight into every `.font-sans` / `.font-mono` rule,
+     leaving the Font picker with nothing to change. */
+  --font-sans: var(--font-family-sans);
+  --font-mono: var(--font-family-mono);
+}
+
+@layer base {
+  html {
+    background: var(--background);
+    color-scheme: dark;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  body {
+    @apply text-foreground bg-background;
+    font-weight: var(--font-weight-base);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: var(--font-weight-heading);
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--chrome-bg); }
+  ::-webkit-scrollbar-thumb { background: var(--chrome-border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+}
+
+/* ─── Terminal / NeXTSTEP accents ─── */
+
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+.semantic-glow {
+  color: var(--syntax-function);
+  text-shadow:
+    0 0 10px color-mix(in oklch, var(--main) 45%, transparent),
+    0 0 3px color-mix(in oklch, var(--main) 25%, transparent);
+}
+
+.nextstep-panel {
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  border-right-color: var(--bevel-dark);
+  border-bottom-color: var(--bevel-dark);
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.av-toast {
+  animation: slide-in-right 0.18s ease-out both;
+}
+
+@keyframes rvbbit-boot-logo {
+  0%, 100% {
+    opacity: 0.72;
+    transform: translateY(0) scale(0.985);
+    filter: drop-shadow(0 0 0 color-mix(in oklch, var(--main) 0%, transparent));
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1);
+    filter: drop-shadow(0 0 18px color-mix(in oklch, var(--main) 30%, transparent));
+  }
+}
+
+@keyframes rvbbit-boot-sweep {
+  from { transform: translateX(-260%); }
+  to { transform: translateX(260%); }
+}
+
+@keyframes rvbbit-boot-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.rvbbit-boot-logo {
+  animation: rvbbit-boot-logo 1.45s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.rvbbit-boot-sweep {
+  animation: rvbbit-boot-sweep 1.45s cubic-bezier(0.33, 1, 0.68, 1) infinite;
+}
+
+.rvbbit-boot-progress {
+  animation: rvbbit-boot-progress 1.35s cubic-bezier(0.33, 1, 0.68, 1) both;
+  transform-origin: left center;
+}
+
+/* ─── Workspace canvases (5 desktops) ───
+ *
+ * All five layers stay mounted so window state survives a switch.
+ * Inactive layers are display:none — invisible and unable to catch
+ * pointer events. During a switch the two participating layers flip
+ * to display:block and slide: forward (1→5) sends the old desktop
+ * out left and brings the new one in from the right; backward
+ * mirrors it. The JS transition window is 300ms; keep anim ≤ that.
+ */
+.av-ws-layer { will-change: transform; }
+.av-ws-active { display: block; transform: translateX(0); }
+.av-ws-parked { display: none; }
+.av-ws-exit-fwd   { display: block; animation: av-ws-exit-fwd   280ms cubic-bezier(0.33, 1, 0.68, 1) both; }
+.av-ws-enter-fwd  { display: block; animation: av-ws-enter-fwd  280ms cubic-bezier(0.33, 1, 0.68, 1) both; }
+.av-ws-exit-back  { display: block; animation: av-ws-exit-back  280ms cubic-bezier(0.33, 1, 0.68, 1) both; }
+.av-ws-enter-back { display: block; animation: av-ws-enter-back 280ms cubic-bezier(0.33, 1, 0.68, 1) both; }
+
+@keyframes av-ws-exit-fwd   { from { transform: translateX(0); }      to { transform: translateX(-100%); } }
+@keyframes av-ws-enter-fwd  { from { transform: translateX(100%); }   to { transform: translateX(0); } }
+@keyframes av-ws-exit-back  { from { transform: translateX(0); }      to { transform: translateX(100%); } }
+@keyframes av-ws-enter-back { from { transform: translateX(-100%); }  to { transform: translateX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rvbbit-boot-logo,
+  .rvbbit-boot-sweep,
+  .rvbbit-boot-progress {
+    animation: none;
+  }
+
+  .av-ws-exit-fwd, .av-ws-exit-back { display: none; }
+  .av-ws-enter-fwd, .av-ws-enter-back {
+    display: block;
+    animation: none;
+    transform: translateX(0);
+  }
+}
+
+/* ── Shiki code-preview dual-theme switch ────────────────────────────
+   The CodePreview component renders with `defaultColor: false`, which
+   tells shiki to emit `--shiki-light` and `--shiki-dark` CSS variables
+   on every token without picking a default `color:`. These rules wire
+   them to the active theme so the preview block recolors instantly
+   when the user toggles light/dark — no re-highlight pass needed.
+   The `pre.shiki` background is unstyled (transparent) so the parent
+   block's doc-bg shows through. */
+.av-code-preview .shiki,
+.av-code-preview .shiki span {
+  background-color: transparent !important;
+  color: var(--shiki-light);
+}
+html.dark .av-code-preview .shiki,
+html.dark .av-code-preview .shiki span {
+  color: var(--shiki-dark);
+}
+.av-code-preview pre.shiki { margin: 0; padding: 0; background: transparent; }
+.av-code-preview pre.shiki code { font-family: inherit; font-size: inherit; }
+
+/* ── Plates — the built-in class vocabulary (KIT_PLATES_PLAN §1.6) ──
+   No custom CSS in plate templates; these classes + theme tokens are the
+   entire visual budget, so every plate looks native on every theme. */
+.plate-body { padding: 8px 10px; font-size: 12px; color: var(--foreground); }
+.plate-body h1, .plate-body h2 { font-size: 14px; font-weight: 600; margin: 2px 0 6px; }
+.plate-body h3 { font-size: 12px; font-weight: 600; margin: 2px 0 4px; }
+.plate-body p { color: color-mix(in oklch, var(--foreground) 72%, transparent); line-height: 1.45; margin-bottom: 5px; }
+.plate-body code { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--main); }
+.plate-section { margin-bottom: 10px; }
+.plate-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.plate-card { border: 1px solid var(--chrome-border); border-radius: 6px; padding: 6px 8px; background: color-mix(in oklch, var(--chrome-bg) 45%, transparent); }
+.plate-card .plate-card-title { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: color-mix(in oklch, var(--foreground) 45%, transparent); margin-bottom: 2px; }
+.plate-card .plate-card-value { font-size: 16px; font-weight: 650; color: var(--foreground); }
+.plate-card .plate-card-note { font-size: 10.5px; color: color-mix(in oklch, var(--foreground) 50%, transparent); margin-top: 2px; }
+.plate-card.ok { border-color: color-mix(in oklch, var(--success, #7de3b6) 45%, transparent); }
+.plate-card.ok .plate-card-value { color: var(--success, #7de3b6); }
+.plate-card.warn { border-color: color-mix(in oklch, var(--warning, #e8b572) 55%, transparent); }
+.plate-card.warn .plate-card-value { color: var(--warning, #e8b572); }
+.plate-card.bad { border-color: color-mix(in oklch, var(--destructive, #b5524a) 55%, transparent); }
+.plate-card.bad .plate-card-value { color: var(--destructive, #b5524a); }
+.plate-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.plate-table th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: color-mix(in oklch, var(--foreground) 45%, transparent); padding: 2px 6px; border-bottom: 1px solid var(--chrome-border); }
+.plate-table td { padding: 2.5px 6px; border-bottom: 1px solid color-mix(in oklch, var(--chrome-border) 50%, transparent); }
+.plate-row-flag { color: var(--warning, #e8b572); }
+.plate-button, .plate-body button[type="submit"], .plate-body button[rv-open-sql] {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in oklch, var(--main) 40%, transparent);
+  background: color-mix(in oklch, var(--main) 12%, transparent); color: var(--main);
+  border-radius: 5px; padding: 2.5px 8px; font-size: 11px; cursor: pointer;
+}
+.plate-button:hover, .plate-body button[type="submit"]:hover, .plate-body button[rv-open-sql]:hover { background: color-mix(in oklch, var(--main) 20%, transparent); }
+.plate-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; border: 1px solid var(--chrome-border); border-radius: 6px; padding: 6px 8px; background: color-mix(in oklch, var(--chrome-bg) 35%, transparent); margin-bottom: 8px; }
+.plate-form label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: color-mix(in oklch, var(--foreground) 50%, transparent); }
+.plate-form input, .plate-form select, .plate-form textarea {
+  border: 1px solid var(--chrome-border); background: color-mix(in oklch, var(--background) 60%, transparent);
+  color: var(--foreground); border-radius: 5px; padding: 3px 6px; font-size: 11.5px; outline: none; min-width: 130px;
+}
+.plate-form input:focus, .plate-form textarea:focus { border-color: color-mix(in oklch, var(--main) 50%, transparent); }
+.plate-metric { border: 1px solid var(--chrome-border); border-radius: 6px; padding: 7px 9px; background: color-mix(in oklch, var(--chrome-bg) 45%, transparent); }
+.plate-metric-value { font-size: 19px; font-weight: 700; color: var(--main); }
+.plate-metric-value span { font-size: 12px; margin-left: 4px; color: color-mix(in oklch, var(--foreground) 55%, transparent); }
+.plate-metric-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: color-mix(in oklch, var(--foreground) 50%, transparent); margin-top: 2px; }
+.plate-grid-island { height: 280px; border: 1px solid var(--chrome-border); border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+.plate-chart { border: 1px solid var(--chrome-border); border-radius: 6px; padding: 5px; margin-bottom: 8px; background: color-mix(in oklch, var(--chrome-bg) 35%, transparent); }
+.plate-island { margin-bottom: 0; }
+.plate-error { border: 1px dashed color-mix(in oklch, var(--destructive, #b5524a) 55%, transparent); color: var(--destructive, #b5524a); border-radius: 6px; padding: 6px 10px; font-size: 11px; margin: 6px 0; }
+
+/* plate layout vocabulary — bespoke arrangements from sanctioned classes
+   (no inline styles ever reach a plate; the sanitizer strips them) */
+.plate-split { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 8px; align-items: start; }
+.plate-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; align-items: start; }
+.plate-rail { display: flex; flex-direction: column; gap: 4px; }
+.plate-rail button { display: flex; justify-content: space-between; gap: 6px; width: 100%; text-align: left; border: 1px solid var(--chrome-border); border-radius: 5px; padding: 3.5px 8px; font-size: 11.5px; background: color-mix(in oklch, var(--chrome-bg) 35%, transparent); color: var(--foreground); cursor: pointer; }
+.plate-rail button:hover { border-color: color-mix(in oklch, var(--main) 45%, transparent); background: color-mix(in oklch, var(--main) 12%, transparent); }
+.plate-rail button small { color: color-mix(in oklch, var(--foreground) 45%, transparent); }
+.plate-rail button.active { border-color: color-mix(in oklch, var(--main) 65%, transparent); background: color-mix(in oklch, var(--main) 16%, transparent); color: var(--main); }
+.plate-rail button.active small { color: color-mix(in oklch, var(--main) 70%, transparent); }
+.plate-kv { display: grid; grid-template-columns: max-content 1fr; gap: 2.5px 10px; border: 1px solid var(--chrome-border); border-radius: 6px; padding: 6px 8px; background: color-mix(in oklch, var(--chrome-bg) 35%, transparent); margin-bottom: 8px; font-size: 11.5px; }
+.plate-kv dt { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: color-mix(in oklch, var(--foreground) 45%, transparent); align-self: center; }
+.plate-kv dd { color: var(--foreground); margin: 0; }
+.plate-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 7px; }
+.plate-toolbar button { border: 1px solid var(--chrome-border); border-radius: 999px; padding: 1.5px 9px; font-size: 11px; background: color-mix(in oklch, var(--chrome-bg) 35%, transparent); color: color-mix(in oklch, var(--foreground) 80%, transparent); cursor: pointer; }
+.plate-toolbar button:hover { border-color: color-mix(in oklch, var(--main) 50%, transparent); color: var(--main); }
+.plate-toolbar button.active { border-color: color-mix(in oklch, var(--main) 65%, transparent); background: color-mix(in oklch, var(--main) 16%, transparent); color: var(--main); }
+.plate-feed { display: flex; flex-direction: column; gap: 5px; }
+.plate-feed-item { border-left: 2px solid color-mix(in oklch, var(--main) 55%, transparent); border-radius: 0 5px 5px 0; padding: 4px 8px; background: color-mix(in oklch, var(--chrome-bg) 30%, transparent); }
+.plate-feed-meta { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: color-mix(in oklch, var(--foreground) 45%, transparent); margin-bottom: 2px; }
+.plate-banner { display: flex; align-items: baseline; gap: 8px; border: 1px solid var(--chrome-border); border-radius: 6px; padding: 5px 10px; margin-bottom: 8px; background: color-mix(in oklch, var(--main) 8%, transparent); }
+.plate-banner .plate-banner-big { font-size: 16px; font-weight: 700; color: var(--main); }
+.plate-banner .plate-banner-note { font-size: 11px; color: color-mix(in oklch, var(--foreground) 60%, transparent); }
+.plate-field { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: color-mix(in oklch, var(--foreground) 50%, transparent); }
+.plate-field select, .plate-field input { text-transform: none; letter-spacing: normal; }
+.plate-body select, .plate-body input[type="search"], .plate-body input[type="text"], .plate-body input[type="date"], .plate-body input[type="number"] {
+  border: 1px solid var(--chrome-border); border-radius: 5px; padding: 2.5px 6px; font-size: 11px;
+  background: color-mix(in oklch, var(--chrome-bg) 55%, transparent); color: var(--foreground); min-width: 110px;
+}
+.plate-body select:focus, .plate-body input:focus { border-color: color-mix(in oklch, var(--main) 50%, transparent); outline: none; }
+.plate-body input[type="range"] { accent-color: var(--main); min-width: 140px; }
+.plate-body input[type="checkbox"] { accent-color: var(--main); width: 14px; height: 14px; }
+.plate-field-inline { display: flex; align-items: center; gap: 6px; flex-direction: row; }
+.plate-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--chrome-border); margin-bottom: 8px; }
+.plate-tabs button { border: none; background: transparent; padding: 4px 10px; font-size: 11.5px; color: color-mix(in oklch, var(--foreground) 55%, transparent); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+.plate-tabs button:hover { color: var(--foreground); }
+.plate-tabs button.active { color: var(--main); border-bottom-color: var(--main); }
+.plate-pager { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; color: color-mix(in oklch, var(--foreground) 55%, transparent); }
+.plate-chip { display: inline-block; border: 1px solid var(--chrome-border); border-radius: 999px; padding: 1px 8px; font-size: 10px; line-height: 1.5; color: color-mix(in oklch, var(--foreground) 70%, transparent); }
+.plate-chip.ok { border-color: color-mix(in oklch, var(--success, #7de3b6) 45%, transparent); color: var(--success, #7de3b6); }
+.plate-chip.warn { border-color: color-mix(in oklch, var(--warning, #e8b572) 55%, transparent); color: var(--warning, #e8b572); }
+.plate-chip.bad { border-color: color-mix(in oklch, var(--destructive, #b5524a) 55%, transparent); color: var(--destructive, #b5524a); }
+
+/* ── Plate palette tier 1: placement-as-data (2026-07-18) ─────────────
+   Layout comes from CLASSES computed by SQL — the tones-as-data idiom
+   generalized. plate-cal is a 7-column grid: SQL emits c1..c7 per chip
+   (r1..r8 for month grids); dense flow stacks chips under their day. */
+.plate-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 4px; margin-bottom: 8px; }
+.plate-cal .c1 { grid-column: 1; } .plate-cal .c2 { grid-column: 2; } .plate-cal .c3 { grid-column: 3; }
+.plate-cal .c4 { grid-column: 4; } .plate-cal .c5 { grid-column: 5; } .plate-cal .c6 { grid-column: 6; }
+.plate-cal .c7 { grid-column: 7; }
+.plate-cal .r1 { grid-row: 1; } .plate-cal .r2 { grid-row: 2; } .plate-cal .r3 { grid-row: 3; }
+.plate-cal .r4 { grid-row: 4; } .plate-cal .r5 { grid-row: 5; } .plate-cal .r6 { grid-row: 6; }
+.plate-cal .r7 { grid-row: 7; } .plate-cal .r8 { grid-row: 8; }
+.plate-cal-head { grid-row: 1; padding: 3px 6px; border-bottom: 2px solid var(--chrome-border); font-size: 10.5px; }
+.plate-cal-head b { display: block; text-transform: uppercase; letter-spacing: .06em; font-size: 10px; color: color-mix(in oklch, var(--foreground) 75%, transparent); }
+.plate-cal-head span { font-size: 10px; color: color-mix(in oklch, var(--foreground) 45%, transparent); }
+.plate-cal-chip { padding: 4px 6px; margin: 0; }
+.plate-cal-chip .plate-card-title { font-size: 10px; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.plate-cal-chip .plate-card-value { font-size: 11.5px; font-weight: 600; }
+.plate-cal-chip .plate-card-note { font-size: 10px; }
+
+/* Capacity bar: SQL rounds a percentage to a w0..w100 class (5% steps). */
+.plate-bar { height: 6px; border-radius: 999px; background: color-mix(in oklch, var(--foreground) 12%, transparent); overflow: hidden; margin: 5px 0 3px; }
+.plate-bar > div { height: 100%; border-radius: inherit; background: var(--main); }
+.plate-bar > .ok { background: var(--success, #7de3b6); } .plate-bar > .warn { background: var(--warning, #e8b572); } .plate-bar > .bad { background: var(--destructive, #b5524a); }
+.plate-bar > .w0 { width: 0; } .plate-bar > .w5 { width: 5%; } .plate-bar > .w10 { width: 10%; } .plate-bar > .w15 { width: 15%; }
+.plate-bar > .w20 { width: 20%; } .plate-bar > .w25 { width: 25%; } .plate-bar > .w30 { width: 30%; } .plate-bar > .w35 { width: 35%; }
+.plate-bar > .w40 { width: 40%; } .plate-bar > .w45 { width: 45%; } .plate-bar > .w50 { width: 50%; } .plate-bar > .w55 { width: 55%; }
+.plate-bar > .w60 { width: 60%; } .plate-bar > .w65 { width: 65%; } .plate-bar > .w70 { width: 70%; } .plate-bar > .w75 { width: 75%; }
+.plate-bar > .w80 { width: 80%; } .plate-bar > .w85 { width: 85%; } .plate-bar > .w90 { width: 90%; } .plate-bar > .w95 { width: 95%; }
+.plate-bar > .w100 { width: 100%; }
+
+/* Hue ramp: stable category accents (job types, channels…) — SQL maps a
+   category to hue-1..hue-8; cards get an accent edge, chips/dots tint. */
+.hue-1 { --plate-hue: oklch(72% 0.13 20); } .hue-2 { --plate-hue: oklch(74% 0.13 65); }
+.hue-3 { --plate-hue: oklch(74% 0.13 110); } .hue-4 { --plate-hue: oklch(74% 0.12 155); }
+.hue-5 { --plate-hue: oklch(74% 0.11 200); } .hue-6 { --plate-hue: oklch(72% 0.12 245); }
+.hue-7 { --plate-hue: oklch(70% 0.13 290); } .hue-8 { --plate-hue: oklch(71% 0.14 335); }
+.plate-card[class*="hue-"] { border-left: 3px solid var(--plate-hue); }
+.plate-chip[class*="hue-"] { border-color: color-mix(in oklch, var(--plate-hue) 55%, transparent); color: var(--plate-hue); }
+.plate-dot[class*="hue-"] { background: var(--plate-hue); }
+
+/* Small marks: avatar initials (SQL computes them), status dots, and an
+   honest empty state (pair with an rv-if flag column). */
+.plate-avatar { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in oklch, var(--main) 22%, transparent); color: var(--main); font-size: 9px; font-weight: 700; letter-spacing: .02em; flex: none; }
+.plate-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: color-mix(in oklch, var(--foreground) 35%, transparent); }
+.plate-dot.ok { background: var(--success, #7de3b6); } .plate-dot.warn { background: var(--warning, #e8b572); } .plate-dot.bad { background: var(--destructive, #b5524a); }
+.plate-empty { padding: 9px; text-align: center; font-size: 11px; color: color-mix(in oklch, var(--foreground) 40%, transparent); border: 1px dashed var(--chrome-border); border-radius: 8px; }
+
+/* ── rv-board island: kanban whose columns come from rows ─────────────
+   Drag a chip to another column → the plate's named action ({id, to}).
+   .drop highlights the hovered target; data-busy dims during the write. */
+.plate-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 1fr); gap: 6px; align-items: start; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; }
+.plate-board[data-busy] { opacity: .6; pointer-events: none; }
+.plate-board-col { border: 1px solid var(--chrome-border); border-radius: 6px; padding: 5px; min-height: 70px; background: color-mix(in oklch, var(--chrome-bg) 30%, transparent); transition: border-color .12s, background-color .12s; }
+.plate-board-col.drop { border-color: var(--main); background: color-mix(in oklch, var(--main) 10%, transparent); }
+.plate-board-col > h4 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 5px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: color-mix(in oklch, var(--foreground) 70%, transparent); }
+.plate-board-col > h4 > span { font-size: 10px; border: 1px solid var(--chrome-border); border-radius: 999px; padding: 0 6px; color: color-mix(in oklch, var(--foreground) 45%, transparent); }
+.plate-board-chip { margin-bottom: 5px; padding: 4px 7px; }
+.plate-board-chip[draggable="true"] { cursor: grab; }
+.plate-board-chip[draggable="true"]:active { cursor: grabbing; }
+.plate-board-chip .plate-card-title { font-size: 10px; }
+.plate-board-chip .plate-card-value { font-size: 12px; font-weight: 600; }
+.plate-board-chip .plate-card-note { font-size: 10px; }
+.plate-board-col .plate-empty { padding: 7px; font-size: 10px; }

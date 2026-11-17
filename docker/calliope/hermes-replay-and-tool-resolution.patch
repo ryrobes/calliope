@@ -1,0 +1,113 @@
+diff --git a/agent/agent_runtime_helpers.py b/agent/agent_runtime_helpers.py
+--- a/agent/agent_runtime_helpers.py
++++ b/agent/agent_runtime_helpers.py
+@@ -2468,6 +2468,11 @@
+     def _strip_tool_suffix(s: str) -> str | None:
+         lc = s.lower()
+         return next((s[: -len(sfx)].rstrip("_-") for sfx in ("_tool", "-tool", "tool") if lc.endswith(sfx)), None)
++    # Remote operation names are identities, including suffixes such as _tool.
++    # Only exact session-scoped deferred names may be rerouted by validation.
++    remote_prefixes = ("mcp__", "connectors__")
++    if _norm(tool_name).startswith(remote_prefixes):
++        return None
+     # Cheap fast-paths first.
+     lowered = tool_name.lower()
+     if lowered in agent.valid_tool_names:
+@@ -2486,7 +2491,13 @@
+     for c in cands:
+         if c and c in agent.valid_tool_names:
+             return c
+-    matches = get_close_matches(lowered, agent.valid_tool_names, n=1, cutoff=0.7)
++    # MCP/connector names identify different operations, not interchangeable
++    # spellings. In particular, workspace SQL must never become read-only SQL,
++    # nor SQL recall a Sketch read. Exact deferred names use the scoped bridge
++    # in turn_tool_validation; an unknown name gets the usual discovery error.
++    local_names = [name for name in agent.valid_tool_names
++                   if not _norm(name).startswith(remote_prefixes)]
++    matches = get_close_matches(lowered, local_names, n=1, cutoff=0.7)
+     return matches[0] if matches else None
+
+
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -1669,6 +1669,13 @@
+             setattr(state, f.name, value)
+         elif value:
+             setattr(state, f.name, True)
++    if any(f.name == "messages" for f in fields(verdict)):
++        # Every history-producing phase must move both current-turn trackers.
++        # Post-tool and preflight compression return fresh rows but no index;
++        # retaining the old index can split a completed tool block during replay
++        # and replace successful results with synthetic orphan notices.
++        from agent.turn_context_compaction import _reanchor
++        state.current_turn_user_idx = _reanchor(agent, state.messages, state.user_message)
+     return verdict
+
+
+diff --git a/agent/turn_context.py b/agent/turn_context.py
+--- a/agent/turn_context.py
++++ b/agent/turn_context.py
+@@ -1132,7 +1132,12 @@
+     from agent.conversation_loop import _clone_message_for_send
+     from agent.replay_cleanup import canonicalize_replay_history
+
+-    has_current = isinstance(current_turn_user_idx, int) and 0 <= current_turn_user_idx < len(messages)
++    has_current = (
++        isinstance(current_turn_user_idx, int)
++        and 0 <= current_turn_user_idx < len(messages)
++        and isinstance(messages[current_turn_user_idx], dict)
++        and messages[current_turn_user_idx].get("role") == "user"
++    )
+     current_turn_message = messages[current_turn_user_idx] if has_current else None
+
+     # Replay consumers canonicalize the persisted prefix on read; the request copy must
+diff --git a/agent/turn_tool_validation.py b/agent/turn_tool_validation.py
+--- a/agent/turn_tool_validation.py
++++ b/agent/turn_tool_validation.py
+@@ -69,6 +69,36 @@
+     }, "truncated", True)
+
+
++def _route_exact_deferred_tool_call(agent: Any, tc: Any) -> bool:
++    """Use the native bridge for an exact, session-scoped deferred capability.
++
++    This changes only the dispatch envelope. Tool identity, arguments and call ID
++    survive; the executor still performs its normal scope/schema/approval checks.
++    """
++    if "tool_call" not in agent.valid_tool_names:
++        return False
++    from agent.tool_executor import _tool_search_scoped_names
++
++    name = tc.function.name
++    if name not in _tool_search_scoped_names(agent):
++        return False
++    arguments = tc.function.arguments
++    try:
++        if isinstance(arguments, str):
++            arguments = json.loads(arguments) if arguments.strip() else {}
++        elif arguments is None:
++            arguments = {}
++        if not isinstance(arguments, dict):
++            return False
++        envelope = json.dumps({"calls": [{"name": name, "arguments": arguments}]})
++    except (TypeError, ValueError):
++        return False
++    tc.function.name = "tool_call"
++    tc.function.arguments = envelope
++    logger.info("Routed exact deferred tool %s through tool_call", name)
++    return True
++
++
+ def validate_tool_calls(
+     agent: Any, assistant_message: Any, finish_reason: str, *, messages: List[Dict[str, Any]],
+     conversation_history: Any, api_call_count: int, effective_task_id: Any,
+@@ -97,6 +127,8 @@
+     # Repair mismatched tool names before validating (model hallucinations).
+     for tc in tool_calls:
+         if tc.function.name not in valid_names:
++            if _route_exact_deferred_tool_call(agent, tc):
++                continue
+             repaired = agent._repair_tool_call(tc.function.name)
+             if repaired:
+                 agent._vprint(f"{agent.log_prefix}🔧 Auto-repaired tool name: '{tc.function.name}' -> '{repaired}'",

@@ -1,0 +1,135 @@
+name: clover-selfhosted
+# Generate the configuration with scripts/clover/configure.py.
+services:
+  clover:
+    image: calliope-clover:selfhosted
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rvbbit-hutch
+    command: [--config, /etc/hutch/hutch.json]
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR:?Set CLOVER_CONFIG_DIR}/providers.env
+        format: raw
+    volumes:
+      - ${CLOVER_CONFIG_DIR}/hutch.json:/etc/hutch/hutch.json:ro
+      - ${CLOVER_CONFIG_DIR}/tenants.json:/etc/hutch/tenants.json:ro
+      - clover_meter:/var/lib/hutch
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials:ro
+    ports:
+      - ${CLOVER_BIND:-127.0.0.1:18090}:8090
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:8090/healthz]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      clover-decisions:
+        condition: service_started
+      clover-web:
+        condition: service_started
+      clover-utilities:
+        condition: service_started
+      clover-embeddings:
+        condition: service_started
+        required: false
+  clover-decisions:
+    image: calliope-clover-decisions:selfhosted
+    build: ../services/clover/decisions
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+    volumes:
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials:ro
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR}/providers.env
+        format: raw
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8093/health',timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  clover-web:
+    image: calliope-clover-web:selfhosted
+    build: ../services/clover/web
+    environment:
+      CLOVER_WEB_BIND: 0.0.0.0:8091
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 2.0
+  clover-utilities:
+    image: calliope-clover-utilities:selfhosted
+    build: ../services/clover/utilities
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+    volumes:
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials:ro
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR}/providers.env
+        format: raw
+    depends_on:
+      clover-web:
+        condition: service_started
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 2.0
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8094/health',timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  clover-research:
+    profiles: [research]
+    image: calliope-clover-research:selfhosted
+    build: ../services/clover/research
+    env_file:
+      - path: ${CLOVER_CONFIG_DIR}/providers.env
+        format: raw
+      - path: ${CLOVER_CONFIG_DIR}/research.env
+        format: raw
+    environment:
+      OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
+      CLOVER_RESEARCH_BIND: 0.0.0.0:8092
+      CLOVER_RESEARCH_SCRAPE_URL: http://clover-web:8091/v1/scrape
+    volumes:
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials:ro
+    depends_on:
+      clover-web:
+        condition: service_started
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 2.0
+  clover-embeddings:
+    profiles: [cpu-embeddings]
+    image: calliope-clover-embeddings:selfhosted
+    build: ../services/clover/embeddings
+    environment:
+      EMBED_THREADS: ${CLOVER_EMBED_THREADS:-2}
+    volumes:
+      - clover_models:/models
+    restart: unless-stopped
+    shm_size: 256mb
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/health',timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 300s
+volumes:
+  clover_meter:
+  clover_models:

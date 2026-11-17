@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Team tasks</title><style>
+:root{color-scheme:light dark}body{font:16px system-ui;margin:0;padding:clamp(18px,4vw,40px);color:var(--artifact-text,CanvasText);background:var(--artifact-bg,Canvas)}
+main{max-width:900px;margin:auto}h1{margin:0 0 8px}p{line-height:1.5}form{display:flex;gap:10px;margin:24px 0}input{flex:1;min-width:0}input,button{font:inherit;padding:10px 14px;border:1px solid currentColor;border-radius:6px}button{cursor:pointer}button:disabled{opacity:.55;cursor:wait}ul{padding:0;list-style:none}li{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid color-mix(in srgb,currentColor 15%,transparent)}li span{flex:1;overflow-wrap:anywhere}li[data-done=true] span{text-decoration:line-through;opacity:.65}#message{min-height:1.5em}#retry[hidden]{display:none}
+</style></head><body><main>
+<h1>Team tasks</h1><p>A shared list. Changes are saved when you add or complete a task.</p>
+<form id="add"><input id="title" aria-label="Task title" maxlength="200" placeholder="Add a task…" required><button>Add task</button></form>
+<p id="message" role="status" aria-live="polite"></p><button id="retry" hidden>Retry the same save</button><ul id="tasks"></ul>
+</main><script>
+const list=document.querySelector('#tasks'),message=document.querySelector('#message'),retry=document.querySelector('#retry');
+let pendingRetry=null,busy=false;
+function lock(value){busy=value;document.querySelectorAll('button,input').forEach(el=>el.disabled=value);}
+async function load(){
+  const data=await rvbbitQuery('SELECT id,title,status,version FROM calliope_apps.app_tasks ORDER BY title,id');
+  list.replaceChildren();
+  for(const task of data.rows){
+    const row=document.createElement('li'),label=document.createElement('span'),button=document.createElement('button');
+    row.dataset.done=task.status==='done';label.textContent=task.title;
+    button.textContent=task.status==='done'?'Reopen':'Complete';button.disabled=busy;
+    button.onclick=()=>save('set_status',{id:task.id,status:task.status==='done'?'open':'done',version:task.version});
+    row.append(label,button);list.append(row);
+  }
+}
+async function save(name,inputs,requestKey){
+  if(busy)return;lock(true);message.textContent='Saving…';retry.hidden=true;
+  let result;
+  try{result=await rvbbitAction(name,inputs,requestKey?{requestKey}:{});}
+  catch(error){
+    if(error.code==='CONFLICT'){
+      message.textContent='Someone changed this task. Reloaded the latest version; review it before trying again.';
+      try{await load();}catch(_){message.textContent+=' Reload failed; refresh the page.';}
+    }else{
+      message.textContent=error.message;
+      if(!error.status || error.status>=500){
+        pendingRetry={name,inputs,requestKey:error.requestKey};retry.hidden=!error.requestKey;
+      }
+    }
+    lock(false);return;
+  }
+  pendingRetry=null;if(name==='add_task')document.querySelector('#title').value='';
+  // A failed follow-up read must never be presented as a failed save.
+  try{await load();message.textContent='Saved.';}
+  catch(_){message.textContent='Saved, but the list could not reload. Refresh to see the new state.';}
+  lock(false);
+}
+document.querySelector('#add').onsubmit=event=>{event.preventDefault();const title=document.querySelector('#title').value.trim();if(title)save('add_task',{title});};
+retry.onclick=()=>{if(pendingRetry)save(pendingRetry.name,pendingRetry.inputs,pendingRetry.requestKey);};
+load().catch(error=>{message.textContent=error.message;});
+</script></body></html>

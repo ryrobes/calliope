@@ -1,0 +1,54 @@
+[package]
+name = "pg_rvbbit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["pg18"]
+pg18 = ["pgrx/pg18"]
+pg_test = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("pg13", "pg14", "pg15", "pg16", "pg17"))'] }
+
+[dependencies]
+pgrx = { workspace = true }
+rvbbit_storage = { path = "../rvbbit_storage" }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonwebtoken = { workspace = true }
+arrow = { workspace = true }
+parquet = { workspace = true, features = ["zstd"] }
+reqwest = { workspace = true }
+blake3 = { workspace = true }
+sha2 = { workspace = true }
+ring = "0.17"
+libc = { workspace = true }
+crossbeam-channel = { workspace = true }
+parking_lot = { workspace = true }
+postgres = { workspace = true }
+lru = { workspace = true }
+tiktoken-rs = { workspace = true }
+roaring = { workspace = true }
+fastembed = { workspace = true }
+datafusion = { workspace = true }
+# Object-store backing for cold-tier accel files. Pinned to 0.13 to match the
+# version DataFusion 55 resolves to (unified with Vortex), so stores we build
+# register cleanly with its runtime_env. aws/gcp enable the S3 + GCS backends
+# (credentials from env / instance metadata).
+object_store = { version = "0.13", features = ["aws", "gcp"] }
+# dyn-safe ObjectStore calls (delete_stream) need BoxStream construction.
+futures = "0.3"
+url = "2"
+tokio = { workspace = true }
+vortex = { workspace = true }
+vortex-datafusion = { workspace = true }
+
+[dev-dependencies]
+pgrx-tests = { workspace = true }

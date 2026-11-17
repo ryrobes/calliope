@@ -1,0 +1,176 @@
+/* Meaning map: leveled diagrams in the desk's square, quiet language.
+   Kinds take the theme's chart palette so light and dark both hold. */
+.desk-map{display:flex;flex-direction:column;flex:1;min-height:0;gap:14px;padding-top:16px}
+#desk-content.desk-mapping{padding-bottom:16px}
+.dg-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;flex:none}
+.dg-toolbar>input{flex:1 1 180px;min-width:150px;max-width:340px;margin-left:auto;height:var(--desk-control,34px);border-radius:0;background:color-mix(in oklch,var(--panel) 62%,transparent);font:var(--rvbbit-type-body)/1 var(--font);padding:0 12px;border:1px solid var(--line);color:var(--ink)}
+.dg-levels{display:flex;border:1px solid var(--line);background:color-mix(in oklch,var(--page) 62%,transparent);max-width:100%;overflow-x:auto}
+#meaning-desk .dg-levels button{display:flex;align-items:baseline;gap:8px;min-height:32px;padding:6px 12px;border:0;border-right:1px solid var(--line);border-radius:0;font:var(--rvbbit-type-body) var(--font);white-space:nowrap;letter-spacing:0;text-transform:none}
+#meaning-desk .dg-levels button:last-child{border-right:0}
+.dg-levels b{font:650 var(--rvbbit-type-small)/1 var(--font);letter-spacing:.04em}
+#meaning-desk .dg-levels button[aria-pressed=true]{background:var(--amber,var(--accent));color:var(--main-foreground,#101018)}
+#meaning-desk .dg-levels button:disabled{opacity:.38;cursor:not-allowed}
+#meaning-desk .dg-toolbar>button{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:6px 12px;border:1px solid var(--line);border-radius:0;background:var(--desk-surface,var(--panel));font:var(--rvbbit-type-body) var(--font);letter-spacing:0;text-transform:none;white-space:nowrap}
+#meaning-desk .dg-toolbar>button svg{width:13px;height:13px;flex:none}
+#meaning-desk .dg-toolbar>button[aria-pressed=true]{color:var(--amber,var(--accent));border-color:color-mix(in oklch,var(--amber,var(--accent)) 55%,var(--line));background:color-mix(in oklch,var(--amber,var(--accent)) 10%,transparent)}
+.dg-mode{flex:none}
+
+.desk-dg-frame{position:relative;flex:1;min-height:340px;display:flex}
+.dg-slot{flex:1;min-width:0;display:flex}
+.desk-landscape{display:flex;flex-direction:column;gap:12px;margin:8px 0 28px}
+.desk-landscape .desk-dg-frame{flex:none;height:clamp(320px,48vh,560px)}
+/* An object's map fills its panel instead of scrolling inside it. */
+.desk-object-body:has(>.desk-dg-object){display:flex;flex-direction:column;overflow:hidden}
+.desk-dg-object{padding-top:0;min-height:420px}
+.desk-dg-object .desk-dg-frame{min-height:300px}
+
+.dg-canvas{--dg-ink:color-mix(in oklch,var(--ink) 46%,transparent);position:relative;flex:1;min-width:0;overflow:hidden;isolation:isolate;border:1px solid var(--line);
+ background:radial-gradient(circle at 1px 1px,color-mix(in oklch,var(--ink) 9%,transparent) 1px,transparent 0) 0 0/22px 22px,color-mix(in oklch,var(--page) 46%,transparent)}
+.dg-viewport{position:absolute;inset:0;overflow:hidden;cursor:grab;touch-action:none;outline:none}
+.dg-viewport.dg-dragging{cursor:grabbing}
+.dg-viewport:focus-visible{box-shadow:inset 0 0 0 2px color-mix(in oklch,var(--accent) 65%,transparent)}
+.dg-world{position:absolute;left:0;top:0;transform-origin:0 0}
+/* Same duration and curve as the cards, so an anchored object stays put. */
+.dg-world.dg-glide{transition:transform .55s cubic-bezier(.2,.75,.2,1)}
+.dg-edges{position:absolute;left:0;top:0;overflow:visible;z-index:10;pointer-events:none}
+
+[data-kind=area]{--dg-kind:var(--amber,var(--chart-1,#f5b446))}
+[data-kind=group]{--dg-kind:var(--chart-3,#80b9de)}
+[data-kind=relation]{--dg-kind:var(--chart-2,#68c7b2)}
+[data-kind=cube]{--dg-kind:var(--chart-4,#bb9cdb)}
+[data-kind=metric]{--dg-kind:var(--chart-5,#df765f)}
+[data-kind=idea],[data-kind=breakdown],[data-kind=suggestions]{--dg-kind:var(--muted)}
+[data-kind=artifact]{--dg-kind:var(--chart-6,#da9abb)}
+
+/* .dg-layer> outranks the page-wide button transition in meaning.css. */
+.dg-layer>.dg-node,.dg-layer>.dg-box{position:absolute;box-sizing:border-box;transition:left .55s cubic-bezier(.2,.75,.2,1),top .55s cubic-bezier(.2,.75,.2,1),width .55s cubic-bezier(.2,.75,.2,1),height .55s cubic-bezier(.2,.75,.2,1),opacity .3s ease,transform .3s ease,border-color .15s,box-shadow .15s}
+#meaning-desk .dg-node{z-index:20!important;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:8px 12px 8px 15px;margin:0;text-align:left;border-radius:0;letter-spacing:0;text-transform:none;
+ color:var(--ink);font:inherit;cursor:pointer;overflow:hidden;background:var(--panel);border:1px solid color-mix(in oklch,var(--dg-kind) 40%,var(--line));box-shadow:inset 3px 0 var(--dg-kind),0 1px 3px rgb(0 0 0/.16)}
+#meaning-desk .dg-node:hover{border-color:color-mix(in oklch,var(--dg-kind) 75%,var(--line))}
+#meaning-desk .dg-node:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.dg-node>*{flex:none}
+.dg-tag{display:block;font:650 9.5px/1.25 var(--font);letter-spacing:.09em;text-transform:uppercase;color:var(--dg-kind)}
+.dg-node strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:100%;font-size:13px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
+.dg-node small{display:block;max-width:100%;font-size:11px;line-height:1.35;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Tables and groups lead with what Meaning inferred (the grain, the purpose);
+   the physical table and its size become a quiet footnote. */
+.dg-node[data-kind=relation] small,.dg-node[data-kind=group] small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;font-size:11.5px;line-height:1.3;color:color-mix(in oklch,var(--ink) 72%,transparent)}
+.dg-meta{display:block;max-width:100%;margin-top:1px;font:10.5px/1.35 var(--mono);color:var(--muted);opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dg-tag svg{display:inline-block;width:10px;height:10px;margin:-1px 5px 0 0;vertical-align:-1px;fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}
+.dg-tag i{font-style:normal;opacity:.7;letter-spacing:.04em;text-transform:none}
+#meaning-desk .dg-node[data-support]{background:color-mix(in oklch,var(--panel) 72%,transparent);box-shadow:inset 3px 0 color-mix(in oklch,var(--map-kind) 42%,transparent),0 1px 2px rgb(0 0 0/.1)}
+#meaning-desk .dg-node[data-support] strong{font-weight:500}
+.dg-value{font-size:17px;font-weight:500;line-height:1.15;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.dg-node[data-kind=idea],.dg-node[data-kind=breakdown],.dg-node[data-external]{border-style:dashed}
+.dg-node[data-kind=group] strong{font-size:13.5px}
+.dg-viewing{display:inline-block;margin-left:6px;padding:1px 6px;font:650 9.5px/1.4 var(--font);font-style:normal;letter-spacing:.07em;text-transform:uppercase;vertical-align:1px;background:var(--dg-kind);color:var(--main-foreground,#101018)}
+.dg-node .dg-viewing{position:absolute;top:8px;right:8px;margin:0}
+
+.dg-box{border:1px solid color-mix(in oklch,var(--dg-kind) 34%,var(--line));background:color-mix(in oklch,var(--dg-kind) 5%,color-mix(in oklch,var(--panel) 50%,transparent))}
+.dg-box[data-kind=area]{background:color-mix(in oklch,var(--dg-kind) 3.5%,color-mix(in oklch,var(--page) 30%,transparent))}
+.dg-box[data-kind=group]{background:color-mix(in oklch,var(--dg-kind) 6%,color-mix(in oklch,var(--panel) 62%,transparent))}
+.dg-box[data-kind=suggestions]{border-style:dashed;background:transparent}
+.dg-box[data-external]{border-style:dashed}
+#meaning-desk .dg-box-head{position:absolute;left:0;top:0;right:0;display:block;padding:11px 16px 0;margin:0;border:0;border-radius:0;background:none;text-align:left;color:var(--ink);font:inherit;letter-spacing:0;text-transform:none;cursor:pointer;overflow:hidden}
+.dg-box-head .dg-tag{display:inline-block}
+.dg-box-head strong{display:block;margin-top:2px;font-size:14px;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dg-box-head small{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#meaning-desk .dg-box-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.dg-box.is-picked{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+
+.dg-edge{color:var(--dg-ink);transition:opacity .2s,color .2s}
+.dg-line{fill:none;stroke:currentColor;stroke-width:1.4;vector-effect:non-scaling-stroke}
+.dg-arrow{fill:currentColor}
+.dg-edge[data-state=association] .dg-line,.dg-edge[data-state=unverified] .dg-line,.dg-edge[data-state=proposed] .dg-line,.dg-edge[data-state=implied] .dg-line,.dg-edge[data-state=bridged] .dg-line{stroke-dasharray:5 4}
+.dg-edge[data-state=contradicted]{color:color-mix(in oklch,var(--danger,#df765f) 75%,transparent)}
+.dg-edge[data-state=contradicted] .dg-line{stroke-dasharray:2 4}
+.dg-label rect{fill:var(--panel);stroke:color-mix(in oklch,currentColor 45%,transparent);stroke-width:.8}
+.dg-label text{font:500 11px var(--font);fill:var(--muted);dominant-baseline:central;text-anchor:middle}
+.dg-edges-hidden{opacity:0}
+.dg-edges-in .dg-edge{animation:dg-fade .2s both}
+.dg-edges-in .dg-arrow,.dg-edges-in .dg-label{animation:dg-fade .3s .38s both}
+@keyframes dg-fade{from{opacity:0}}
+/* Start positions are placed without transitions; the morph then runs. */
+.dg-instant>.dg-node,.dg-instant>.dg-box{transition:none!important}
+.dg-entering{opacity:0!important}
+.dg-leaving{opacity:0!important;pointer-events:none}
+
+.dg-focused .dg-node:not(.is-near){opacity:.32}
+.dg-focused .dg-edge:not(.is-lit){opacity:.14}
+.dg-edge.is-lit{color:var(--accent)}
+.dg-edge.is-lit .dg-line{stroke-width:2.2}
+.dg-edge.is-lit .dg-label text{fill:var(--ink)}
+#meaning-desk .dg-node.is-picked{border-color:var(--accent);box-shadow:inset 3px 0 var(--dg-kind),0 0 0 2px var(--accent)}
+.dg-searching .dg-node:not(.is-match){opacity:.28}
+.dg-searching .dg-edge{opacity:.25}
+#meaning-desk .dg-node.is-match{border-color:var(--accent)}
+.dg-crossing .dg-edge:not([data-crossing]){opacity:.12}
+.dg-crossing .dg-edge[data-crossing]{color:var(--amber,var(--accent));opacity:1}
+.dg-crossing .dg-edge[data-crossing] .dg-line{stroke-width:2.4}
+
+.dg-controls{position:absolute;left:12px;bottom:12px;z-index:30;display:flex;flex-direction:column;border:1px solid var(--line);background:var(--panel)}
+#meaning-desk .dg-controls button{display:grid;place-items:center;width:32px;height:30px;padding:0;margin:0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;color:var(--ink);font:500 16px/1 var(--font)}
+#meaning-desk .dg-controls button:last-child{border-bottom:0}
+.dg-controls svg{width:15px;height:15px}
+.dg-status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;margin:0;padding:10px 14px;background:var(--panel);border:1px solid var(--line);color:var(--muted);font-size:var(--rvbbit-type-body)}
+
+.dg-legend{position:absolute;right:12px;bottom:12px;z-index:30;display:flex;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 80px);border:1px solid var(--line);background:color-mix(in oklch,var(--panel) 92%,transparent)}
+#meaning-desk .dg-legend button{display:flex;align-items:center;gap:7px;min-height:30px;padding:4px 10px;margin:0;border:0;border-right:1px solid var(--line);border-radius:0;background:none;font:var(--rvbbit-type-small) var(--font);letter-spacing:0;text-transform:none;white-space:nowrap}
+#meaning-desk .dg-legend button:last-child{border-right:0}
+.dg-legend i{display:block;width:10px;height:10px;background:var(--dg-kind)}
+.dg-legend i[data-kind=idea]{background:none;border:1px dashed var(--dg-kind)}
+.dg-legend span{color:var(--muted);font-variant-numeric:tabular-nums}
+#meaning-desk .dg-legend button[aria-pressed=false]{color:var(--muted);text-decoration:line-through}
+#meaning-desk .dg-legend button[aria-pressed=false] i{opacity:.35}
+
+.dg-inspector{position:absolute;top:12px;right:12px;bottom:56px;z-index:40;width:min(340px,calc(100% - 24px));display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);box-shadow:0 12px 32px rgb(0 0 0/.24);animation:dg-slide .22s ease both}
+@keyframes dg-slide{from{opacity:0;transform:translateX(12px)}}
+.dg-inspector>header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 16px 10px;border-bottom:1px solid var(--line)}
+.dg-inspector>header h2{font-size:18px;font-weight:650;letter-spacing:-.012em;line-height:1.3;overflow-wrap:anywhere}
+#meaning-desk .dg-inspector>header .desk-icon-button{flex:none;width:32px;height:32px;padding:7px;border:0;background:none}
+.dg-inspector-body{flex:1;min-height:0;overflow:auto;padding:12px 16px 16px;font-size:var(--rvbbit-type-body);line-height:1.55}
+.dg-inspector-body>p{margin:0 0 10px}
+.dg-inspector-body h3{margin:16px 0 6px;color:var(--muted);font:650 var(--rvbbit-type-small)/1.4 var(--font);letter-spacing:.07em;text-transform:uppercase}
+.dg-reading{font-size:30px;font-weight:500;letter-spacing:-.03em;line-height:1.15;font-variant-numeric:tabular-nums}
+.dg-mono{font-family:var(--mono);overflow-wrap:anywhere}
+.dg-list{list-style:none;margin:0;padding:0}
+.dg-list li{padding:7px 0;border-bottom:1px solid var(--line)}
+.dg-list li:last-child{border-bottom:0}
+#meaning-desk .dg-list button{display:block;padding:0;margin:0;border:0;background:none;color:var(--accent);font:600 var(--rvbbit-type-body)/1.4 var(--font);text-align:left;letter-spacing:0;text-transform:none;overflow-wrap:anywhere}
+.dg-list small{display:block;color:var(--muted);font-size:var(--rvbbit-type-small);line-height:1.45;overflow-wrap:anywhere}
+.dg-inspector>footer{flex:none;padding:12px 16px;border-top:1px solid var(--line)}
+.dg-inspector>footer a{display:inline-flex;align-items:center;min-height:34px;padding:6px 12px;border:1px solid var(--line);color:var(--accent)}
+.dg-lede{font:400 15px/1.5 var(--serif,var(--font));color:var(--ink)}
+.dg-members,.dg-columns,.dg-points{list-style:none;margin:0;padding:0}
+.dg-members li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 6px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
+.dg-members li>small{grid-column:1/-1;color:var(--muted);font-size:var(--rvbbit-type-small);line-height:1.4}
+.dg-members li>small.dg-mono{font-size:10.5px;opacity:.85}
+#meaning-desk .dg-members button{padding:0;border:0;background:none;color:var(--accent);text-align:left;font:600 var(--rvbbit-type-body)/1.35 var(--font);letter-spacing:0;text-transform:none}
+.dg-chip{display:inline-block;padding:1px 6px;border:1px solid var(--line);font:600 9.5px/1.5 var(--font);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.dg-chip[data-role]{color:var(--chart-2,#68c7b2);border-color:color-mix(in oklch,var(--chart-2,#68c7b2) 40%,var(--line))}
+.dg-columns li{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:6px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)}
+.dg-columns code{font:11.5px var(--mono);color:var(--ink)}
+.dg-columns small{color:var(--muted);font-size:11px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dg-sample{max-width:100%;overflow:auto;border:1px solid var(--line)}
+.dg-sample table{border-collapse:collapse;width:100%;font:11px/1.35 var(--mono)}
+.dg-sample th{position:sticky;top:0;background:var(--panel);color:var(--muted);font-weight:500;text-align:left}
+.dg-sample th,.dg-sample td{padding:5px 7px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.dg-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0;font-size:var(--rvbbit-type-small)}
+.dg-facts div{display:contents}.dg-facts dt{color:var(--muted)}.dg-facts dd{margin:0;color:var(--ink)}
+.dg-code{margin:0;padding:8px 10px;max-height:160px;overflow:auto;background:color-mix(in oklch,var(--page) 60%,transparent);border:1px solid var(--line);font:11px/1.45 var(--mono);white-space:pre-wrap}
+.dg-spark{display:block;width:100%;height:42px;margin:6px 0 10px}.dg-spark polyline{fill:none;stroke:var(--chart-5,#df765f);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.dg-points li{position:relative;padding:4px 0 4px 14px;font-size:var(--rvbbit-type-body);line-height:1.45}
+.dg-points li::before{content:'';position:absolute;left:2px;top:.85em;width:5px;height:5px;background:var(--amber,var(--accent))}
+.dg-loading{animation:dg-fade 1.2s ease-in-out infinite alternate}
+
+@media (max-width:760px){
+ .dg-toolbar>input{max-width:none;margin-left:0}
+ #meaning-desk .dg-levels button span{display:none}
+ .dg-inspector{top:auto;left:8px;right:8px;bottom:8px;width:auto;max-height:58%}
+ .dg-legend{display:none}
+ .desk-dg-frame{min-height:300px}
+}
+@media (prefers-reduced-motion:reduce){
+ .dg-node,.dg-box,.dg-world.dg-glide,.dg-edge{transition:none}
+ .dg-edges-in .dg-edge,.dg-inspector{animation:none}
+}

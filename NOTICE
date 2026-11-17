@@ -1,0 +1,38 @@
+Calliope
+Copyright 2026 Ryan Robitaille
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The names Calliope, Callie and RVBBIT, the Calliope logo and Callie's
+portrait are not licensed under it. See TRADEMARKS.md.
+
+This repository includes third-party software under its own licenses. Each
+component keeps its license and provenance notes beside its code:
+
+- Hermes Agent, Nous Research, MIT. The calliope-hermes image is built on the
+  published nousresearch/hermes-agent image.
+  Claude subscription plugin, Nous Research and contributors, MIT:
+  docker/calliope/hermes-plugins/claude-subscription-directsdk-experimental/
+- bolt-slides, StackBlitz, MIT: services/calliope/deck-runtime/
+- three.js, three.js authors, MIT: services/calliope/calliope/vendor/
+- Excalidraw, MIT, bundled in services/calliope/calliope/sketch-runtime.js;
+  its fonts in services/calliope/calliope/sketch-assets/fonts/ carry their
+  own font licenses.
+- TanStack Charts and its dependencies, MIT:
+  services/calliope/charts/THIRD_PARTY_LICENSES.txt
+- gpui-mobile, Balamurali Pandranki and contributors, used under its
+  Apache-2.0 option: apps/calliope-mobile/vendor/gpui-mobile/,
+  apps/calliope-mobile/THIRD_PARTY.md
+- io-surface and xattr, MIT or Apache-2.0:
+  apps/calliope-mobile/vendor/io-surface/, apps/calliope-canvas/vendor/xattr/
+- a2ui-gpui, Liangdi, MIT: apps/calliope-canvas/vendor/a2ui-gpui/
+- Homemade Apple font, Apache-2.0: apps/calliope-canvas/assets/fonts/
+- Cua-S1 prompt and scoring code, Cua AI, Inc., MIT:
+  services/clover/computer/vendor/
+- anydoc, Sideguide Technologies Inc. (Firecrawl), MIT:
+  services/clover/web/THIRD_PARTY_NOTICES.md
+
+Container images built from this repository also contain upstream software
+(PostgreSQL, operating system packages, Python, Rust and Node dependencies)
+and download model weights at build time or first start. Each is distributed
+under its own license.

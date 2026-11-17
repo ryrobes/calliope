@@ -1,0 +1,16 @@
+--- a/tools/arg_coercion.py
++++ b/tools/arg_coercion.py
+@@ -34,6 +34,13 @@
+         args = unrename_tool_args(schema.get("parameters"), args)
+     except Exception:  # pragma: no cover — never break dispatch
+         pass
++
++    # Normalize only schema-typed wrappers before upstream scalar-to-list coercion.
++    from tool_arguments import normalize
++    repaired = normalize(args, schema.get("parameters") or {})
++    if repaired != args:
++        logger.info("coerce_tool_args: repaired schema-typed arguments for %s", tool_name)
++    args = repaired
+ 
+     for key, value in list(args.items()):
+         prop_schema = properties.get(key)

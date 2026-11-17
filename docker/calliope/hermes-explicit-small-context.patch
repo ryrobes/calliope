@@ -1,0 +1,14 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/agent/agent_init.py b/agent/agent_init.py
+index 732ff39..12f4adb 100644
+--- a/agent/agent_init.py
++++ b/agent/agent_init.py
+@@ -1997,7 +1997,7 @@ def _enforce_minimum_context(agent):
+     if agent._ollama_num_ctx and agent.base_url and is_local_endpoint(agent.base_url):
+         _ctx = max(_ctx or 0, agent._ollama_num_ctx)
+     _allow_lmstudio_explicit_below_floor = (
+-        str(agent.provider or "").strip().lower() == "lmstudio"
++        str(agent.provider or "").strip().lower() in {"lmstudio", "custom"}
+         and isinstance(agent._config_context_length, int)
+         and not isinstance(agent._config_context_length, bool)
+         and agent._config_context_length > 0

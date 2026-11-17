@@ -1,0 +1,27 @@
+{
+  "actions": {
+    "assign_visit": {
+      "description": "Explicit version-checked assignment by an active dispatcher",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.northstar_visits v SET assigned_to=$2::jsonb->'technician'->>0,status=CASE WHEN status='Unassigned' THEN 'Assigned' ELSE status END,version=version+1 WHERE v.id=$2::jsonb->>'id' AND v.version=($2::jsonb->>'version')::integer AND v.status IN ('Unassigned','Assigned','Follow-up') AND EXISTS(SELECT 1 FROM calliope_apps.northstar_staff s WHERE s.email=$1 AND s.active AND s.role='dispatcher') AND jsonb_typeof($2::jsonb->'technician')='array' AND jsonb_array_length($2::jsonb->'technician')=1 AND EXISTS(SELECT 1 FROM calliope_apps.northstar_staff t WHERE t.email=$2::jsonb->'technician'->>0 AND t.active AND t.role='technician') RETURNING v.id,v.version",
+          "params": [
+            {
+              "actor": true
+            },
+            "draft"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    }
+  },
+  "change_requests": [
+    "691f3641-16c8-41c8-a1d0-047d7b9ceffc"
+  ]
+}

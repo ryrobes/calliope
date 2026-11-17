@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Callie · Demo phone</title>
+<link rel="stylesheet" href="/calliope/sms-simulator.css?v=__ASSET_VERSION__">
+<script defer src="/calliope/sms-simulator.js?v=__ASSET_VERSION__"></script></head>
+<body>
+<main>
+  <aside class="controls">
+    <a class="brand" href="/floor">Calliope <span>DEMO PHONE</span></a>
+    <h1>The other side<br>of the conversation.</h1>
+    <p>Send a text. Drop in a photo.<br>Watch Callie take it from there.</p>
+    <label for="conversations">Conversations</label>
+    <select id="conversations"><option value="">New conversation</option></select>
+    <button id="new-conversation" class="secondary">＋ New conversation</button>
+    <a id="floor-link" class="primary" target="_blank" rel="noopener" hidden>Open Callie’s thread ↗</a>
+    <p class="identity">Signed in as <span id="owner">…</span></p>
+    <p class="fine">Simulated SMS transport. Real conversations, tools, and actions using your Calliope access. Nothing is sent to a phone number.</p>
+  </aside>
+  <section class="phone-area" aria-label="Demo phone">
+    <div class="phone">
+      <div class="status-bar"><time id="clock"></time><span class="camera" aria-hidden="true"></span><span aria-hidden="true">▂▄▆ ▰</span></div>
+      <header class="contact"><span class="contact-avatar" aria-hidden="true">C</span><div><h2>Calliope</h2><span>Text message</span></div><button id="record" title="Toggle recording view" aria-label="Toggle recording view" aria-pressed="false">⛶</button></header>
+      <div id="messages" class="messages" role="log" aria-label="Messages" aria-live="polite"><div class="empty"><span class="empty-mark">C</span><h3>Say hello to Callie.</h3><p>Texts and photos start a real conversation on your Floor.</p></div></div>
+      <div id="activity" class="activity" role="status"></div>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <div id="attachments" class="attachments" aria-label="Photos to send" hidden></div>
+      <form id="composer" class="composer">
+        <button type="button" id="photo" class="photo" aria-label="Attach photos" title="Attach photos">＋</button>
+        <input type="file" id="files" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+        <textarea id="message" rows="1" aria-label="Text message" placeholder="Text message" maxlength="16000"></textarea>
+        <button id="send" type="submit" aria-label="Send message" title="Send message">↑</button>
+      </form>
+      <div class="home-indicator" aria-hidden="true"></div>
+    </div>
+    <span class="transport-label">SIMULATED SMS <i></i> LIVE CALLIOPE</span>
+  </section>
+</main>
+</body></html>

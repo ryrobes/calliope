@@ -1,0 +1,349 @@
+/* Arrangements: a 60px lattice of this chat's pieces, rendered 1:1.
+   Blocks are content only; the title bar, controls and handles show on hover
+   and selection. Chrome reuses the workspace tokens the Stage rail already
+   wears, so light and dark themes carry over untouched. */
+/* While an arrangement is open the Stage column becomes a flex stack and the
+   module fills it; the lattice scrolls inside its own pane. The Stage sets
+   is-arranging itself (syncStageBuildPlacement). Do not express this with
+   :has(): a :has() rule ending in a universal child made every edit anywhere
+   on the page restyle the whole document, 12 ms per keystroke in a 36-turn chat. */
+.stage-scroll.is-arranging { display:flex; flex-direction:column; overflow:hidden; }
+.stage-scroll.is-arranging > :not(.stage, #system-stage) { display:none!important; }
+.stage.is-arranging { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; }
+[data-stage-arrange-slot] { flex:1; min-height:0; display:flex; flex-direction:column; }
+.stage-arrange { --arrange-unit:60px; flex:1; display:flex; min-height:0; background:var(--workspace-bg); color:var(--workspace-text); font:13px/1.4 var(--workspace-font); }
+.stage-arrange[hidden] { display:none!important; }
+.stage-arrange.is-dragging, .stage-arrange.is-dragging * { user-select:none; cursor:grabbing!important; }
+html.arrange-no-select, html.arrange-no-select * { -webkit-user-select:none!important; user-select:none!important; }
+.stage-arrange button { font:inherit; color:inherit; }
+.stage-arrange :focus-visible { outline:2px solid var(--workspace-accent); outline-offset:1px; }
+#stage-rail[data-arrange] .stage-view-control { display:none!important; }
+
+/* ── library rail ─────────────────────────────────────────────────────── */
+.arrange-rail { flex:none; display:flex; flex-direction:column; width:300px; min-height:0; border-right:1px solid var(--workspace-line); background:color-mix(in oklch,var(--workspace-bg) 92%,var(--workspace-line)); }
+.arrange-rail[hidden] { display:none!important; }
+.arrange-rail-head { display:flex; align-items:center; gap:8px; padding:9px 8px 9px 12px; border-bottom:1px solid var(--workspace-line); }
+.arrange-rail-head strong { font-weight:600; }
+.arrange-rail-head span { flex:1; color:var(--workspace-muted); font-size:12px; }
+.arrange-rail-tools { display:flex; gap:6px; padding:8px 10px 4px; }
+.arrange-rail-tools input { flex:1; min-width:0; height:30px; padding:0 9px; border:1px solid var(--workspace-line); border-radius:7px; background:transparent; color:inherit; font:inherit; }
+.arrange-rail-tools button, .arrange-rail-kinds button { height:30px; padding:0 9px; border:1px solid var(--workspace-line); border-radius:7px; background:transparent; color:var(--workspace-muted); cursor:pointer; white-space:nowrap; }
+.arrange-rail-tools button[aria-pressed=true], .arrange-rail-kinds button[aria-pressed=true] { color:var(--workspace-accent); border-color:color-mix(in oklch,var(--workspace-accent) 45%,var(--workspace-line)); background:var(--workspace-wash); }
+.arrange-rail-kinds { display:flex; flex-wrap:wrap; gap:5px; padding:4px 10px 8px; border-bottom:1px solid var(--workspace-line); }
+.arrange-rail-kinds button { height:24px; padding:0 7px; font-size:11.5px; border-radius:12px; }
+.arrange-rail-kinds button i { font-style:normal; margin-right:4px; opacity:.75; }
+.arrange-rail-list { flex:1; min-height:0; overflow:hidden auto; padding:6px 8px 24px; scrollbar-width:thin; }
+/* Groups: a subject (or a turn) with its count; the heading folds the group,
+   and while a tile is dragged a group lights up as a drop target. */
+.arrange-rail-group { border-radius:8px; border:1px solid transparent; }
+.arrange-rail-group h4 { display:flex; align-items:center; gap:6px; margin:8px 2px 4px; font:500 11.5px/1.3 var(--workspace-font); color:var(--workspace-muted); text-transform:none; min-width:0; }
+.arrange-rail-group h4 > button:first-child { flex:1; min-width:0; display:flex; align-items:center; gap:5px; height:24px; padding:0 4px; border:0; border-radius:6px; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-rail-group h4 > button:first-child:hover { color:var(--workspace-bright); background:var(--workspace-wash); }
+.arrange-rail-group h4 > button:first-child i { font-style:normal; width:10px; opacity:.6; }
+.arrange-rail-group h4 > span { flex:none; min-width:18px; padding:0 5px; border-radius:9px; font-size:10.5px; text-align:center; background:var(--workspace-wash); }
+.arrange-rail-group h4 .arrange-icon { flex:none; width:auto; height:22px; padding:0 6px; font-size:11px; opacity:0; }
+.arrange-rail-group:hover h4 .arrange-icon { opacity:1; }
+.arrange-rail-group.is-collapsed .arrange-rail-items { display:none; }
+.arrange-rail-group.is-drop, .arrange-rail-newgroup.is-drop { border-color:var(--workspace-accent); background:color-mix(in oklch,var(--workspace-accent) 10%,transparent); }
+.arrange-rail-newgroup { display:none; margin:10px 2px; padding:12px; border:1px dashed var(--workspace-line); border-radius:8px; text-align:center; font-size:11.5px; color:var(--workspace-muted); }
+.stage-arrange.is-dragging .arrange-rail-newgroup { display:block; }
+.arrange-rail-foot { flex:none; padding:6px 12px; border-top:1px solid var(--workspace-line); font-size:11px; color:var(--workspace-muted); min-height:14px; }
+.arrange-rail-foot:empty { display:none; }
+.arrange-rail-foot .is-error { color:var(--red, #e5484d); }
+
+/* Content only: a document or image block shows the file, not its file row;
+   the block's hover bar carries the way back to the full card. */
+.arrange-cell-body .document-summary, .arrange-cell-body .visual-intent-reference-label, .arrange-cell-body .document-body > a, .arrange-cell-body .document-body > span { display:none; }
+.arrange-cell-body .document-body { display:flex; flex-direction:column; flex:1; min-height:0; padding:0; }
+.arrange-cell-body .document-body.previewable { gap:0; }
+.arrange-cell-body .document-body:not(.previewable) { justify-content:center; align-items:center; text-align:center; gap:4px; padding:12px; }
+.arrange-cell-body .document-preview, .arrange-cell-body .document-image-preview, .arrange-cell-body .image-body { flex:1; min-height:0; margin:0; border:0; border-radius:0; }
+.arrange-cell-body .document-image-preview a, .arrange-cell-body .image-preview-link { display:block; width:100%; height:100%; }
+.arrange-cell-body .document-image-preview img, .arrange-cell-body .image-body img { display:block; width:100%; height:100%; object-fit:contain; }
+
+/* Stat blocks: the number scales with the block. */
+.arrange-cell.kind-stat .arrange-cell-body { container-type:size; }
+.arrange-cell.kind-stat .board-stat { display:flex; flex-direction:column; justify-content:center; height:100%; padding:10cqh 8cqw; box-sizing:border-box; }
+.arrange-cell.kind-stat .board-stat-value { font-size:clamp(18px, 34cqh, 72px); margin-top:4px; }
+.arrange-cell.kind-stat .board-stat-label { font-size:clamp(10px, 9cqh, 13px); }
+
+/* Pickers: which revision a block follows, which column a stat reads. */
+.arrange-popover { position:absolute; top:30px; right:4px; z-index:6; display:grid; width:min(280px, calc(100% - 8px)); max-height:calc(100% - 36px); overflow:auto; padding:5px; border:1px solid var(--workspace-line); border-radius:10px; background:var(--workspace-bg); box-shadow:0 12px 32px #0003; }
+.arrange-popover h5 { margin:4px 8px 6px; font:500 11px/1.2 var(--workspace-font); color:var(--workspace-muted); text-transform:uppercase; letter-spacing:.06em; }
+.arrange-popover p { margin:4px 8px 8px; color:var(--workspace-muted); }
+.arrange-popover button { display:grid; gap:2px; text-align:left; padding:7px 10px; border:0; border-radius:6px; background:transparent; color:var(--workspace-text); cursor:pointer; font:inherit; }
+.arrange-popover button b { font-weight:500; }
+.arrange-popover button small { color:var(--workspace-muted); font-size:11px; }
+.arrange-popover button[aria-checked=true], .arrange-popover button:hover { background:var(--workspace-wash); }
+.arrange-popover button[aria-checked=true] b::before { content:'✓ '; color:var(--workspace-accent); }
+
+/* The arrangement as its own page (/calliope/arrangements/<uuid>): the app
+   boots on the arrangement's chat with the chat chrome away, and the host
+   shows one lineage read-only, centred, with a thin bar for its name. */
+html body[data-calliope-mode="arrangement"] .calliope-rail-nav,
+html body[data-calliope-mode="arrangement"] #calliope-sessions,
+html body[data-calliope-mode="arrangement"] #calliope-chat,
+html body[data-calliope-mode="arrangement"] #chat-decisions,
+html body[data-calliope-mode="arrangement"] #composer-suggestion-rail,
+html body[data-calliope-mode="arrangement"] .stage-head,
+html body[data-calliope-mode="arrangement"] #stage-rail,
+html body[data-calliope-mode="arrangement"] .stage-live-work,
+html body[data-calliope-mode="arrangement"] #stage-empty { display:none !important; }
+html body[data-calliope-mode="arrangement"] .notebook { grid-template-columns:minmax(0,1fr) !important; column-gap:0 !important; padding:0 !important; }
+html body[data-calliope-mode="arrangement"] .stage-scroll { padding:0 !important; }
+.stage-arrange[data-page] .arrange-rail { display:none; }
+.stage-arrange[data-page] .arrange-scroll { padding:16px; }
+.stage-arrange[data-page] .arrange-sheet { margin:0 auto; box-shadow:none; }
+.stage-arrange[data-page] .arrange-cell { outline:0; }
+.stage-arrange[data-page] .arrange-cell-bar { display:none; }
+.arrange-page-bar { display:flex; align-items:center; gap:12px; width:100%; min-width:0; }
+.arrange-page-bar .arrange-title { margin:0; font:500 14px/1.3 var(--workspace-font); color:var(--workspace-bright); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-page-link { flex:none; display:inline-flex; align-items:center; height:28px; padding:0 9px; border:1px solid transparent; border-radius:7px; color:var(--workspace-muted); text-decoration:none; white-space:nowrap; }
+.arrange-page-link:hover { color:var(--workspace-bright); border-color:var(--workspace-line); background:var(--workspace-wash); }
+
+/* History: looking back at an earlier revision. The sheet is read-only and
+   the toolbar says whose edit this was and what it changed. */
+.arrange-viewing { display:flex; align-items:center; gap:10px; width:100%; min-width:0; padding:0 4px; color:var(--workspace-text); }
+.arrange-viewing i { font-style:normal; color:var(--workspace-accent); }
+.arrange-viewing b { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-viewing > span:not(.arrange-spacer) { color:var(--workspace-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-viewing button { height:28px; padding:0 10px; border:1px solid var(--workspace-line); border-radius:7px; background:transparent; color:var(--workspace-bright); cursor:pointer; white-space:nowrap; }
+.arrange-viewing button:hover { background:var(--workspace-wash); }
+.arrange-history { display:flex; align-items:center; gap:8px; min-width:0; color:var(--workspace-muted); font-size:11.5px; }
+.arrange-history span { max-width:360px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-history input { width:180px; accent-color:var(--workspace-accent); }
+
+/* The library as a chat-column tab. It takes the column's own tokens so it
+   reads like the Chat and Data panels beside it, not like the Stage. */
+.library-shelf { display:flex; flex-direction:column; flex:1; min-height:0; }
+.library-shelf .arrange-rail { width:auto; flex:1; min-height:0; border-right:0; background:transparent; color:var(--bone, var(--fog)); font:13px/1.4 var(--sans); }
+.library-shelf .arrange-rail-head { height:76px; flex:none; display:flex; align-items:center; gap:10px; padding:0 18px; border-bottom:1px solid var(--line); background:rgba(16,13,11,.23); -webkit-backdrop-filter:blur(20px) saturate(1.18); backdrop-filter:blur(20px) saturate(1.18); }
+.library-shelf .arrange-rail-head strong { font:600 13px/1.2 var(--sans); letter-spacing:.08em; text-transform:uppercase; color:var(--bone-bright); }
+.library-shelf .arrange-rail-head [data-rail-count] { font:var(--rvbbit-type-small, 11px)/1 var(--mono); color:var(--dim); }
+.library-shelf .arrange-rail-tools { display:flex; gap:6px; padding:10px 12px 6px; }
+.library-shelf .arrange-rail-tools input { height:30px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.03); color:var(--bone-bright); font:13px/1 var(--sans); }
+.library-shelf .arrange-rail-tools input::placeholder { color:var(--dim); }
+.library-shelf .arrange-rail-tools button, .library-shelf .arrange-rail-kinds button { border-color:var(--line); color:var(--fog); font:600 11px/1 var(--sans); }
+.library-shelf .arrange-rail-tools button[aria-pressed=true], .library-shelf .arrange-rail-kinds button[aria-pressed=true] { color:var(--amber); border-color:color-mix(in oklch,var(--amber) 45%,var(--line)); background:color-mix(in oklch,var(--amber) 8%,transparent); }
+.library-shelf .arrange-rail-kinds { padding:0 12px 8px; border-bottom:1px solid var(--line); }
+.library-shelf .arrange-rail-list { padding:4px 8px 24px; }
+.library-shelf .arrange-rail-group h4 { font:600 10.5px/1.3 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+.library-shelf .arrange-rail-group h4 > button:first-child:hover { color:var(--bone-bright); background:rgba(255,255,255,.04); }
+.library-shelf .arrange-rail-group h4 > span { background:rgba(255,255,255,.06); color:var(--fog); }
+.library-shelf .arrange-rail-group.is-drop, .library-shelf .arrange-rail-newgroup.is-drop { border-color:var(--amber); background:color-mix(in oklch,var(--amber) 10%,transparent); }
+.library-shelf .arrange-rail-newgroup { border-color:var(--line); color:var(--dim); font:12px/1.3 var(--sans); }
+.library-shelf .arrange-tile { padding:9px 10px; margin:0; border-radius:0; border:1px solid transparent; border-bottom-color:color-mix(in oklch,var(--line) 60%,transparent); }
+.library-shelf .arrange-tile:hover { border-color:var(--line); background:rgba(255,255,255,.03); }
+.library-shelf .arrange-tile img, .library-shelf .arrange-tile-glyph { border-color:var(--line); background:rgba(255,255,255,.03); color:var(--fog); }
+.library-shelf .arrange-tile-copy b { color:var(--bone-bright); font:500 13px/1.3 var(--sans); }
+.library-shelf .arrange-tile-copy span { color:var(--dim); font:var(--rvbbit-type-small, 11px)/1.3 var(--mono); }
+.library-shelf .arrange-tile em { color:var(--jade); }
+.library-shelf .arrange-rail-foot { border-top:1px solid var(--line); color:var(--dim); font:var(--rvbbit-type-small, 11px)/1.3 var(--mono); }
+.library-shelf .arrange-rail-foot .is-error { color:var(--amber); }
+.library-shelf .arrange-rail-empty { padding:24px 16px; color:var(--dim); text-align:center; }
+.arrange-rail.is-dragging .arrange-rail-newgroup { display:block; }
+
+/* Preview of the hovered library piece: fixed where the Stage shows its
+   questions, upper right and clear of the chat column's tabs, so it never
+   follows the cursor or clips. Same renderers as the sheet, content only. */
+html body[data-warehouse-page="calliope"] .arrange-preview { position:fixed; z-index:33; top:144px; right:calc(50px + clamp(320px,var(--calliope-chat-width),50vw)); width:min(480px,calc(100vw - 40px - clamp(320px,var(--calliope-chat-width),50vw))); max-height:calc(100dvh - 160px); display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:var(--panel); color:var(--bone, var(--fog)); box-shadow:0 24px 60px rgba(0,0,0,.44),0 3px 12px rgba(0,0,0,.2); pointer-events:none; animation:arrange-preview-in .16s ease-out both; }
+@media (min-width: 1px) { html body.zen[data-warehouse-page="calliope"] .arrange-preview { right:calc(58px + clamp(420px,var(--calliope-zen-chat-width,30vw),50vw)); width:min(480px,calc(100vw - 64px - clamp(420px,var(--calliope-zen-chat-width,30vw),50vw))); } }
+.arrange-preview[hidden] { display:none; }
+.arrange-preview > header { display:flex; flex-direction:column; gap:2px; padding:10px 14px; border-bottom:1px solid var(--line); background:rgba(16,13,11,.23); }
+.arrange-preview > header b { font:500 13px/1.3 var(--sans); color:var(--bone-bright); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-preview > header span { font:var(--rvbbit-type-small, 11px)/1.3 var(--mono); color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-preview-body { position:relative; width:100%; max-height:min(60vh, 520px); overflow:hidden; display:flex; flex-direction:column; background:var(--workspace-bg, transparent); }
+.arrange-preview-body > .surface { flex:1; min-height:0; display:flex; flex-direction:column; }
+.arrange-preview-capture { display:block; width:100%; height:100%; object-fit:cover; object-position:top; }
+@keyframes arrange-preview-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+.arrange-tile { position:relative; display:grid; grid-template-columns:54px 1fr; gap:9px; align-items:center; padding:6px; margin-bottom:4px; border:1px solid transparent; border-radius:9px; cursor:grab; touch-action:none; }
+.arrange-tile:hover { border-color:var(--workspace-line); background:color-mix(in oklch,var(--workspace-wash) 70%,transparent); }
+.arrange-tile.is-placed { opacity:.62; }
+.arrange-tile img, .arrange-tile-glyph { display:grid; place-items:center; width:54px; height:40px; border-radius:6px; border:1px solid var(--workspace-line); object-fit:cover; background:color-mix(in oklch,var(--workspace-bg) 70%,var(--workspace-line)); font:400 18px/1 var(--workspace-font); font-style:normal; color:var(--workspace-muted); }
+.arrange-tile-copy { min-width:0; display:grid; gap:2px; }
+.arrange-tile-copy b { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-tile-copy span { color:var(--workspace-muted); font-size:11.5px; }
+.arrange-tile em { position:absolute; top:6px; right:8px; font-style:normal; font-size:11px; color:var(--workspace-accent); }
+.arrange-rail-empty { padding:16px 6px; color:var(--workspace-muted); }
+
+/* ── work area ───────────────────────────────────────────────────────── */
+.arrange-work { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
+.arrange-toolbar { flex:none; display:flex; align-items:center; gap:8px; min-height:42px; padding:5px 10px; border-bottom:1px solid var(--workspace-line); }
+.arrange-toolbar button, .arrange-icon { height:28px; padding:0 9px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--workspace-muted); cursor:pointer; white-space:nowrap; }
+.arrange-toolbar button:hover:not(:disabled), .arrange-icon:hover { color:var(--workspace-bright); border-color:var(--workspace-line); }
+.arrange-toolbar button:disabled { opacity:.4; cursor:default; }
+.arrange-toolbar .arrange-danger:hover { color:var(--red, #e5484d); }
+.arrange-icon { width:28px; padding:0; }
+.arrange-title { margin:0; font:500 14px/1.3 var(--workspace-font); color:var(--workspace-bright); }
+.arrange-title button { height:auto; padding:3px 6px; color:inherit; font:inherit; }
+.arrange-meta { color:var(--workspace-muted); font-size:12px; white-space:nowrap; }
+.arrange-meta input { width:46px; height:22px; padding:0 4px; border:1px solid var(--workspace-line); border-radius:5px; background:transparent; color:inherit; font:inherit; text-align:center; }
+.arrange-status { font-size:12px; color:var(--workspace-muted); }
+.arrange-status.is-error { color:var(--red, #e5484d); }
+.arrange-status button { height:22px; padding:0 7px; margin-left:4px; }
+.arrange-spacer { flex:1; }
+/* The sheet still scrolls both ways; its bars are hidden because the
+   vertical one sat against the chat column's edge and read as part of it. */
+.arrange-scroll { flex:1; min-height:0; overflow:auto; padding:12px; scrollbar-width:none; }
+
+/* The sheet is the lattice: cells are positioned absolutely in multiples of
+   the unit. Background lines show the lattice only while editing. */
+.arrange-sheet { position:relative; min-height:100%; outline:0; border-radius:4px;
+  background-image:linear-gradient(to right, color-mix(in oklch,var(--workspace-line) 55%,transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklch,var(--workspace-line) 55%,transparent) 1px, transparent 1px);
+  background-size:var(--arrange-unit) var(--arrange-unit); background-position:-1px -1px;
+  /* The lattice is exactly `width` cells across (the module sets the pixel
+     width); a faint right edge marks where placement ends. */
+  box-shadow:inset -1px 0 0 color-mix(in oklch,var(--workspace-line) 80%,transparent); }
+.stage-arrange[data-editable=false] .arrange-sheet { background-image:none; box-shadow:none; }
+.arrange-sheet-empty { position:absolute; inset:0; display:grid; place-content:center; justify-items:center; gap:8px; padding:24px; text-align:center; color:var(--workspace-muted); pointer-events:none; }
+.arrange-sheet-empty strong { color:var(--workspace-bright); font-weight:500; font-size:15px; }
+.arrange-sheet-empty button, .arrange-choices { pointer-events:auto; }
+.arrange-sheet-empty > button { height:32px; padding:0 14px; border:1px solid var(--workspace-line); border-radius:8px; background:transparent; color:var(--workspace-bright); cursor:pointer; }
+.arrange-choices { display:grid; gap:4px; margin:6px 0; min-width:240px; }
+.arrange-choices button { display:flex; justify-content:space-between; gap:12px; padding:9px 12px; border:1px solid var(--workspace-line); border-radius:8px; background:transparent; color:var(--workspace-text); cursor:pointer; }
+.arrange-choices button:hover { background:var(--workspace-wash); }
+.arrange-choices small { color:var(--workspace-muted); }
+.arrange-sheet-hint { position:absolute; inset:auto 0 auto 0; top:40%; }
+.arrange-ghost { position:absolute; z-index:5; border:2px dashed var(--workspace-accent); border-radius:6px; background:color-mix(in oklch,var(--workspace-accent) 10%,transparent); pointer-events:none; box-sizing:border-box; }
+.arrange-ghost.is-blocked { border-color:var(--red, #e5484d); background:color-mix(in oklch,var(--red, #e5484d) 10%,transparent); }
+
+/* ── cells ───────────────────────────────────────────────────────────── */
+.arrange-cell { position:absolute; box-sizing:border-box; display:flex; flex-direction:column; overflow:hidden; border-radius:4px; outline:1px solid transparent; outline-offset:-1px; background:transparent; }
+.stage-arrange[data-editable=true] .arrange-cell { cursor:default; }
+.arrange-cell:hover { outline-color:color-mix(in oklch,var(--workspace-line) 90%,var(--workspace-accent)); }
+.arrange-cell.is-selected { outline:2px solid var(--workspace-accent); outline-offset:-2px; z-index:2; }
+.arrange-cell.is-lifted { opacity:.55; }
+.arrange-cell-body { flex:1; min-height:0; position:relative; overflow:hidden; }
+.arrange-cell-body > .surface { height:100%; }
+.arrange-cell-body .arrange-surface { display:flex; flex-direction:column; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.arrange-cell-body .arrange-surface > .surface-body { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; }
+.arrange-cell-body .surface-body > * { min-height:0; }
+/* Content fills the block; nothing scrolls the block itself. */
+.arrange-cell-body .artifact-frame { flex:1; min-height:0; height:100%!important; aspect-ratio:auto; }
+.arrange-cell-body .artifact-frame iframe { overflow:auto; }
+.arrange-cell-body .chart-wrap, .arrange-cell-body .board-chart, .arrange-cell-body .stage-map { flex:1; min-height:0; height:100%; }
+.arrange-cell-body .stage-map-canvas { flex:1; min-height:0; height:auto!important; }
+.arrange-cell-body .table-wrap { flex:1; min-height:0; max-height:none; overflow:auto; border:0; }
+.arrange-cell-body .query-surface, .arrange-cell-body .answer-body, .arrange-cell-body .document-preview, .arrange-cell-body .evidence-set, .arrange-cell-body .find-surface { flex:1; min-height:0; overflow:auto; }
+.arrange-cell-body img { max-width:100%; max-height:100%; object-fit:contain; }
+.arrange-cell.kind-image .arrange-surface { align-items:center; justify-content:center; }
+.arrange-cell.is-selected .arrange-cell-body iframe { pointer-events:none; }
+.stage-arrange.is-dragging iframe { pointer-events:none; }
+.arrange-missing { display:grid; place-content:center; justify-items:center; gap:4px; height:100%; padding:12px; text-align:center; color:var(--workspace-muted); border:1px dashed var(--workspace-line); border-radius:4px; }
+.arrange-missing strong { color:var(--workspace-bright); font-weight:500; }
+
+/* Text blocks: heading + body, edited in place. */
+.arrange-text { display:flex; flex-direction:column; gap:4px; height:100%; padding:8px 10px; overflow:auto; }
+.arrange-text h4 { margin:0; font:600 17px/1.25 var(--workspace-font); color:var(--workspace-bright); outline:0; }
+.arrange-text p { margin:0; font:14px/1.45 var(--workspace-font); color:var(--workspace-text); outline:0; white-space:pre-wrap; }
+.arrange-text [contenteditable=true]:empty::before { content:attr(data-text-field); color:var(--workspace-muted); opacity:.6; text-transform:capitalize; }
+.arrange-text [contenteditable=true]:focus { background:var(--workspace-wash); border-radius:3px; }
+
+/* The bar is the only chrome: hover or selection reveal it over the content. */
+.arrange-cell-bar { position:absolute; top:0; left:0; right:0; z-index:3; display:flex; align-items:center; gap:4px; height:28px; padding:0 4px 0 6px; background:color-mix(in oklch,var(--workspace-bg) 88%,transparent); backdrop-filter:blur(6px); border-bottom:1px solid var(--workspace-line); color:var(--workspace-text); opacity:0; transform:translateY(-100%); transition:opacity .12s, transform .12s; pointer-events:none; }
+.arrange-cell:hover > .arrange-cell-bar, .arrange-cell.is-selected > .arrange-cell-bar, .arrange-cell:focus-within > .arrange-cell-bar { opacity:1; transform:none; pointer-events:auto; }
+.stage-arrange.is-dragging .arrange-cell-bar { opacity:0!important; pointer-events:none!important; }
+.arrange-cell-bar b { min-width:0; font-weight:500; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-cell-bar i { font-style:normal; font-size:11px; color:var(--workspace-muted); }
+.arrange-cell-grip { flex:none; cursor:grab; color:var(--workspace-muted); letter-spacing:-3px; font-size:13px; padding-right:2px; }
+.stage-arrange[data-editable=false] .arrange-cell-grip { display:none; }
+.arrange-cell-bar button { flex:none; display:grid; place-items:center; width:22px; height:22px; padding:0; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--workspace-muted); cursor:pointer; font-size:13px; line-height:1; }
+.arrange-cell-bar button:hover { color:var(--workspace-bright); border-color:var(--workspace-line); }
+.arrange-cell-bar button[aria-pressed=true] { color:var(--workspace-accent); }
+
+/* Resize handles hug the edges; corners are square, edges are strips. */
+.arrange-handles { display:none; }
+.stage-arrange[data-editable=true] .arrange-cell.is-selected > .arrange-handles { display:contents; }
+.arrange-handles i { position:absolute; z-index:4; display:block; }
+.arrange-handles [data-resize=n], .arrange-handles [data-resize=s] { left:8px; right:8px; height:7px; cursor:ns-resize; }
+.arrange-handles [data-resize=e], .arrange-handles [data-resize=w] { top:8px; bottom:8px; width:7px; cursor:ew-resize; }
+.arrange-handles [data-resize=n] { top:-2px; } .arrange-handles [data-resize=s] { bottom:-2px; }
+.arrange-handles [data-resize=e] { right:-2px; } .arrange-handles [data-resize=w] { left:-2px; }
+.arrange-handles [data-resize=ne], .arrange-handles [data-resize=se], .arrange-handles [data-resize=sw], .arrange-handles [data-resize=nw] { width:12px; height:12px; border:2px solid var(--workspace-accent); background:var(--workspace-bg); border-radius:2px; }
+.arrange-handles [data-resize=ne] { top:-3px; right:-3px; cursor:nesw-resize; }
+.arrange-handles [data-resize=se] { bottom:-3px; right:-3px; cursor:nwse-resize; }
+.arrange-handles [data-resize=sw] { bottom:-3px; left:-3px; cursor:nesw-resize; }
+.arrange-handles [data-resize=nw] { top:-3px; left:-3px; cursor:nwse-resize; }
+
+/* ── switcher in the Stage rail + the ⊕ on ordinary cards ───────────── */
+/* Its own classes, so the canvas switcher's selectors and tests stay exact;
+   the look mirrors .stage-view-trigger / .stage-view-menu. */
+.stage-arrange-control { display:flex; align-items:flex-start; gap:4px; position:relative; flex:none; width:max-content; z-index:35; font:13px/1.4 var(--workspace-font); }
+.stage-arrange-control[hidden], body[data-calliope-mode=setup] .stage-arrange-control { display:none!important; }
+.arrange-trigger { display:flex; align-items:center; gap:7px; min-width:32px; height:32px; padding:6px 8px; border:1px solid transparent; border-radius:8px; color:var(--workspace-muted); background:transparent; cursor:pointer; opacity:.66; }
+.arrange-trigger:hover, .arrange-trigger:focus-visible, .arrange-trigger[aria-expanded=true] { opacity:1; color:var(--workspace-bright); border-color:var(--workspace-line); }
+.arrange-trigger[aria-pressed=true] { color:var(--workspace-accent); border-color:color-mix(in oklch,var(--workspace-accent) 45%,var(--workspace-line)); opacity:1; }
+.arrange-trigger svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.2; }
+.arrange-trigger span { font:13px/1 var(--workspace-font); }
+.arrange-menu { position:absolute; top:32px; left:0; display:grid; width:264px; padding:5px; margin-top:7px; border:1px solid var(--workspace-line); border-radius:10px; background:var(--workspace-bg); box-shadow:0 12px 32px #0003; }
+.arrange-menu button { display:flex; justify-content:space-between; align-items:baseline; gap:10px; text-align:left; padding:10px 12px; border:0; border-radius:6px; background:transparent; color:var(--workspace-text); cursor:pointer; }
+.arrange-menu button[aria-checked=true], .arrange-menu button:hover { background:var(--workspace-wash); }
+.arrange-menu button[aria-checked=true] b { color:var(--workspace-accent); }
+.arrange-menu b { font:500 14px/1.3 var(--workspace-font); }
+.arrange-menu small { color:var(--workspace-muted); font:12px/1.3 var(--workspace-font); }
+.surface-arrange-add { font-size:15px; line-height:1; }
+
+/* ── values from dashboards ───────────────────────────────────────────── */
+/* A value block is a stat whose number is read live from a published
+   dashboard's definition; its caption names the dashboard and the slice. */
+.arrange-cell.is-value .board-stat { gap:2px; }
+.arrange-cell.is-value .board-stat-caption { margin-top:4px; font-size:clamp(9px, 7cqh, 12px); line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-cell.is-value .board-stat.is-loading .board-stat-value { opacity:.4; }
+.arrange-cell.is-value .arrange-value-note { display:grid; place-content:center; gap:3px; height:100%; padding:8px 10px; box-sizing:border-box; text-align:center; color:var(--workspace-muted); font-size:12px; line-height:1.3; border:1px dashed var(--workspace-line); border-radius:4px; }
+.arrange-cell.is-value .arrange-value-note b { color:var(--workspace-bright); font-weight:500; }
+/* A small block still needs room for its slice picker. */
+.arrange-cell.is-value:has(> .arrange-popover) { overflow:visible; z-index:7; }
+.arrange-cell.is-value > .arrange-popover { left:4px; right:auto; width:260px; max-height:300px; }
+.arrange-popover button:disabled { opacity:.5; cursor:default; }
+.arrange-cell-bar .arrange-bar-link { flex:none; display:grid; place-items:center; width:22px; height:22px; border-radius:5px; border:1px solid transparent; color:var(--workspace-muted); text-decoration:none; font-size:13px; line-height:1; }
+.arrange-cell-bar .arrange-bar-link:hover { color:var(--workspace-bright); border-color:var(--workspace-line); }
+.arrange-rail-more { margin:2px 0 8px; padding:6px 10px; color:var(--workspace-muted); font-size:11.5px; }
+.arrange-rail-more.is-error { color:var(--workspace-danger, #e07a6a); }
+.library-shelf .arrange-rail-more { color:var(--dim); }
+.arrange-value-preview { display:grid; gap:8px; padding:12px 14px 14px; font:13px/1.45 var(--sans); color:var(--fog); }
+.arrange-value-preview p { margin:0; }
+.arrange-value-preview .arrange-value-measure { color:var(--bone-bright); font-weight:500; }
+.arrange-value-preview ul { display:grid; gap:3px; margin:2px 0 0; padding:0; list-style:none; font:var(--rvbbit-type-small, 11px)/1.4 var(--mono); }
+.arrange-value-preview li { display:flex; justify-content:space-between; gap:12px; }
+.arrange-value-preview li span { color:var(--dim); }
+.arrange-value-preview li b { font-weight:500; color:var(--fog); text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* A grid block: the dashboard's table or chart as a live query grid. */
+.arrange-cell.is-grid .arrange-cell-body .table-wrap { height:100%; }
+.arrange-cell.is-grid .data-table { width:100%; font-size:12px; }
+.arrange-cell.is-grid .data-table th { position:sticky; top:0; z-index:1; background:var(--workspace-bg); text-align:left; white-space:nowrap; }
+.arrange-cell.is-grid .data-table td { white-space:nowrap; }
+.arrange-grid-note { padding:4px 8px; color:var(--workspace-muted); font-size:11px; }
+
+/* Values and grids are grouped by the dashboard they come from. */
+.arrange-rail-dashes { display:block; }
+.arrange-rail-dash > h5 { display:flex; align-items:center; gap:6px; margin:0; padding:1px 6px 1px 10px; font:inherit; }
+.arrange-rail-dash > h5 button { flex:1; min-width:0; display:flex; align-items:center; gap:6px; padding:6px 0; border:0; background:transparent; color:inherit; cursor:pointer; text-align:left; font:inherit; }
+.arrange-rail-dash > h5 button i { flex:none; width:10px; font-style:normal; font-size:10px; color:var(--workspace-muted); }
+.arrange-rail-dash > h5 button b { min-width:0; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arrange-rail-dash > h5 span { flex:none; color:var(--workspace-muted); font-size:11px; }
+.arrange-rail-dash > h5 a.arrange-icon { flex:none; text-decoration:none; color:var(--workspace-muted); font-size:12px; visibility:hidden; }
+.arrange-rail-dash > h5:hover a.arrange-icon { visibility:visible; }
+.arrange-rail-dash > .arrange-rail-items { padding-left:10px; }
+.library-shelf .arrange-rail-dash > h5 button b { color:var(--bone); }
+.library-shelf .arrange-rail-dash > h5 button i, .library-shelf .arrange-rail-dash > h5 span, .library-shelf .arrange-rail-dash > h5 a.arrange-icon { color:var(--dim); }
+.library-shelf .arrange-rail-dash > h5:hover button b { color:var(--bone-bright); }
+
+/* The live part of a value or grid preview: the number, or the grid's first rows. */
+.arrange-preview-live { position:relative; border-bottom:1px solid var(--line); background:var(--workspace-bg, transparent); }
+.arrange-preview-live > .surface { margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.arrange-preview-live > .surface > .surface-body { padding:0; }
+.arrange-preview-live.is-value { height:124px; container-type:size; }
+.arrange-preview-live.is-value > .surface, .arrange-preview-live.is-value .surface-body { height:100%; }
+.arrange-preview-live.is-value .board-stat { display:flex; flex-direction:column; justify-content:center; height:100%; padding:10cqh 14px; box-sizing:border-box; }
+.arrange-preview-live.is-value .board-stat-value { font-size:clamp(22px, 38cqh, 52px); margin-top:4px; }
+.arrange-preview-live.is-value .board-stat-caption { display:none; }
+.arrange-preview-live.is-value .board-stat.is-loading .board-stat-value { opacity:.4; }
+.arrange-preview-live.is-grid { max-height:min(46vh, 380px); overflow:auto; }
+.arrange-preview-live.is-grid .table-wrap { border:0; max-height:none; }
+.arrange-preview-live.is-grid .data-table { width:100%; font-size:12px; }
+.arrange-preview-live.is-grid .data-table th { position:sticky; top:0; text-align:left; white-space:nowrap; }
+.arrange-preview-live.is-grid .data-table td { white-space:nowrap; }
+.arrange-preview-live .arrange-value-note { display:grid; place-content:center; gap:3px; min-height:84px; padding:10px 14px; text-align:center; color:var(--dim); font:12px/1.35 var(--sans); }
+.arrange-preview-live .arrange-value-note b { color:var(--bone-bright); font-weight:500; }
+.arrange-preview-rows { margin:0; padding:6px 14px 0; color:var(--dim); font:var(--rvbbit-type-small, 11px)/1.3 var(--mono); }

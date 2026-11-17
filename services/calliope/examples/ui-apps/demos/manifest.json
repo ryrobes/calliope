@@ -1,0 +1,523 @@
+{
+  "actions": {
+    "save_deal": {
+      "description": "Save transaction working notes",
+      "inputs": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "notes": {
+          "type": "string",
+          "max_length": 4000
+        },
+        "owner": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_deals SET notes=$3,owner=$4,closing_date=($5::date)::text,version=version+1 WHERE id=$1 AND version=$2 AND $4 IN ('Alex Morgan','Sam Rivera') RETURNING id",
+          "params": [
+            "id",
+            "version",
+            "notes",
+            "owner",
+            "date"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "advance_deal": {
+      "description": "Advance transaction stage",
+      "inputs": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_deals SET stage=CASE stage WHEN 'Offer' THEN 'Due diligence' WHEN 'Due diligence' THEN 'Closing' WHEN 'Closing' THEN 'Closed' END,version=version+1 WHERE id=$1 AND version=$2 AND stage<>'Closed' RETURNING id",
+          "params": [
+            "id",
+            "version"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "complete_task": {
+      "description": "Complete a transaction commitment",
+      "inputs": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_deals SET version=version+1 WHERE id=$1 AND version=$2 RETURNING id",
+          "params": [
+            "id",
+            "version"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_tasks SET done=1 WHERE id=$1 AND deal_id=$2 AND done=0 RETURNING id",
+          "params": [
+            "task",
+            "id"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "save_job": {
+      "description": "Save visit notes",
+      "inputs": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "notes": {
+          "type": "string",
+          "max_length": 4000
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_hvac_jobs SET notes=$3,version=version+1 WHERE id=$1 AND version=$2 RETURNING id",
+          "params": [
+            "id",
+            "version",
+            "notes"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "advance_job": {
+      "description": "Advance visit status when parts are ready",
+      "inputs": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_hvac_jobs j SET status=CASE status WHEN 'Scheduled' THEN 'Dispatched' WHEN 'Dispatched' THEN 'On site' WHEN 'On site' THEN 'Complete' END,version=version+1 WHERE id=$1 AND version=$2 AND status<>'Complete' AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_orders o JOIN calliope_apps.demo_counter_order_lines l ON l.order_id=o.id WHERE o.visit_id=j.id AND l.backorder>0) RETURNING id",
+          "params": [
+            "id",
+            "version"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "save_case": {
+      "description": "Save shared case notes and handoff",
+      "inputs": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "notes": {
+          "type": "string",
+          "max_length": 4000
+        },
+        "handoff": {
+          "type": "string",
+          "max_length": 4000
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_work_cases SET notes=$3,handoff=$4,version=version+1 WHERE id=$1 AND version=$2 RETURNING id",
+          "params": [
+            "id",
+            "version",
+            "notes",
+            "handoff"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "save_quote": {
+      "description": "Save quote lines and current prices",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_quotes q SET notes=$1::jsonb->>'notes',branch=$1::jsonb->'branch'->>0,version=version+1\n      WHERE id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer AND status='Draft'\n      AND $1::jsonb->'branch'->>0 IN ('north','south') AND length($1::jsonb->>'notes')<=4000\n      AND (SELECT count(*) FROM jsonb_object_keys($1::jsonb->'lines'))=(SELECT count(*) FROM calliope_apps.demo_counter_lines WHERE quote_id=q.id)\n      AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_lines l JOIN calliope_apps.demo_counter_products p ON p.id=l.product_id WHERE l.quote_id=q.id AND\n        (NOT ($1::jsonb->'lines' ? l.id) OR coalesce(($1::jsonb->'lines'->l.id->>'quantity')::numeric,0)<=0\n         OR ($1::jsonb->'lines'->l.id->>'quantity')::numeric>10000 OR ($1::jsonb->'lines'->l.id->>'unit_price')::numeric<0\n         OR (p.unit='ea' AND ($1::jsonb->'lines'->l.id->>'quantity')::numeric<>trunc(($1::jsonb->'lines'->l.id->>'quantity')::numeric)))) RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_lines l SET quantity=round((v.value->>'quantity')::numeric*100)::integer,\n      unit_price=round((v.value->>'unit_price')::numeric*100)::integer FROM jsonb_each($1::jsonb->'lines') v\n      WHERE l.quote_id=$1::jsonb->>'id' AND l.id=v.key RETURNING id",
+          "params": [
+            "draft"
+          ]
+        }
+      ]
+    },
+    "add_part": {
+      "description": "Save quote and add a catalog part",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "product": {
+          "type": "string"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_quotes q SET notes=$1::jsonb->>'notes',branch=$1::jsonb->'branch'->>0,version=version+1\n      WHERE id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer AND status='Draft'\n      AND $1::jsonb->'branch'->>0 IN ('north','south') AND length($1::jsonb->>'notes')<=4000\n      AND (SELECT count(*) FROM jsonb_object_keys($1::jsonb->'lines'))=(SELECT count(*) FROM calliope_apps.demo_counter_lines WHERE quote_id=q.id)\n      AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_lines l JOIN calliope_apps.demo_counter_products p ON p.id=l.product_id WHERE l.quote_id=q.id AND\n        (NOT ($1::jsonb->'lines' ? l.id) OR coalesce(($1::jsonb->'lines'->l.id->>'quantity')::numeric,0)<=0\n         OR ($1::jsonb->'lines'->l.id->>'quantity')::numeric>10000 OR ($1::jsonb->'lines'->l.id->>'unit_price')::numeric<0\n         OR (p.unit='ea' AND ($1::jsonb->'lines'->l.id->>'quantity')::numeric<>trunc(($1::jsonb->'lines'->l.id->>'quantity')::numeric)))) RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_lines l SET quantity=round((v.value->>'quantity')::numeric*100)::integer,\n      unit_price=round((v.value->>'unit_price')::numeric*100)::integer FROM jsonb_each($1::jsonb->'lines') v\n      WHERE l.quote_id=$1::jsonb->>'id' AND l.id=v.key RETURNING id",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_counter_lines(id,quote_id,product_id,quantity,unit_price,position)\n      SELECT 'L-'||gen_random_uuid()::text,$1::jsonb->>'id',p.id,100,p.price_cents,999 FROM calliope_apps.demo_counter_products p WHERE p.id=$2\n      ON CONFLICT(quote_id,product_id) DO UPDATE SET quantity=calliope_apps.demo_counter_lines.quantity+100 RETURNING id",
+          "params": [
+            "draft",
+            "product"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "remove_part": {
+      "description": "Remove a quote line",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "line": {
+          "type": "string"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_quotes q SET notes=$1::jsonb->>'notes',branch=$1::jsonb->'branch'->>0,version=version+1\n      WHERE id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer AND status='Draft'\n      AND $1::jsonb->'branch'->>0 IN ('north','south') AND length($1::jsonb->>'notes')<=4000\n      AND (SELECT count(*) FROM jsonb_object_keys($1::jsonb->'lines'))=(SELECT count(*) FROM calliope_apps.demo_counter_lines WHERE quote_id=q.id)\n      AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_lines l JOIN calliope_apps.demo_counter_products p ON p.id=l.product_id WHERE l.quote_id=q.id AND\n        (NOT ($1::jsonb->'lines' ? l.id) OR coalesce(($1::jsonb->'lines'->l.id->>'quantity')::numeric,0)<=0\n         OR ($1::jsonb->'lines'->l.id->>'quantity')::numeric>10000 OR ($1::jsonb->'lines'->l.id->>'unit_price')::numeric<0\n         OR (p.unit='ea' AND ($1::jsonb->'lines'->l.id->>'quantity')::numeric<>trunc(($1::jsonb->'lines'->l.id->>'quantity')::numeric)))) RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_lines l SET quantity=round((v.value->>'quantity')::numeric*100)::integer,\n      unit_price=round((v.value->>'unit_price')::numeric*100)::integer FROM jsonb_each($1::jsonb->'lines') v\n      WHERE l.quote_id=$1::jsonb->>'id' AND l.id=v.key RETURNING id",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "DELETE FROM calliope_apps.demo_counter_lines WHERE id=$1 AND quote_id=$2::jsonb->>'id' RETURNING id",
+          "params": [
+            "line",
+            "draft"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "new_quote": {
+      "description": "Open a new fictional customer quote",
+      "inputs": {
+        "key": {
+          "type": "uuid"
+        }
+      },
+      "steps": [
+        {
+          "sql": "INSERT INTO calliope_apps.demo_counter_quotes(id,customer_id,branch,notes) VALUES('Q-'||$1::text,'harbor','north','') RETURNING id",
+          "params": [
+            "key"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "order_quote": {
+      "description": "Reserve stock and optionally backorder the remainder",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "allow": {
+          "type": "boolean"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_quotes q SET notes=$1::jsonb->>'notes',branch=$1::jsonb->'branch'->>0,version=version+1\n      WHERE id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer AND status='Draft'\n      AND $1::jsonb->'branch'->>0 IN ('north','south') AND length($1::jsonb->>'notes')<=4000\n      AND (SELECT count(*) FROM jsonb_object_keys($1::jsonb->'lines'))=(SELECT count(*) FROM calliope_apps.demo_counter_lines WHERE quote_id=q.id)\n      AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_lines l JOIN calliope_apps.demo_counter_products p ON p.id=l.product_id WHERE l.quote_id=q.id AND\n        (NOT ($1::jsonb->'lines' ? l.id) OR coalesce(($1::jsonb->'lines'->l.id->>'quantity')::numeric,0)<=0\n         OR ($1::jsonb->'lines'->l.id->>'quantity')::numeric>10000 OR ($1::jsonb->'lines'->l.id->>'unit_price')::numeric<0\n         OR (p.unit='ea' AND ($1::jsonb->'lines'->l.id->>'quantity')::numeric<>trunc(($1::jsonb->'lines'->l.id->>'quantity')::numeric)))) RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_lines l SET quantity=round((v.value->>'quantity')::numeric*100)::integer,\n      unit_price=round((v.value->>'unit_price')::numeric*100)::integer FROM jsonb_each($1::jsonb->'lines') v\n      WHERE l.quote_id=$1::jsonb->>'id' AND l.id=v.key RETURNING id",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "SELECT s.product_id FROM calliope_apps.demo_counter_stock s JOIN calliope_apps.demo_counter_lines l ON l.product_id=s.product_id WHERE l.quote_id=$1::jsonb->>'id' AND s.branch=$1::jsonb->'branch'->>0 ORDER BY s.product_id FOR UPDATE OF s",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "SELECT q.id FROM calliope_apps.demo_counter_quotes q WHERE q.id=$1::jsonb->>'id'\n       AND EXISTS(SELECT 1 FROM calliope_apps.demo_counter_lines WHERE quote_id=q.id)\n       AND ($2 OR NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_lines l JOIN calliope_apps.demo_counter_stock s ON s.product_id=l.product_id AND s.branch=q.branch WHERE l.quote_id=q.id AND l.quantity>s.on_hand-s.reserved))",
+          "params": [
+            "draft",
+            "allow"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_counter_orders(id,quote_id,branch,subtotal_cents,tax_cents,total_cents)\n       SELECT 'SO-'||q.id,q.id,q.branch,sum(round(l.quantity*l.unit_price/100.0))::integer,\n       round(sum(round(l.quantity*l.unit_price/100.0))*.065)::integer,round(sum(round(l.quantity*l.unit_price/100.0))*1.065)::integer\n       FROM calliope_apps.demo_counter_quotes q JOIN calliope_apps.demo_counter_lines l ON l.quote_id=q.id WHERE q.id=$1::jsonb->>'id' GROUP BY q.id RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_counter_order_lines(order_id,product_id,quantity,reserved,backorder,unit_price,total_cents)\n       SELECT 'SO-'||q.id,l.product_id,l.quantity,least(l.quantity,s.on_hand-s.reserved),greatest(0,l.quantity-(s.on_hand-s.reserved)),l.unit_price,round(l.quantity*l.unit_price/100.0)::integer\n       FROM calliope_apps.demo_counter_quotes q JOIN calliope_apps.demo_counter_lines l ON l.quote_id=q.id JOIN calliope_apps.demo_counter_stock s ON s.product_id=l.product_id AND s.branch=q.branch WHERE q.id=$1::jsonb->>'id'",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_stock s SET reserved=s.reserved+l.reserved FROM calliope_apps.demo_counter_order_lines l WHERE l.order_id='SO-'||($1::jsonb->>'id') AND s.product_id=l.product_id AND s.branch=$1::jsonb->'branch'->>0",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_quotes SET status='Ordered' WHERE id=$1::jsonb->>'id' RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "create_visit": {
+      "description": "Create the service visit linked to a parts order",
+      "inputs": {
+        "quote": {
+          "type": "string"
+        }
+      },
+      "steps": [
+        {
+          "sql": "INSERT INTO calliope_apps.demo_hvac_jobs(id,customer,address,technician,job_type,scheduled_date,slot,status,amount_cents,equipment,notes)\n       SELECT 'HV-'||o.id,CASE q.customer_id WHEN 'harbor' THEN 'Harbor Dental' WHEN 'cedar' THEN 'Cedar House' ELSE 'Oak Apartments' END,\n       CASE q.customer_id WHEN 'harbor' THEN '8 Harbor View' WHEN 'cedar' THEN '142 Cedar Lane' ELSE '306 Oak Street' END,'Alex Morgan','Repair',(current_date+1)::text,'Time to confirm','Scheduled',0,coalesce(e.name,'Equipment to confirm'),q.notes\n       FROM calliope_apps.demo_counter_orders o JOIN calliope_apps.demo_counter_quotes q ON q.id=o.quote_id\n       LEFT JOIN calliope_apps.demo_counter_quote_equipment qe ON qe.quote_id=q.id LEFT JOIN calliope_apps.demo_counter_equipment e ON e.id=qe.equipment_id\n       WHERE o.quote_id=$1 AND o.visit_id IS NULL RETURNING id",
+          "params": [
+            "quote"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_orders SET visit_id='HV-'||id WHERE quote_id=$1 AND visit_id IS NULL RETURNING visit_id",
+          "params": [
+            "quote"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "receive": {
+      "description": "Post a delivery and allocate stock to oldest waiting orders",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "key": {
+          "type": "uuid"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_receiving_orders p SET version=version+1 WHERE id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer\n      AND ($1::jsonb->>'received_date')::date BETWEEN current_date-365 AND current_date\n      AND ($1::jsonb->>'received_time')::time IS NOT NULL AND length(trim($1::jsonb->>'reference')) BETWEEN 1 AND 100\n      AND (SELECT count(*) FROM jsonb_object_keys($1::jsonb->'lines'))=(SELECT count(*) FROM calliope_apps.demo_receiving_lines WHERE po_id=p.id)\n      AND EXISTS(SELECT 1 FROM jsonb_each($1::jsonb->'lines') v WHERE (v.value->>'quantity')::numeric>0)\n      AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_receiving_lines l JOIN calliope_apps.demo_counter_products pr ON pr.id=l.product_id WHERE l.po_id=p.id AND\n       (NOT ($1::jsonb->'lines' ? l.id) OR ($1::jsonb->'lines'->l.id->>'quantity')::numeric<0 OR round(($1::jsonb->'lines'->l.id->>'quantity')::numeric*100)>l.expected-l.received\n        OR (pr.unit='ea' AND ($1::jsonb->'lines'->l.id->>'quantity')::numeric<>trunc(($1::jsonb->'lines'->l.id->>'quantity')::numeric)))) RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "SELECT s.product_id FROM calliope_apps.demo_counter_stock s JOIN calliope_apps.demo_receiving_lines l ON l.product_id=s.product_id JOIN calliope_apps.demo_receiving_orders p ON p.id=l.po_id AND p.branch=s.branch WHERE p.id=$1::jsonb->>'id' ORDER BY s.product_id FOR UPDATE OF s",
+          "params": [
+            "draft"
+          ]
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_receiving_receipts(id,po_id,received_date,received_time,reference,notes,has_damage,damage_notes,source) VALUES('RC-'||$2::text,$1::jsonb->>'id',$1::jsonb->>'received_date',$1::jsonb->>'received_time',$1::jsonb->>'reference',$1::jsonb->>'notes',0,'','Company app') RETURNING id",
+          "params": [
+            "draft",
+            "key"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_receiving_receipt_lines SELECT 'RC-'||$2::text,v.key,round((v.value->>'quantity')::numeric*100)::integer FROM jsonb_each($1::jsonb->'lines') v WHERE (v.value->>'quantity')::numeric>0",
+          "params": [
+            "draft",
+            "key"
+          ]
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_receiving_lines l SET received=l.received+r.quantity FROM calliope_apps.demo_receiving_receipt_lines r WHERE r.line_id=l.id AND r.receipt_id='RC-'||$1::text",
+          "params": [
+            "key"
+          ]
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_stock s SET on_hand=s.on_hand+x.qty FROM (SELECT l.product_id,sum(r.quantity)::integer qty FROM calliope_apps.demo_receiving_receipt_lines r JOIN calliope_apps.demo_receiving_lines l ON l.id=r.line_id WHERE r.receipt_id='RC-'||$1::text GROUP BY l.product_id) x WHERE s.product_id=x.product_id AND s.branch=$2::jsonb->>'branch'",
+          "params": [
+            "key",
+            "draft"
+          ]
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_receiving_allocations(receipt_id,order_id,product_id,quantity)\n       SELECT 'RC-'||$1::text,order_id,product_id,qty FROM (\n        SELECT l.order_id,l.product_id,least(l.backorder,greatest(0,s.on_hand-s.reserved-coalesce(sum(l.backorder) OVER(PARTITION BY l.product_id ORDER BY o.created,o.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0)))::integer qty\n        FROM calliope_apps.demo_counter_order_lines l JOIN calliope_apps.demo_counter_orders o ON o.id=l.order_id JOIN calliope_apps.demo_counter_stock s ON s.product_id=l.product_id AND s.branch=o.branch\n        WHERE o.branch=$2::jsonb->>'branch' AND l.backorder>0 AND l.product_id IN (SELECT product_id FROM calliope_apps.demo_receiving_lines WHERE po_id=$2::jsonb->>'id')) x WHERE qty>0",
+          "params": [
+            "key",
+            "draft"
+          ]
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_order_lines l SET reserved=l.reserved+a.quantity,backorder=l.backorder-a.quantity FROM calliope_apps.demo_receiving_allocations a WHERE a.receipt_id='RC-'||$1::text AND a.order_id=l.order_id AND a.product_id=l.product_id",
+          "params": [
+            "key"
+          ]
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_counter_stock s SET reserved=s.reserved+a.qty FROM (SELECT product_id,sum(quantity)::integer qty FROM calliope_apps.demo_receiving_allocations WHERE receipt_id='RC-'||$1::text GROUP BY product_id) a WHERE s.product_id=a.product_id AND s.branch=$2::jsonb->>'branch'",
+          "params": [
+            "key",
+            "draft"
+          ]
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_receiving_activity(po_id,description,source) VALUES($1::jsonb->>'id','Delivery posted: '||($1::jsonb->>'reference'),'Company app') RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "schedule": {
+      "description": "Confirm an available appointment with reserved parts",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "key": {
+          "type": "uuid"
+        }
+      },
+      "steps": [
+        {
+          "sql": "UPDATE calliope_apps.demo_schedule_lock SET revision=revision+1 WHERE id=1 RETURNING id",
+          "params": [],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_dispatch_commands(id,job_id,kind,version,payload,before_state,after_state,expires)\n       SELECT $2::text,j.id,'assign',j.version,$1::jsonb::text,\n       jsonb_build_object('date',j.scheduled_date,'technician',j.technician,'start',s.start,'end',s.\"end\",'slot',j.slot)::text,$1::jsonb::text,(now()+interval '5 minutes')::text\n       FROM calliope_apps.demo_hvac_jobs j LEFT JOIN calliope_apps.demo_dispatch_slots s ON s.job_id=j.id WHERE j.id=$1::jsonb->>'id' AND j.version=($1::jsonb->>'version')::integer AND j.status='Scheduled' RETURNING id",
+          "params": [
+            "draft",
+            "key"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_hvac_jobs j SET scheduled_date=($1::jsonb->>'scheduled_date')::date::text,technician=$1::jsonb->'technician'->>0,\n       slot=($1::jsonb->>'start')||'–'||($1::jsonb->>'end'),version=version+1\n       WHERE j.id=$1::jsonb->>'id' AND version=($1::jsonb->>'version')::integer AND status='Scheduled'\n       AND ($1::jsonb->>'scheduled_date')::date BETWEEN current_date AND current_date+90\n       AND $1::jsonb->'technician'->>0 IN ('Alex Morgan','Sam Rivera','Jordan Lee')\n       AND ($1::jsonb->>'start') ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' AND ($1::jsonb->>'end') ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'\n       AND ($1::jsonb->>'start')::time>=time '06:00' AND ($1::jsonb->>'end')::time<=time '20:00' AND ($1::jsonb->>'start')::time<($1::jsonb->>'end')::time\n       AND length(trim($1::jsonb->>'reason')) BETWEEN 1 AND 500\n       AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_counter_orders o JOIN calliope_apps.demo_counter_order_lines l ON l.order_id=o.id WHERE o.visit_id=j.id AND l.backorder>0)\n       AND NOT EXISTS(SELECT 1 FROM calliope_apps.demo_hvac_jobs other JOIN calliope_apps.demo_dispatch_slots s ON s.job_id=other.id WHERE other.id<>j.id AND other.status<>'Complete'\n        AND other.scheduled_date::date=($1::jsonb->>'scheduled_date')::date AND other.technician=$1::jsonb->'technician'->>0 AND s.start::time<($1::jsonb->>'end')::time AND s.\"end\"::time>($1::jsonb->>'start')::time) RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_dispatch_slots(job_id,start,\"end\") VALUES($1::jsonb->>'id',$1::jsonb->>'start',$1::jsonb->>'end') ON CONFLICT(job_id) DO UPDATE SET start=excluded.start,\"end\"=excluded.\"end\"",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "UPDATE calliope_apps.demo_dispatch_commands SET committed_version=version+1 WHERE id=$1::text RETURNING id",
+          "params": [
+            "key"
+          ],
+          "expect_rows": 1
+        },
+        {
+          "sql": "INSERT INTO calliope_apps.demo_hvac_activity(job_id,description,source) VALUES($1::jsonb->>'id','Appointment confirmed: '||($1::jsonb->>'reason'),'Company app') RETURNING id",
+          "params": [
+            "draft"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    },
+    "submit_report": {
+      "description": "Append a field report without silently changing job status",
+      "inputs": {
+        "draft": {
+          "type": "json"
+        },
+        "key": {
+          "type": "uuid"
+        }
+      },
+      "steps": [
+        {
+          "sql": "INSERT INTO calliope_apps.demo_field_reports(id,job_id,request_id,fingerprint,notes,temperature,pressure,correction_of,source,attachments)\n       SELECT 'FR-'||$2::text,j.id,$2::text,md5($1::jsonb::text),$1::jsonb->>'notes',$1::jsonb->>'temperature',$1::jsonb->>'pressure',nullif($1::jsonb->>'correction_of',''),'Company app',coalesce($1::jsonb->'attachments','[]'::jsonb)\n       FROM calliope_apps.demo_hvac_jobs j WHERE j.id=$1::jsonb->>'id' AND length(trim($1::jsonb->>'notes')) BETWEEN 1 AND 4000\n       AND jsonb_typeof(coalesce($1::jsonb->'attachments','[]'::jsonb))='array'\n       AND jsonb_array_length(coalesce($1::jsonb->'attachments','[]'::jsonb))<=5\n       AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce($1::jsonb->'attachments','[]'::jsonb)) v WHERE jsonb_typeof(v)!='string' OR trim(both '\"' from v::text)!~'^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')\n       AND (nullif($1::jsonb->>'temperature','') IS NULL OR ($1::jsonb->>'temperature')::numeric BETWEEN -50 AND 150)\n       AND (nullif($1::jsonb->>'pressure','') IS NULL OR ($1::jsonb->>'pressure')::numeric BETWEEN 0 AND 1000)\n       AND (nullif($1::jsonb->>'correction_of','') IS NULL OR EXISTS(SELECT 1 FROM calliope_apps.demo_field_reports f WHERE f.id=$1::jsonb->>'correction_of' AND f.job_id=j.id)) RETURNING id",
+          "params": [
+            "draft",
+            "key"
+          ],
+          "expect_rows": 1
+        }
+      ]
+    }
+  }
+}

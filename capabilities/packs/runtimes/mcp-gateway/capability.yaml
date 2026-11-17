@@ -1,0 +1,74 @@
+api_version: rvbbit.capability/v1
+kind: runtime_sidecar
+name: mcp_gateway
+title: MCP Gateway Runtime
+description: "Warren-managed MCP gateway for rvbbit operator `kind: mcp` nodes and SQL MCP calls."
+license: apache-2.0
+system_runtime: true
+capability_role: operator_runtime
+tags: [runtime, mcp, warren, code, tools, cpu, system-runtime, operator-runtime]
+source:
+  provider: builtin
+  model: rvbbit/mcp-gateway
+runtime:
+  template: mcp-gateway
+  language: mcp
+  handler: mcp_gateway
+  device: cpu
+  port: 9180
+  health_path: /health
+  env:
+    # In-network DSN the deployed gateway uses to reach Postgres. `docker compose
+    # up` (run by warren at deploy time) resolves it in this order:
+    #   1. RVBBIT_GATEWAY_DSN — explicit override; dev points this at the dev
+    #      service name (see the Makefile), since warren-agent's own control-plane
+    #      DSN there is the host-mapped port, not the in-network one.
+    #   2. RVBBIT_DSN — inherited from warren, already templated from
+    #      POSTGRES_DB/POSTGRES_PASSWORD in the uber/release compose, so a
+    #      customized install flows through to the gateway automatically.
+    #   3. the literal default below (matches the uber/release compose defaults).
+    RVBBIT_DSN: "${RVBBIT_GATEWAY_DSN:-${RVBBIT_DSN:-postgresql://postgres:rvbbit@postgres:5432/rvbbit}}"
+    # Bearer token guarding the tool-invocation / subprocess-spawn endpoints.
+    # When set, the gateway enforces it AND the pg-rvbbit backend sends it (set
+    # the SAME value on the pg-rvbbit service). Empty = open on the trusted
+    # internal network (the gateway logs a warning); never expose port 9180 then.
+    RVBBIT_GATEWAY_TOKEN: ${RVBBIT_GATEWAY_TOKEN:-}
+    # New installs use the encrypted Postgres credential store. Keep the
+    # compatibility switch off until RVBBIT_CREDENTIAL_KEY has been provisioned
+    # on Postgres; the hosted appliance profile turns it on.
+    RVBBIT_REQUIRE_CANONICAL_CREDENTIALS: ${RVBBIT_REQUIRE_CANONICAL_CREDENTIALS:-false}
+    # The legacy migration reader must never write plaintext if canonical
+    # storage is temporarily unavailable.
+    RVBBIT_GATEWAY_REQUIRE_ENCRYPTION: ${RVBBIT_GATEWAY_REQUIRE_ENCRYPTION:-true}
+    GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+    GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+    GOOGLE_CLOUD_QUOTA_PROJECT: ${GOOGLE_CLOUD_QUOTA_PROJECT:-}
+  volumes:
+    - name: mcp_npm_cache
+      mount: /root/.npm
+    # Compatibility reader for pre-0286 MCP secrets. Once copied into canonical
+    # storage, this volume is no longer the authoritative store.
+    - name: mcp_secrets
+      mount: /app/data
+runtime_registration:
+  name: mcp_default
+  language: mcp
+  endpoint_path: /
+  set_default: true
+  labels:
+    language: mcp
+    capability_kind: runtime_sidecar
+    runtime_handler: mcp_gateway
+    system_runtime: true
+warren:
+  endpoint_path: /
+  health_path: /health
+smoke:
+  sql:
+    - "SELECT name, endpoint_url, status FROM rvbbit.mcp_gateways WHERE name = 'mcp_default';"

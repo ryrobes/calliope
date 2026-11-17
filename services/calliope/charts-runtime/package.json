@@ -1,0 +1,24 @@
+{
+  "name": "calliope-charts-runtime",
+  "version": "1.2.0-rc.5",
+  "private": true,
+  "description": "Browser-ready TanStack Charts runtime for Calliope artifacts.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && vite build --mode table && vite build --mode virtual",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/charts": "0.16.2",
+    "@tanstack/table-core": "9.2.4",
+    "@tanstack/virtual-core": "3.17.10",
+    "d3-scale": "4.0.2",
+    "d3-shape": "3.2.0"
+  },
+  "devDependencies": {
+    "@types/d3-scale": "4.0.9",
+    "@types/d3-shape": "3.1.8",
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  }
+}

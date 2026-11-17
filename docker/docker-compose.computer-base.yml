@@ -1,0 +1,44 @@
+# Shared image, packages and persistent volumes for both deployment layouts.
+services:
+  desktop:
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.calliope-desktop
+      labels:
+        org.opencontainers.image.title: Callie's Computer
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
+      args:
+        CALLIOPE_DESKTOP_EXTRA_PACKAGES: ${CALLIOPE_DESKTOP_EXTRA_PACKAGES:-}
+        KASM_BASE_IMAGE: ${CALLIOPE_KASM_BASE_IMAGE:-kasmweb/ubuntu-noble-desktop@sha256:5910fcb7cd4676d3f47b22ffcd51876bfef967ef24a195bbfb455cd88461a285}
+    container_name: calliope-desktop
+    shm_size: 1gb
+    stop_grace_period: 30s
+    environment:
+      VNC_PW: ${CALLIOPE_DESKTOP_VNC_PASSWORD:-}
+      VNC_VIEW_ONLY_PW: ${CALLIOPE_DESKTOP_VNC_VIEW_PASSWORD:-}
+      VNC_RESOLUTION: ${CALLIOPE_DESKTOP_RESOLUTION:-1280x720}
+      CALLIOPE_BROWSER_RENDERER: ${CALLIOPE_BROWSER_RENDERER:-software}
+      MAX_FRAME_RATE: ${CALLIOPE_DESKTOP_MAX_FRAME_RATE:-24}
+      CALLIOPE_DESKTOP_CONTROL_KEY: ${CALLIOPE_DESKTOP_CONTROL_KEY:-}
+      CALLIOPE_DESKTOP_STORAGE: /var/lib/calliope-desktop
+      CALLIOPE_COMPUTER_DECISION_URL: ${CALLIOPE_COMPUTER_DECISION_URL:-http://calliope:8765/api/calliope/computer/decide}
+    expose:
+      - "6901"
+      - "9000"
+    volumes:
+      - rvbbit_desktop:/var/lib/calliope-desktop
+      - rvbbit_desktop_home:/home/kasm-user
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import json,os,urllib.request;
+          r=urllib.request.Request('http://127.0.0.1:9000/health',headers={'X-Calliope-Desktop-Key':os.environ['CALLIOPE_DESKTOP_CONTROL_KEY']});
+          assert json.load(urllib.request.urlopen(r,timeout=3))['ready']"
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped

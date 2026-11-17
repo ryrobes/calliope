@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/launcher_background" />
+    <foreground>
+        <!-- Keep the circular portrait inside the adaptive icon's safe area. -->
+        <inset android:inset="16.667%">
+            <bitmap android:src="@drawable/calliope_avatar" android:gravity="fill" />
+        </inset>
+    </foreground>
+</adaptive-icon>

@@ -1,0 +1,149 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/tools/tool_search.py b/tools/tool_search.py
+index fc7c97e..ac8f319 100644
+--- a/tools/tool_search.py
++++ b/tools/tool_search.py
+@@ -12,6 +12,7 @@ import functools
+ import json
+ import logging
+ import math
++import re
+ from collections import Counter
+ from dataclasses import dataclass
+ from typing import Any, Dict, Iterable, List, Optional, Tuple
+@@ -49,6 +50,10 @@ class ToolSearchConfig:
+     listing_max_tokens: int = 4000  # budget = min(this, threshold_pct% of context)
+     # None = curated default; an explicit list replaces it wholesale ([] = defer no core tools).
+     defer_tools: Optional[frozenset] = None
++    # Per-profile working set that remains model-facing even when deferrable.
++    # Pinned tools still remain in the search/describe catalog so capability
++    # discovery stays complete.
++    pinned: tuple[str, ...] = ()
+ 
+     @property
+     def effective_defer_tools(self) -> frozenset:
+@@ -70,6 +75,22 @@ class ToolSearchConfig:
+                 "(e.g. [todo_list, computer_use]; [] keeps every tool eager) - "
+                 "using the curated default set.", defer_raw)
+             defer_raw = None
++        pinned_raw = raw.get("pinned")
++        pinned: list[str] = []
++        if isinstance(pinned_raw, (list, tuple)):
++            seen: set[str] = set()
++            for item in pinned_raw:
++                name = str(item or "").strip()
++                if (
++                    name
++                    and len(name) <= 128
++                    and re.fullmatch(r"[A-Za-z0-9_.-]+", name)
++                    and name not in seen
++                ):
++                    seen.add(name)
++                    pinned.append(name)
++                if len(pinned) >= 48:
++                    break
+         return cls(
+             enabled=_tri_state(raw.get("enabled", "auto")),
+             threshold_pct=max(0.0, min(100.0, _safe_float(raw.get("threshold_pct"), 5.0))),
+@@ -79,7 +100,8 @@ class ToolSearchConfig:
+             listing=_tri_state(raw.get("listing", "auto")),
+             listing_max_tokens=_clamped_int(raw.get("listing_max_tokens"), 4000, 200, 60000),
+             defer_tools=(frozenset(str(n).strip() for n in defer_raw if str(n).strip())
+-                         if isinstance(defer_raw, (list, tuple, set)) else None))
++                         if isinstance(defer_raw, (list, tuple, set)) else None),
++            pinned=tuple(pinned))
+ 
+ 
+ _TRI_STATE_ALIASES = {"true": "on", "1": "on", "yes": "on", "false": "off", "0": "off", "no": "off"}
+@@ -165,14 +187,21 @@ def _tool_def_names(tool_defs: Iterable[Dict[str, Any]]) -> Iterable[str]:
+ 
+ 
+ def classify_tools(tool_defs: List[Dict[str, Any]], defer_tools: Optional[frozenset] = None,
+-                   ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
++                   pinned: Any = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+     """Split a tool-defs list into (visible, deferrable); bridge tools are dropped (re-added
+-    after classification)."""
++    after classification). ``pinned`` names stay visible even when deferrable."""
++    pinned_names = frozenset(pinned or ())
+     visible: List[Dict[str, Any]] = []
+     deferrable: List[Dict[str, Any]] = []
+     for td, name in zip(tool_defs, _tool_def_names(tool_defs)):
+-        if name not in BRIDGE_TOOL_NAMES:
+-            (deferrable if is_deferrable_tool_name(name, defer_tools) else visible).append(td)
++        if name in BRIDGE_TOOL_NAMES:
++            continue
++        if name in pinned_names:
++            visible.append(td)
++        elif is_deferrable_tool_name(name, defer_tools):
++            deferrable.append(td)
++        else:
++            visible.append(td)
+     return visible, deferrable
+ 
+ 
+@@ -348,7 +377,7 @@ def assemble_tool_defs(tool_defs: List[Dict[str, Any]], *, context_length: Optio
+     config = config or load_config()
+     incoming = [td for td, name in zip(tool_defs, _tool_def_names(tool_defs))
+                 if name not in BRIDGE_TOOL_NAMES]
+-    visible, deferrable = classify_tools(incoming, config.effective_defer_tools)
++    visible, deferrable = classify_tools(incoming, config.effective_defer_tools, pinned=config.pinned)
+     connections_granted = connections_in_scope(incoming)
+     if not deferrable:
+         if should_activate(config, 0, context_length, connections_granted=connections_granted):
+@@ -453,6 +482,7 @@ def dispatch_tool_search(args: Dict[str, Any], *, current_tool_defs: List[Dict[s
+     limit = (config.search_default_limit if raw_limit is None
+              else _clamped_int(raw_limit, config.search_default_limit, 1, config.max_search_limit))
+     catalog = build_catalog(_deferrable_in(current_tool_defs))
++    pinned = frozenset(config.pinned)
+     remote_entries: List[List[CatalogEntry]] = [[] for _ in queries]
+     if connections_in_scope(current_tool_defs):
+         remote_entries = connector_entries_by_group(queries, connector_search=connector_search)
+@@ -463,7 +493,9 @@ def dispatch_tool_search(args: Dict[str, Any], *, current_tool_defs: List[Dict[s
+         corpus = catalog + remote_entries[position]
+         hits = search_catalog(corpus, query, limit=limit)
+         for h in hits:
+-            tools_map.setdefault(h.name, _shared_tool_record(h))
++            record = tools_map.setdefault(h.name, _shared_tool_record(h))
++            if h.name in pinned:
++                record["already_available"] = True
+         matches = [h.name for h in hits]
+         group: Dict[str, Any] = {"query": query, "matches": matches}
+         if not matches and catalog:
+@@ -475,8 +507,14 @@ def dispatch_tool_search(args: Dict[str, Any], *, current_tool_defs: List[Dict[s
+                 "object before concluding the capability is unavailable.")
+         results.append(group)
+     remote_count = sum(1 for name in tools_map if is_connector_name(name))
+-    return json.dumps({"queries": queries, "total_available": len(catalog) + remote_count, "results": results,
+-                       "tools": tools_map}, ensure_ascii=False)
++    result: Dict[str, Any] = {"queries": queries, "total_available": len(catalog) + remote_count,
++                              "results": results, "tools": tools_map}
++    if any(tool.get("already_available") for tool in tools_map.values()):
++        result["note"] = (
++            "Tools marked already_available are in your tools list right now; "
++            "call them directly by name instead of using tool_describe or tool_call."
++        )
++    return json.dumps(result, ensure_ascii=False)
+ 
+ 
+ def dispatch_tool_describe(args: Dict[str, Any], *, current_tool_defs: List[Dict[str, Any]],
+@@ -504,6 +542,8 @@ def dispatch_tool_describe(args: Dict[str, Any], *, current_tool_defs: List[Dict
+         if fn is not None:
+             tools[name] = {"description": fn.get("description", ""),
+                            "parameters": fn.get("parameters", {})}
++            if name in frozenset(config.pinned):
++                tools[name]["already_available"] = True
+         elif isinstance(remote_fn, dict):
+             tools[name] = {"description": str(remote_fn.get("description", "")),
+                            "parameters": remote_fn.get("parameters", {})}
+@@ -516,6 +556,11 @@ def dispatch_tool_describe(args: Dict[str, Any], *, current_tool_defs: List[Dict
+         else:
+             not_found.append(name)
+     result: Dict[str, Any] = {"tools": tools}
++    if any(tool.get("already_available") for tool in tools.values()):
++        result["note"] = (
++            "Tools marked already_available are in your tools list right now; "
++            "call them directly by name instead of routing them through tool_call."
++        )
+     if not_found:
+         result["not_found"] = not_found
+         result["hint"] = "Names in not_found are not currently available. Re-run tool_search to refresh."

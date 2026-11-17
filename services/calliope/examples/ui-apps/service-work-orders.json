@@ -1,0 +1,226 @@
+{
+  "schema": "calliope.app.v1",
+  "title": "Service work orders",
+  "components": [
+    {
+      "id": "root",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "lg",
+      "children": [
+        "intro",
+        "filters",
+        "work",
+        "chart-section"
+      ]
+    },
+    {
+      "id": "intro",
+      "component": "CText",
+      "text": "Service work, connected.",
+      "size": "display",
+      "family": "display"
+    },
+    {
+      "id": "filters",
+      "component": "CFilterBar",
+      "label": "Find a work order",
+      "value": {
+        "path": "/state/filter"
+      },
+      "onChange": "filter",
+      "children": [
+        "job-id"
+      ]
+    },
+    {
+      "id": "job-id",
+      "component": "CField",
+      "label": "Work order ID",
+      "value": {
+        "path": "/state/filter/id"
+      },
+      "kind": "text",
+      "required": true
+    },
+    {
+      "id": "work",
+      "component": "CSection",
+      "title": "Working record",
+      "subtitle": "Shared data in Calliope Postgres",
+      "child": "record"
+    },
+    {
+      "id": "record",
+      "component": "CStack",
+      "direction": "column",
+      "gap": "md",
+      "children": [
+        "customer",
+        "summary",
+        "saved-note",
+        "edit-note",
+        "save"
+      ]
+    },
+    {
+      "id": "customer",
+      "component": "CText",
+      "text": {
+        "path": "/record/customer"
+      },
+      "size": "title",
+      "family": "display"
+    },
+    {
+      "id": "summary",
+      "component": "CText",
+      "text": {
+        "path": "/record/status"
+      },
+      "tone": "cool"
+    },
+    {
+      "id": "saved-note",
+      "component": "CText",
+      "text": {
+        "path": "/record/note"
+      },
+      "tone": "muted"
+    },
+    {
+      "id": "edit-note",
+      "component": "CField",
+      "label": "New handoff note",
+      "value": {
+        "path": "/state/note"
+      },
+      "kind": "text",
+      "required": true
+    },
+    {
+      "id": "save",
+      "component": "Button",
+      "child": "save-label",
+      "variant": "primary",
+      "action": {
+        "event": {
+          "name": "save_note",
+          "context": {
+            "id": {
+              "path": "/record/id"
+            },
+            "version": {
+              "path": "/record/version"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "save-label",
+      "component": "CText",
+      "text": "Save handoff"
+    },
+    {
+      "id": "chart-section",
+      "component": "CSection",
+      "title": "Team workload",
+      "subtitle": "Live SQL grouped by status",
+      "child": "chart"
+    },
+    {
+      "id": "chart",
+      "component": "CVegaChart",
+      "spec": {
+        "path": "/charts/workload"
+      },
+      "description": "Work orders by status",
+      "height": 240
+    }
+  ],
+  "data": {
+    "state": {
+      "filter": {
+        "id": "WO-1001"
+      },
+      "note": ""
+    },
+    "record": {
+      "id": "",
+      "version": 0,
+      "customer": "No matching work order",
+      "status": "",
+      "note": ""
+    },
+    "charts": {
+      "workload": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "data": {
+          "values": []
+        },
+        "mark": {
+          "type": "bar",
+          "cornerRadiusEnd": 5
+        },
+        "encoding": {
+          "x": {
+            "field": "status",
+            "type": "nominal",
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "jobs",
+            "type": "quantitative"
+          },
+          "tooltip": [
+            {
+              "field": "status"
+            },
+            {
+              "field": "jobs"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "queries": {
+    "record": {
+      "sql": "SELECT id, version, customer, status, note FROM calliope_apps.ui_example_jobs WHERE id = $1",
+      "params": [
+        {
+          "path": "/state/filter/id"
+        }
+      ],
+      "path": "/record",
+      "shape": "first"
+    },
+    "workload": {
+      "sql": "SELECT status, count(*)::int AS jobs FROM calliope_apps.ui_example_jobs GROUP BY status ORDER BY status",
+      "path": "/charts/workload/data/values"
+    }
+  },
+  "events": {
+    "filter": {},
+    "save_note": {
+      "action": "save_note",
+      "inputs": {
+        "id": {
+          "path": "/context/id"
+        },
+        "version": {
+          "path": "/context/version"
+        },
+        "note": {
+          "path": "/state/note"
+        }
+      },
+      "set": {
+        "/state/note": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+--- a/agent/tool_executor.py
++++ b/agent/tool_executor.py
+@@ -1070,6 +1070,9 @@
+     agent._current_tool = None
+     _status_suffix = " (error)" if is_error else ""
+     agent._touch_activity(f"tool completed: {function_name} ({tool_duration:.1f}s){_status_suffix}")
++
++    from tools.calliope_capability_discovery import enrich_for_agent
++    function_result = enrich_for_agent(agent, function_name, function_result)
+-
++
+     from tools.calliope_middle_memory import archive_result
+     archive_result(getattr(agent, "_session_db", None), agent.session_id, tool_call_id, function_name, function_result)
+--- a/tools/tool_search.py
++++ b/tools/tool_search.py
+@@ -265,10 +265,10 @@
+          if deferred_count else "Search remote connector tools (email, calendars, issue trackers, and more). ")
+         + "Takes a list of queries searched in parallel against the same "
+         "catalog; send one query per distinct capability you need. Returns "
+-        "matching tool names grouped per query plus a shared map with each "
+-        "tool's description. Follow with "
+-        f"`{TOOL_DESCRIBE_NAME}` to load full parameter schemas, "
+-        f"then `{TOOL_CALL_NAME}` to invoke. Tools listed at the top of this "
++        "matching tool names grouped per query plus their invocation contracts. "
++        "Use included parameters directly; only schemas marked deferred need "
++        f"`{TOOL_DESCRIBE_NAME}`. Invoke through the returned route (direct or "
++        f"`{TOOL_CALL_NAME}`); do not search again for an identified tool. Tools listed at the top of this "
+         "system prompt are already available and do not need to be searched."
+         + (_CONNECTIONS_HINT if connections_granted else ""))
+     if not listing:

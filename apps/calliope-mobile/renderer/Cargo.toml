@@ -1,0 +1,25 @@
+[package]
+name = "calliope-mobile-renderer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+# Compile the desktop renderer source against the mobile-compatible GPUI stack.
+# There is one catalog and one renderer implementation, not a copied mobile DSL.
+[lib]
+path = "../../calliope-canvas/vendor/a2ui-gpui/src/lib.rs"
+
+[features]
+default = ["backend", "gpui-next"]
+backend = []
+gpui-next = []
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false }
+gpui-component = { git = "https://github.com/Bombatomica64/gpui-kit", rev = "11a7beb93292051a7fcc009f34bf93a00f167b4c" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+a2ui-base = { git = "https://github.com/liangdi/a2ui.git", rev = "97391988e41052240c36c27442912420903f13a8" }
+a2ui-image = { git = "https://github.com/liangdi/a2ui.git", rev = "97391988e41052240c36c27442912420903f13a8" }
+chrono = { version = "0.4", default-features = false, features = ["std"] }

@@ -1,0 +1,62 @@
+# Layer after docker-compose.calliope.yml and docker-compose.clover-selfhosted.yml.
+# Use generated client.env alongside the ordinary Calliope appliance env file.
+services:
+  warren:
+    environment:
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      RVBBIT_CLOVER_KEY: ${RVBBIT_CLOVER_KEY}
+  postgres:
+    environment:
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      RVBBIT_CLOVER_CATALOG_SQL: /etc/clover/catalog.sql
+    volumes:
+      - ./clover/register.sh:/usr/local/bin/rvbbit-clover-configure:ro
+      - ./init/02-install-clover.sh:/docker-entrypoint-initdb.d/02-install-clover.sh:ro
+      - ${CLOVER_CONFIG_DIR}/catalog.sql:/etc/clover/catalog.sql:ro
+      - ./clover/inference.sql:/etc/clover/inference.sql:ro
+  bootstrap:
+    environment:
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      RVBBIT_CLOVER_OPENAI_BASE_URL: http://clover:8090/v1
+      RVBBIT_CLOVER_CATALOG_SQL: /etc/clover/catalog.sql
+    volumes:
+      - ./clover/register.sh:/usr/local/bin/rvbbit-clover-configure:ro
+      - ./uber/bootstrap.sh:/usr/local/bin/rvbbit-uber-bootstrap:ro
+      - ${CLOVER_CONFIG_DIR}/catalog.sql:/etc/clover/catalog.sql:ro
+      - ./clover/inference.sql:/etc/clover/inference.sql:ro
+    depends_on:
+      clover:
+        condition: service_healthy
+      clover-embeddings:
+        condition: service_healthy
+        required: false
+  hermes:
+    volumes:
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials:ro
+    environment:
+      CALLIOPE_OPENROUTER_KEY_FILE: /run/clover-credentials/openrouter.key
+      RVBBIT_CLOVER_OPENAI_BASE_URL: http://clover:8090/v1
+  calliope:
+    volumes:
+      - ${CLOVER_CONFIG_DIR}/credentials:/run/clover-credentials
+    environment:
+      CALLIOPE_OPENROUTER_KEY_FILE: /run/clover-credentials/openrouter.key
+      CLOVER_DECISION_MODEL: ${CLOVER_DECISION_MODEL:-typesafe/jev-1.13}
+      RVBBIT_CLOVER_BASE_URL: http://clover:8090
+      RVBBIT_CLOVER_OPENAI_BASE_URL: http://clover:8090/v1
+      WAREHOUSE_CALLIOPE_TTS_HUTCH_BASE_URL: http://clover:8090/v1
+      CALLIOPE_COMPUTER_CHOOSER_BASE: http://clover:8090
+      CALLIOPE_MEMORY_INFERENCE_BASE_URL: http://clover:8090/v1
+  hindsight:
+    environment:
+      HINDSIGHT_API_LLM_BASE_URL: http://clover:8090/v1
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://clover:8090/v1
+      HINDSIGHT_API_RERANKER_PROVIDER: openrouter
+      HINDSIGHT_API_RERANKER_OPENROUTER_MODEL: rerank
+      HINDSIGHT_API_RERANKER_OPENROUTER_BASE_URL: http://clover:8090/v1/rerank
+      HINDSIGHT_API_RERANKER_OPENROUTER_API_KEY: ${RVBBIT_CLOVER_KEY}
+      # A failed rerank falls back to fusion order instead of failing the recall.
+      HINDSIGHT_API_RERANKER_1_PROVIDER: rrf
+      # Clover already retries a failed rerank; Hindsight's own retries would
+      # add about 4 s before that fallback.
+      HINDSIGHT_API_RERANKER_MAX_RETRIES: '0'

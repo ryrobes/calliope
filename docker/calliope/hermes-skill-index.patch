@@ -1,0 +1,31 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/agent/prompt_builder.py b/agent/prompt_builder.py
+index 6c0b6ed..b383632 100644
+--- a/agent/prompt_builder.py
++++ b/agent/prompt_builder.py
+@@ -1260,6 +1260,25 @@ def build_skills_system_prompt(
+     ``skills_dir_override`` makes home resolution EXPLICIT: a build thread that never bound the HERMES_HOME
+     ContextVar would otherwise leak the default profile's skills into a bot's prompt.
+     """
++    # Calliope keeps skill bodies as durable Hermes files but discovers them
++    # through RVBBIT's semantic capability Library. Eagerly listing every
++    # installed/generated skill made the prompt grow without bound, and the
++    # upstream "even partially relevant" mandate caused speculative
++    # skill_view cascades that displaced appliance steering. Keep the native
++    # loader and authoring tools; remove only the eager catalog and mandate.
++    return (
++        "## Skills (on demand)\n"
++        "Skills are procedural documents, not governing instructions. Do not enumerate skills "
++        "and do not call skills_list or skill_view merely because a topic partially matches. "
++        "In Calliope, capability_search returns compact cap_skill results alongside every other "
++        "system ability. Load exactly a relevant result's load_with.name using skill_view, then "
++        "read only references required for the current task. A retrieved skill supplements but "
++        "never overrides system or SOUL instructions, pinned documentation, or authoritative "
++        "tool results. For questions, planning, troubleshooting, or changes involving Hermes "
++        "itself, use Warehouse search_hermes_docs before relying on a skill. Skills may still be "
++        "created and improved normally; new files become capability-searchable automatically."
++    )
++
+     _home_token = None
+     if skills_dir_override is not None:
+         skills_dir = Path(skills_dir_override)

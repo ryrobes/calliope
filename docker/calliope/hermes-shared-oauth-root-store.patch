@@ -1,0 +1,69 @@
+Re-ported to v0.21.4 (d337b736) on 2026-09-23.
+diff --git a/agent/credential_pool.py b/agent/credential_pool.py
+index 4b67106..7ab28a3 100644
+--- a/agent/credential_pool.py
++++ b/agent/credential_pool.py
+@@ -1486,7 +1486,10 @@ class CredentialPool(CredentialPoolAdminMixin, CredentialPoolModelCooldownMixin)
+         # there was no recovery path at all). Serialize through the shared
+         # cross-process auth-store flock; a waiter's in-lock re-sync picks up
+         # the winner's rotated token and skips the POST.
+-        with _auth_store_lock(timeout_seconds=self._single_use_refresh_lock_timeout()):
++        with _auth_store_lock(
++            timeout_seconds=self._single_use_refresh_lock_timeout(),
++            target_path=auth_mod._credential_pool_write_target(self.provider),
++        ):
+             if self.provider == "openai-codex":
+                 synced = self._sync_entry_from_auth_store(entry)
+                 if synced is not entry and not force and not self._entry_needs_refresh(synced):
+diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
+index f5ecdb9..d69d450 100644
+--- a/hermes_cli/auth.py
++++ b/hermes_cli/auth.py
+@@ -967,8 +967,12 @@ def write_credential_pool(
+     recency merge, which would otherwise read their cleared ``last_status_at`` (None ->
+     epoch 0) as a stale snapshot and copy a still-binding cooldown back."""
+     removed = {rid for rid in (removed_ids or ()) if rid}
+-    with _auth_store_lock():
+-        auth_store = _load_auth_store()
++    # A provider a profile only borrowed through the global-root fallback is
++    # root-owned. Persist rotations back to that same store so a profile does
++    # not create a stale shadow of a single-use OAuth refresh token.
++    target = _credential_pool_write_target(provider_id)
++    with _auth_store_lock(target_path=target):
++        auth_store = _load_auth_store(target)
+         pool = _store_section(auth_store, "credential_pool")
+         sanitized = [
+             sanitize_borrowed_credential_payload(e, provider_id) if isinstance(e, dict) else e
+@@ -989,7 +993,31 @@ def write_credential_pool(
+             if disk_id and disk_id not in new_ids and disk_id not in removed:
+                 merged.append(sanitize_borrowed_credential_payload(disk_entry, provider_id))
+         pool[provider_id] = merged
+-        return _save_auth_store(auth_store)
++        return _save_auth_store(auth_store, target)
++
++
++def _credential_pool_write_target(provider_id: str) -> Optional[Path]:
++    """Return the store that owns a credential-pool provider slice.
++
++    ``None`` means the active profile store. The global root is returned only
++    when the profile has no local entries and is reading non-empty fallback
++    entries from the root.
++    """
++    global_root = _global_auth_file_path()
++    if global_root is None:
++        return None
++    try:
++        local_pool = _load_auth_store().get("credential_pool")
++        local_entries = local_pool.get(provider_id) if isinstance(local_pool, dict) else None
++        if isinstance(local_entries, list) and local_entries:
++            return None
++        global_pool = _load_global_auth_store().get("credential_pool")
++        global_entries = global_pool.get(provider_id) if isinstance(global_pool, dict) else None
++        if isinstance(global_entries, list) and global_entries:
++            return global_root
++    except Exception:
++        return None
++    return None
+ 
+ 
+ def _suppressed_source_list(suppressed: Dict[str, Any], provider_id: str) -> Optional[List[str]]:

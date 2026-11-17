@@ -1,0 +1,116 @@
+diff --git a/tools/mcp_tool_registration.py b/tools/mcp_tool_registration.py
+--- a/tools/mcp_tool_registration.py
++++ b/tools/mcp_tool_registration.py
+@@ -408,7 +408,39 @@
+         check_fn=_make_check_fn(name), scope=lambda: _core._server_registry_scope(key), lazy=False, key=key)
+     if registered:
+         _write_schema_cache(name, server, config, should_register)
++        _restore_shared_scopes(key)
+     return registered
++
++
++def _restore_shared_scopes(key) -> None:
++    """A parked shared connection lost tools in EVERY adopting profile.
++
++    Reconnecting registers the owner above; restore each adopter under its own
++    current config and credentials too. This only adopts an already-live matching
++    connection: no network calls, retries, or cross-profile credential fallback.
++    """
++    from pathlib import Path
++    from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
++    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
++    from tools.mcp_tool_config import _load_mcp_config
++
++    with _core._lock:
++        scopes = set(_core._server_tool_scopes.get(key, ()))
++        scopes.discard(_core._server_registry_scope(key))
++    for scope in sorted(s for s in scopes if s is not None):
++        home_token = set_hermes_home_override(scope)
++        secret_token = None
++        try:
++            secret_token = set_secret_scope(build_profile_secret_scope(Path(scope)))
++            restored = register_connected_into_current_scope(_load_mcp_config() or {})
++            if restored:
++                logger.warning("MCP: restored shared tool catalog for profile %s after connection recovery", scope)
++        except Exception:
++            logger.warning("MCP: shared tool catalog recovery failed for profile %s", scope, exc_info=True)
++        finally:
++            if secret_token is not None:
++                reset_secret_scope(secret_token)
++            reset_hermes_home_override(home_token)
+ 
+ 
+ def _server_enabled(config: dict) -> bool:
+@@ -477,8 +509,10 @@
+             server = _core._servers.get(key)
+             config = servers.get(_key_name(key))
+             cross_profile = _key_scope(key) != scope
++            # A reconnect is not a configuration removal. Keep the scope's
++            # ownership while the transport is temporarily unavailable; the
++            # transport's park/health machinery controls call availability.
+             if (config is None or not _server_enabled(config) or server is None
+-                    or getattr(server, "session", None) is None
+                     or not _same_server_route(server, config, cross_profile=cross_profile)):
+                 stale.append(key)
+     for key in stale:
+@@ -489,12 +523,20 @@
+         if not _server_enabled(config):
+             continue
+         with _core._lock:
+-            if _server_key(name, scope, current=False) in _core._servers:
+-                continue  # this profile has its own connection for the name
+-            # Any other profile's live connection with the same route AND credentials is shareable.
+-            shared = [(key, live) for key, live in _core._servers.items()
+-                      if _key_name(key) == name and getattr(live, "session", None) is not None
+-                      and _same_server_route(live, config, cross_profile=True)]
++            own_key = _server_key(name, scope, current=False)
++            own = _core._servers.get(own_key)
++            if own is not None:
++                # Connection bookkeeping can survive a lost registry overlay.
++                # Repair the owner too, but never use stale credentials/routes.
++                shared = [(own_key, own)] if (
++                    getattr(own, "session", None) is not None
++                    and _same_server_route(own, config)
++                ) else []
++            else:
++                # Any other profile's live connection with matching credentials is shareable.
++                shared = [(key, live) for key, live in _core._servers.items()
++                          if _key_name(key) == name and getattr(live, "session", None) is not None
++                          and _same_server_route(live, config, cross_profile=True)]
+         if not shared:
+             continue
+         key, server = shared[0]
+@@ -502,14 +544,16 @@
+         with _core._lock:
+             _core._server_tool_scopes.setdefault(key, set()).add(scope)
+         _record_scope_trust(name, config, scope)
+-        if registry.get_tool_names_for_toolset(f"mcp-{name}"):
+-            continue
+         candidates = _tool_candidates(name, server._tools, _make_tool_filter(name, config), server.tool_timeout,
+                                       config)
+         candidates += _utility_candidates(
+             name, _select_utility_schemas(name, server, config), server.tool_timeout)
++        candidates = _resolve_name_collisions(name, candidates)
++        present = set(registry.get_tool_names_for_toolset(f"mcp-{name}"))
++        if all(candidate.registry_name in present for candidate in candidates):
++            continue
+         names = _register_candidates(
+-            name, _resolve_name_collisions(name, candidates),
++            name, candidates,
+             check_fn=_make_check_fn(name), scope=lambda: scope, lazy=False, key=key)
+         if names:
+             registered_servers += 1
+diff --git a/tools/mcp_tool_discovery.py b/tools/mcp_tool_discovery.py
+--- a/tools/mcp_tool_discovery.py
++++ b/tools/mcp_tool_discovery.py
+@@ -619,6 +619,10 @@
+     ``{"removed": [...], "added": [...], "pending": [...]}``; a no-op when nothing changed."""
+     with _owner_secret_scope():
+         servers = _config._load_mcp_config()
++    # A recovered connection can be live while an adopter's catalog is absent.
++    # Heal that registration independently of connection/config drift; no new
++    # transport is opened by this operation.
++    _registration.register_connected_into_current_scope(servers)
+     wanted = {name for name, cfg in servers.items() if _enabled(cfg)}
+     scope = _core._mcp_registry_scope()
+     with _core._lock:

@@ -1,0 +1,68 @@
+{
+  "name": "calliope-datarabbit-desktop",
+  "version": "1.2.0-rc.5",
+  "private": true,
+  "description": "Native macOS shell for Data Rabbit",
+  "author": "rvbbit",
+  "main": "main.cjs",
+  "build": {
+    "appId": "ai.rvbbit.calliope.datarabbit",
+    "productName": "Data Rabbit",
+    "electronVersion": "39.8.10",
+    "asar": true,
+    "npmRebuild": false,
+    "afterPack": "electron/after-pack.cjs",
+    "artifactName": "DataRabbit-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "../dist"
+    },
+    "files": [
+      "**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/app-server.tar.gz",
+        "to": "app-server.tar.gz"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "../build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Data Rabbit uses the microphone only when you choose voice input for the desktop assistant.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "127.0.0.1": {
+              "NSIncludesSubdomains": false,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true
+            },
+            "localhost": {
+              "NSIncludesSubdomains": false,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
+      }
+    },
+    "linux": {
+      "category": "Development",
+      "icon": "../build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "synopsis": "A local-first SQL desktop for Postgres",
+      "description": "Data Rabbit is a fast, local-first SQL desktop for any Postgres. When a database has the rvbbit extension, the full semantic surface lights up.",
+      "maintainer": "Calliope <ryrobes@users.noreply.github.com>"
+    }
+  },
+  "homepage": "https://datarabbit.com"
+}

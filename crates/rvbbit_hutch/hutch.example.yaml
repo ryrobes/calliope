@@ -1,0 +1,162 @@
+# rvbbit-hutch service config. This compact mock proves middleware without a
+# GPU. See hutch.clover.example.yaml for the production-shaped Clover route
+# matrix. Tenants live in tenants.yaml (separate file:
+# key rotation must never touch service config).
+bind: "0.0.0.0:8090"
+tenants_file: "tenants.yaml"
+meter_db: "hutch_meter.sqlite"
+# admin_token: "change-me"        # gates /metrics and /admin/* when set
+max_body_bytes: 2097152
+lane_grace_ms: 250
+
+# mock = deterministic outputs, no GPU anywhere — proves the middleware
+# chain end-to-end. Flip to proxy when the zoo container is up:
+#   upstream: { mode: proxy, base_url: "http://zoo:8000" }
+upstream:
+  mode: mock
+
+# The Clover v0 menu. In proxy mode each backend needs upstream_path.
+# unit_microusd = would-have-been à la carte price per input (receipts).
+backends:
+  - name: sentiment
+    entitlement: clover
+    model_version: clover-v0-mock
+    unit_microusd: 20
+    mock_output: 0.42
+    mock_delay_ms: 40
+  - name: embed
+    entitlement: clover
+    adapter: openai-embeddings
+    model_version: clover-v0-mock
+    unit_microusd: 10
+    mock_output: [0.1, 0.2, 0.3, 0.4]
+    mock_delay_ms: 40
+  - name: rerank
+    entitlement: clover
+    model_version: clover-v0-mock
+    unit_microusd: 30
+    mock_output: 0.5
+    mock_delay_ms: 40
+  - name: classify
+    entitlement: clover
+    model_version: clover-v0-mock
+    unit_microusd: 30
+    mock_output: {"label": "mock", "score": 0.9}
+    mock_delay_ms: 40
+  - name: nli
+    entitlement: clover
+    model_version: clover-v0-mock
+    unit_microusd: 30
+    mock_output: {"label": "entailment", "score": 0.93}
+    mock_delay_ms: 40
+  - name: gemma
+    entitlement: gemma
+    model_version: gemma4-mock
+    unit_microusd: 900
+    mock_output: "mock generalist answer"
+    mock_delay_ms: 400
+
+# In proxy mode a specialist can override the shared base URL while retaining
+# Hutch auth, entitlements, lanes, metering, and model-version receipts:
+#   - name: web_scrape
+#     entitlement: clover
+#     upstream_base: "http://127.0.0.1:8091"
+#     upstream_path: /v1/scrape
+#     model_version: "clover-web-v0.2/conditional-http"
+#     unit_microusd: 100
+#     timeout_ms: 60000
+#   - name: web_research
+#     entitlement: clover_llm
+#     forward_tenant_scope: true
+#     upstream_base: "http://127.0.0.1:8092"
+#     upstream_path: /v1/research
+#     model_version: "clover-research-v0.2/openrouter-gemma-4-31b-it+exa+clover-web+memory"
+#     unit_microusd: 5000
+#     timeout_ms: 180000
+
+# Hosted LLMs on the OpenAI-compatible surface (/v1/chat/completions,
+# routed by the request's `model` field; GET /v1/models lists entitled).
+# Resolved Claude routes on OpenRouter receive automatic prompt caching,
+# including opaque aliases such as calliope. Set prompt_caching: false on
+# an LLM entry to disable Hutch's default. Explicit caller cache controls
+# (including per-block breakpoints and TTLs) are preserved.
+# llms:
+#   - name: clover
+#     aliases: [gemma4]
+#     entitlement: clover_llm
+#     upstream_base: "http://localhost:8000"
+#     upstream_model: "nvidia/Gemma-4-31B-IT-NVFP4"
+#     model_version: "gemma-4-31b-it-nvfp4"
+#     prompt_microusd_per_1k: 100
+#     completion_microusd_per_1k: 300
+#     # Keep ordinary traffic on the local server while giving the same public
+#     # model a separately metered, independently lane-limited long-context
+#     # route. A vLLM primary can expose /tokenize for exact preflight counts.
+#     overflow:
+#       context_threshold_tokens: 45000
+#       tokenize_path: /tokenize
+#       tokenize_min_body_bytes: 32768
+#       max_concurrent: 2
+#       fallback_on_unavailable: true
+#       provider: openrouter
+#       upstream_base: "https://openrouter.ai/api"
+#       upstream_bearer_token_env: OPENROUTER_API_KEY
+#       upstream_model: "google/gemma-4-26b-a4b-it"
+#       model_version: "openrouter/google/gemma-4-26b-a4b-it:throughput-zdr"
+#       request_overrides:
+#         provider:
+#           zdr: true
+#           data_collection: deny
+#           sort: throughput
+#       prompt_microusd_per_1k: 100
+#       completion_microusd_per_1k: 400
+#       timeout_ms: 900000
+#
+# A hosted OpenAI-compatible backend keeps the same canonical Clover service
+# name while the server privately changes its implementation model:
+#   - name: clover
+#     aliases: [gemma4]
+#     entitlement: clover_llm
+#     provider: openrouter
+#     upstream_base: "https://openrouter.ai/api"
+#     upstream_bearer_token_env: OPENROUTER_API_KEY
+#     upstream_model: "~deepseek/deepseek-v4-flash-latest"
+#     model_version: "openrouter/deepseek-v4-flash-latest"
+#     request_defaults:
+#       reasoning: { enabled: false }
+#       temperature: 0
+#       seed: 0
+#     request_overrides:
+#       provider:
+#         zdr: true
+#         data_collection: deny
+#     prompt_microusd_per_1k: 90
+#     completion_microusd_per_1k: 180
+#
+# A second canonical service can share the Clover key/entitlement and private
+# OpenRouter credential while selecting a stronger assistant model. Unlike the
+# deterministic bulk route above, Calliope deliberately keeps the model's
+# normal reasoning behavior unless the caller supplies its own policy:
+#   - name: calliope
+#     entitlement: clover_llm
+#     provider: openrouter
+#     upstream_base: "https://openrouter.ai/api"
+#     upstream_bearer_token_env: OPENROUTER_API_KEY
+#     upstream_model: "openai/gpt-6-luna"
+#     model_version: "openrouter/openai/gpt-6-luna"
+#     request_overrides:
+#       provider:
+#         zdr: true
+#         data_collection: deny
+#     prompt_microusd_per_1k: 1000
+#     completion_microusd_per_1k: 6000
+#     timeout_ms: 180000
+
+# LLM streaming deadlines (optional per llms entry):
+#   timeout_ms: 180000           # headers and complete non-stream JSON responses
+#   stream_timeouts:
+#     idle_ms: 180000            # maximum silence between response body chunks
+#     total_ms: 900000           # bounded total lifetime, including headers
+# These streaming defaults also apply to old configurations with no block.
+# SSE keepalives count as body activity; the total limit still applies.
+# Overflow routes inherit the primary route's stream_timeouts policy.

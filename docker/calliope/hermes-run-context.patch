@@ -1,0 +1,18 @@
+diff --git a/gateway/platforms/api_server_runs.py b/gateway/platforms/api_server_runs.py
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -744,6 +744,7 @@
+ def _run_agent_sync(self, run: _RunLaunch, agent, approval_notify, *, _api_server):
+     """Executor-thread body of one run; returns ``(result, usage, served_runtime)``."""
+     from gateway.session_context import clear_session_vars
++    from gateway.calliope_run_context import bind_run_id
+     from gateway.hosted_room_execution_policy import (
+         RoomExecutionPolicy, bind_room_execution_policy, reset_room_execution_policy)
+@@ -761,7 +762,7 @@
+     # (token, reset) pairs unwound in the finally block; bound only once each step succeeds.
+     resets: list[tuple[Any, Callable]] = []
+-    with self._profile_scope(run.request_profile):
++    with self._profile_scope(run.request_profile), bind_run_id(run.run_id):
+         try:
+             # Contextvars, not process env: concurrent runs must not share identity.
+             resets.append((set_current_session_key(run.approval_session_key), reset_current_session_key))

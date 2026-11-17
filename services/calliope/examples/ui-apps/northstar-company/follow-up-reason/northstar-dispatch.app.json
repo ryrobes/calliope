@@ -1,0 +1,493 @@
+{
+  "schema": "calliope.app.v1",
+  "title": "Northstar · Dispatch desk",
+  "data": {
+    "state": {
+      "selected": "",
+      "draft": {
+        "id": "",
+        "title": "No accessible visit selected",
+        "customer": "",
+        "address": "",
+        "equipment": "Choose a visit from the queue. If it is empty, there is no assigned work to open.",
+        "appointment_label": "",
+        "status": "Unavailable",
+        "assignee": "",
+        "notes": "",
+        "version": 0,
+        "technician": [],
+        "attachments": [],
+        "findings": "No report selected.",
+        "submitted_by": "",
+        "submitted_at_label": "",
+        "evidence": [],
+        "attachment_names": {},
+        "review_note": "",
+        "dispatch_target": null,
+        "field_target": null,
+        "review_target": null
+      },
+      "page": "queue"
+    },
+    "model": {
+      "visits": [],
+      "record": {
+        "id": "",
+        "title": "No accessible visit selected",
+        "customer": "",
+        "address": "",
+        "equipment": "Choose a visit from the queue. If it is empty, there is no assigned work to open.",
+        "appointment_label": "",
+        "status": "Unavailable",
+        "assignee": "",
+        "notes": "",
+        "version": 0,
+        "technician": [],
+        "attachments": [],
+        "findings": "No report selected.",
+        "submitted_by": "",
+        "submitted_at_label": "",
+        "evidence": [],
+        "attachment_names": {},
+        "review_note": "",
+        "dispatch_target": null,
+        "field_target": null,
+        "review_target": null
+      },
+      "message": "Loading authorized work…"
+    },
+    "technicians": [],
+    "report_summary": {
+      "authorized": false,
+      "population": "All saved reports",
+      "report_count": 0,
+      "visit_count": 0,
+      "not_recorded_count": 0,
+      "breakdown": []
+    }
+  },
+  "components": [
+    {
+      "id": "root",
+      "component": "CStack",
+      "children": [
+        "identity",
+        "workspace"
+      ],
+      "gap": "md"
+    },
+    {
+      "id": "identity",
+      "component": "CStack",
+      "children": [
+        "brand",
+        "message"
+      ],
+      "gap": "sm"
+    },
+    {
+      "id": "brand",
+      "component": "CText",
+      "text": "NORTHSTAR / DISPATCH DESK",
+      "size": "eyebrow",
+      "tone": "accent"
+    },
+    {
+      "id": "message",
+      "component": "CText",
+      "text": {
+        "path": "/model/message"
+      },
+      "size": "caption",
+      "tone": "muted"
+    },
+    {
+      "id": "workspace",
+      "component": "CStack",
+      "children": [
+        "queue",
+        "detail"
+      ],
+      "gap": "md",
+      "direction": "row",
+      "collapse": "phone"
+    },
+    {
+      "id": "queue",
+      "component": "CSection",
+      "title": "Work queue",
+      "child": "queue-scroll",
+      "weight": 2,
+      "collapse": "phone",
+      "summary": {
+        "path": "/model/record/title"
+      }
+    },
+    {
+      "id": "queue-scroll",
+      "component": "CScrollArea",
+      "child": "visit-list",
+      "label": "Visit queue",
+      "height": "available",
+      "minHeight": 180
+    },
+    {
+      "id": "visit-list",
+      "component": "CStack",
+      "children": [],
+      "gap": "md"
+    },
+    {
+      "id": "detail",
+      "component": "CStack",
+      "children": [
+        "cover",
+        "editor",
+        "links"
+      ],
+      "gap": "md",
+      "weight": 3
+    },
+    {
+      "id": "cover",
+      "component": "CSurface",
+      "child": "cover-body",
+      "treatment": "wash",
+      "tone": "cool",
+      "padding": "md"
+    },
+    {
+      "id": "cover-body",
+      "component": "CStack",
+      "children": [
+        "visit-id",
+        "visit-title",
+        "visit-status",
+        "appointment",
+        "equipment",
+        "address",
+        "assignee"
+      ],
+      "gap": "xs"
+    },
+    {
+      "id": "visit-id",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/id"
+      },
+      "size": "caption",
+      "family": "mono"
+    },
+    {
+      "id": "visit-title",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/title"
+      },
+      "size": "title"
+    },
+    {
+      "id": "visit-status",
+      "component": "CBadge",
+      "text": {
+        "path": "/model/record/status"
+      },
+      "tone": "accent"
+    },
+    {
+      "id": "appointment",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/appointment_label"
+      }
+    },
+    {
+      "id": "equipment",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/equipment"
+      },
+      "size": "caption"
+    },
+    {
+      "id": "address",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/address"
+      },
+      "size": "caption",
+      "tone": "muted"
+    },
+    {
+      "id": "assignee",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/assignee"
+      },
+      "size": "caption"
+    },
+    {
+      "id": "editor",
+      "component": "CSurface",
+      "child": "editor-body",
+      "treatment": "outlined",
+      "padding": "md"
+    },
+    {
+      "id": "editor-body",
+      "component": "CStack",
+      "children": [
+        "saved-notes",
+        "technician",
+        "assignment-help",
+        "assign-row"
+      ],
+      "gap": "md"
+    },
+    {
+      "id": "links",
+      "component": "CStack",
+      "children": [
+        "open-my-visits",
+        "open-review",
+        "analysis"
+      ],
+      "gap": "md",
+      "direction": "row",
+      "wrap": true
+    },
+    {
+      "id": "saved-notes",
+      "component": "CText",
+      "text": {
+        "path": "/model/record/notes"
+      }
+    },
+    {
+      "id": "technician",
+      "component": "CRecordPicker",
+      "label": "Assign to technician",
+      "value": {
+        "path": "/state/draft/technician"
+      },
+      "options": {
+        "path": "/technicians"
+      }
+    },
+    {
+      "id": "assignment-help",
+      "component": "CText",
+      "text": "Assignment uses the version you opened. Submitted and accepted work must be reviewed before reassignment.",
+      "size": "caption",
+      "tone": "muted"
+    },
+    {
+      "id": "assign-row",
+      "component": "CStack",
+      "children": [
+        "assign"
+      ],
+      "gap": "md",
+      "direction": "row"
+    },
+    {
+      "id": "assign",
+      "component": "Button",
+      "child": "assign-label",
+      "variant": "primary",
+      "action": {
+        "event": {
+          "name": "assign_visit"
+        }
+      }
+    },
+    {
+      "id": "assign-label",
+      "component": "CText",
+      "text": "Assign / reassign"
+    },
+    {
+      "id": "open-my-visits",
+      "component": "CRecordLink",
+      "label": "My visits",
+      "reference": {
+        "path": "/model/record/field_target"
+      }
+    },
+    {
+      "id": "open-review",
+      "component": "CRecordLink",
+      "label": "Review desk",
+      "reference": {
+        "path": "/model/record/review_target"
+      }
+    },
+    {
+      "id": "analysis",
+      "component": "CLink",
+      "label": "Workspace analysis",
+      "href": "/apps/northstar-analysis"
+    }
+  ],
+  "queries": {
+    "workspace": {
+      "sql": "WITH allowed AS (SELECT v.* FROM calliope_apps.northstar_visit_cards v WHERE EXISTS(SELECT 1 FROM calliope_apps.northstar_staff s WHERE s.email=$1 AND s.active AND s.role='dispatcher')), queue AS (SELECT v.* FROM allowed v WHERE v.status<>'Accepted' ORDER BY (v.priority='Urgent') DESC,v.appointment,v.id LIMIT 50), chosen AS (SELECT * FROM allowed WHERE id=coalesce(nullif($2,''),(SELECT id FROM queue LIMIT 1))) SELECT jsonb_build_object('visits',coalesce((SELECT jsonb_agg(to_jsonb(q)) FROM queue q),'[]'::jsonb),'record',coalesce((SELECT to_jsonb(c) FROM chosen c),'{\"id\":\"\",\"title\":\"No accessible visit selected\",\"customer\":\"\",\"address\":\"\",\"equipment\":\"Choose a visit from the queue. If it is empty, there is no assigned work to open.\",\"appointment_label\":\"\",\"status\":\"Unavailable\",\"assignee\":\"\",\"notes\":\"\",\"version\":0,\"technician\":[],\"attachments\":[],\"findings\":\"No report selected.\",\"submitted_by\":\"\",\"submitted_at_label\":\"\",\"evidence\":[],\"attachment_names\":{},\"review_note\":\"\",\"dispatch_target\":null,\"field_target\":null,\"review_target\":null}'::jsonb),'message',CASE WHEN NOT EXISTS(SELECT 1 FROM queue) THEN 'No work in this queue. A linked record may still be opened if authorized.' ELSE 'Select a visit. Changes happen only through the explicit command.' END) AS model",
+      "params": [
+        {
+          "actor": true
+        },
+        {
+          "path": "/state/selected"
+        }
+      ],
+      "path": "/model",
+      "shape": "value"
+    },
+    "technicians": {
+      "sql": "SELECT email AS value,display_name AS label FROM calliope_apps.northstar_staff WHERE active AND role='technician' AND EXISTS(SELECT 1 FROM calliope_apps.northstar_staff s WHERE s.email=$1 AND s.active AND s.role='dispatcher') ORDER BY display_name,email",
+      "params": [
+        {
+          "actor": true
+        }
+      ],
+      "path": "/technicians"
+    },
+    "report_summary": {
+      "sql": "WITH access AS (SELECT EXISTS(SELECT 1 FROM calliope_apps.northstar_staff s WHERE s.email=$1 AND s.active AND s.role='dispatcher') AS authorized), reports AS (SELECT r.id,r.visit_id,coalesce(to_jsonb(r)->>'follow_up_reason','Not recorded') AS reason FROM calliope_apps.northstar_reports r WHERE (SELECT authorized FROM access)), reasons(ord,reason) AS (VALUES (0,'Not recorded'),(1,'No follow-up'),(2,'Parts needed'),(3,'Return diagnostic visit'),(4,'Customer unavailable'),(5,'Other')), buckets AS (SELECT c.ord,c.reason,count(r.id)::integer AS report_count FROM reasons c LEFT JOIN reports r ON r.reason=c.reason GROUP BY c.ord,c.reason) SELECT (SELECT authorized FROM access) AS authorized,'All saved reports; all submission dates; includes superseded reports and accepted visits; one count per report.'::text AS population,(SELECT count(*)::integer FROM reports) AS report_count,(SELECT count(DISTINCT visit_id)::integer FROM reports) AS visit_count,(SELECT count(*)::integer FROM reports WHERE reason='Not recorded') AS not_recorded_count,CASE WHEN (SELECT authorized FROM access) THEN (SELECT jsonb_agg(jsonb_build_object('reason',reason,'report_count',report_count) ORDER BY ord) FROM buckets) ELSE '[]'::jsonb END AS breakdown",
+      "params": [
+        {
+          "actor": true
+        }
+      ],
+      "path": "/report_summary",
+      "shape": "first"
+    }
+  },
+  "events": {
+    "select_visit": {
+      "set": {
+        "/state/selected": {
+          "path": "/context/id"
+        },
+        "/state/page": "detail"
+      }
+    },
+    "assign_visit": {
+      "action": "assign_visit",
+      "inputs": {
+        "draft": {
+          "path": "/state/draft"
+        }
+      },
+      "reset": [
+        "/state/draft"
+      ]
+    }
+  },
+  "navigation": {
+    "paths": [
+      "/state/selected",
+      "/state/page"
+    ]
+  },
+  "forms": [
+    {
+      "path": "/state/draft",
+      "source": "/model/record",
+      "key": "id"
+    }
+  ],
+  "records": {
+    "visit": {
+      "id": {
+        "path": "/model/record/id"
+      },
+      "title": {
+        "path": "/model/record/title"
+      },
+      "open": {
+        "/state/selected": {
+          "recordId": true
+        },
+        "/state/page": "detail"
+      },
+      "summary": {
+        "queries": [
+          "workspace"
+        ],
+        "components": [
+          {
+            "id": "root",
+            "component": "CStack",
+            "children": [
+              "title",
+              "status",
+              "when"
+            ],
+            "gap": "md"
+          },
+          {
+            "id": "title",
+            "component": "CText",
+            "text": {
+              "path": "/model/record/title"
+            },
+            "size": "title"
+          },
+          {
+            "id": "status",
+            "component": "CText",
+            "text": {
+              "path": "/model/record/status"
+            }
+          },
+          {
+            "id": "when",
+            "component": "CText",
+            "text": {
+              "path": "/model/record/appointment_label"
+            }
+          }
+        ]
+      },
+      "when": {
+        "/state/page": "detail"
+      }
+    }
+  },
+  "fragments": {
+    "visit": {
+      "root": "item",
+      "components": [
+        {
+          "id": "item",
+          "component": "CRecordItem",
+          "label": {
+            "item": "/title"
+          },
+          "detail": {
+            "item": "/appointment_label"
+          },
+          "badge": {
+            "item": "/status"
+          },
+          "recordId": {
+            "item": "/id"
+          },
+          "selectedId": {
+            "path": "/model/record/id"
+          },
+          "onSelect": "select_visit"
+        }
+      ]
+    }
+  },
+  "repeat": {
+    "visit-list": {
+      "path": "/model/visits",
+      "key": "id",
+      "fragment": "visit"
+    }
+  }
+}

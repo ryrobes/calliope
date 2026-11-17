@@ -1,0 +1,1079 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import { VegaEmbed } from "react-vega"
+import type { Result as VegaEmbedResult, VisualizationSpec } from "vega-embed"
+import { Check } from "@/lib/icons"
+import { vegaConfigFromTheme } from "@/lib/desktop/chart-theme"
+import {
+  UI_ARTIFACT_KIND,
+  UI_RENDERER,
+  isUiBasicChartKind,
+  isUiControlKind,
+  isUiFilterOperator,
+  type UiControlKind,
+} from "@/lib/desktop/ui-artifact-contract"
+import type { DesktopParamOperator, DesktopParamValue } from "@/lib/desktop/types"
+import type { CrossFilter } from "@/lib/desktop/reactive-sql"
+import { formatCellValue } from "@/lib/sql/format"
+import { cn } from "@/lib/utils"
+import { Gauge } from "./gauge"
+import { Sparkline } from "./sparkline"
+
+export interface UiArtifactRow extends Record<string, unknown> {
+  rvbbit_artifact: "ui"
+  artifact_id?: string
+  artifact_kind?: string
+  renderer?: string
+  title?: string
+  spec?: Record<string, unknown> | null
+  data?: unknown[] | null
+  layout?: Record<string, unknown> | null
+  bindings?: Record<string, unknown> | null
+  diagnostics?: Record<string, unknown> | null
+}
+
+export function extractUiArtifacts(rows: Record<string, unknown>[]): UiArtifactRow[] | null {
+  if (rows.length === 0) return null
+  const artifacts = rows.filter((row): row is UiArtifactRow => row.rvbbit_artifact === "ui")
+  return artifacts.length === rows.length ? artifacts : null
+}
+
+export type UiArtifactParamInput = {
+  field: string
+  value: unknown
+  operator?: DesktopParamOperator
+  multiValueAction?: "add" | "remove" | "toggle" | "set" | "replace"
+  cascade?: boolean
+  type?: string
+  sourceStmtIndex?: number
+  defaultSeedKey?: string
+  requiresBinding?: boolean
+}
+
+export type UiArtifactActionInput = {
+  title: string
+  sql: string
+  refresh?: boolean
+  artifact: UiArtifactRow
+}
+
+export type UiArtifactActionResult = {
+  ok: boolean
+  message?: string
+  error?: string
+}
+
+export function UiArtifactView({
+  artifacts,
+  fill,
+  activeParams,
+  onEmitParam,
+  onRunAction,
+  sourceStmtIndex,
+  highlightFilters,
+}: {
+  artifacts: UiArtifactRow[]
+  fill?: boolean
+  activeParams?: DesktopParamValue[]
+  onEmitParam?: (input: UiArtifactParamInput) => void
+  onRunAction?: (input: UiArtifactActionInput) => Promise<UiArtifactActionResult>
+  sourceStmtIndex?: number
+  highlightFilters?: CrossFilter[]
+}) {
+  const visibleArtifacts = artifacts.filter((artifact) => artifact.artifact_kind !== UI_ARTIFACT_KIND.META)
+  if (visibleArtifacts.length === 0) return null
+  return (
+    <div className={cn("grid gap-2 overflow-auto bg-doc-bg p-2", fill ? "h-full auto-rows-fr" : "h-full auto-rows-min")}>
+      {visibleArtifacts.map((artifact, index) => (
+        <UiArtifactCard
+          key={artifact.artifact_id ?? `${artifact.renderer ?? "artifact"}-${index}`}
+          artifact={artifact}
+          fill={fill}
+          activeParams={activeParams}
+          onEmitParam={onEmitParam}
+          onRunAction={onRunAction}
+          sourceStmtIndex={sourceStmtIndex}
+          highlightFilters={highlightFilters}
+        />
+      ))}
+    </div>
+  )
+}
+
+function UiArtifactCard({
+  artifact,
+  fill,
+  activeParams,
+  onEmitParam,
+  onRunAction,
+  sourceStmtIndex,
+  highlightFilters,
+}: {
+  artifact: UiArtifactRow
+  fill?: boolean
+  activeParams?: DesktopParamValue[]
+  onEmitParam?: (input: UiArtifactParamInput) => void
+  onRunAction?: (input: UiArtifactActionInput) => Promise<UiArtifactActionResult>
+  sourceStmtIndex?: number
+  highlightFilters?: CrossFilter[]
+}) {
+  return (
+    <section className={cn("min-w-0 overflow-hidden rounded-md border border-chrome-border/70 bg-chrome-bg/45", fill ? "h-full" : "")}>
+      {artifact.title ? (
+        <div className="border-b border-chrome-border/60 px-2 py-1.5 text-[11px] font-medium text-chrome-text">
+          {artifact.title}
+        </div>
+      ) : null}
+      <div className={cn("min-h-0", fill ? "h-[calc(100%-2rem)]" : "")}>
+        {artifact.renderer === UI_RENDERER.METRIC_CARD ? (
+          <MetricCardArtifact artifact={artifact} fill={fill} />
+        ) : artifact.renderer === UI_RENDERER.KPI_GAUGE ? (
+          <KpiGaugeArtifact artifact={artifact} fill={fill} />
+        ) : artifact.renderer === UI_RENDERER.SPARKLINE ? (
+          <SparklineArtifact artifact={artifact} fill={fill} />
+        ) : artifact.renderer === UI_RENDERER.KPI_TIMELINE ? (
+          <KpiTimelineArtifact artifact={artifact} fill={fill} />
+        ) : artifact.renderer === UI_RENDERER.BASIC_CHART ? (
+          <BasicChartArtifact
+            artifact={artifact}
+            fill={fill}
+            onEmitParam={onEmitParam}
+            sourceStmtIndex={sourceStmtIndex}
+            highlightFilters={highlightFilters}
+          />
+        ) : artifact.renderer === UI_RENDERER.VEGA_LITE ? (
+          <VegaLiteArtifact
+            artifact={artifact}
+            fill={fill}
+            onEmitParam={onEmitParam}
+            sourceStmtIndex={sourceStmtIndex}
+            highlightFilters={highlightFilters}
+          />
+        ) : artifact.renderer === UI_RENDERER.TABLE_VIEW ? (
+          <TableArtifact artifact={artifact} fill={fill} />
+        ) : artifact.renderer === UI_RENDERER.FILTER_CONTROL ? (
+          <FilterControlArtifact
+            artifact={artifact}
+            fill={fill}
+            activeParams={activeParams}
+            onEmitParam={onEmitParam}
+            sourceStmtIndex={sourceStmtIndex}
+          />
+        ) : artifact.renderer === UI_RENDERER.ACTION_BUTTON ? (
+          <ActionButtonArtifact artifact={artifact} fill={fill} onRunAction={onRunAction} />
+        ) : (
+          <pre className="max-h-80 overflow-auto p-3 text-[11px] text-chrome-text">
+            {JSON.stringify(artifact, null, 2)}
+          </pre>
+        )}
+      </div>
+    </section>
+  )
+}
+
+const MAX_CONTROL_OPTIONS = 500
+
+const keyOf = (v: unknown): string => (v == null ? "__rvbbit_null__" : String(v))
+
+function rowsForArtifact(artifact: UiArtifactRow): Record<string, unknown>[] {
+  return Array.isArray(artifact.data)
+    ? artifact.data.filter((r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r))
+    : []
+}
+
+function artifactString(spec: Record<string, unknown>, key: string): string {
+  const value = spec[key]
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function artifactBool(spec: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = spec[key]
+  if (typeof value === "boolean") return value
+  if (typeof value !== "string") return fallback
+  const normalized = value.trim().toLowerCase()
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  return fallback
+}
+
+function actionConfirmMessage(spec: Record<string, unknown>, label: string): string | null {
+  const value = spec.confirm
+  if (typeof value === "boolean") return value ? `Run ${label}?` : null
+  if (typeof value !== "string") return `Run ${label}?`
+  const trimmed = value.trim()
+  if (!trimmed) return `Run ${label}?`
+  if (["0", "false", "no", "off"].includes(trimmed.toLowerCase())) return null
+  if (["1", "true", "yes", "on"].includes(trimmed.toLowerCase())) return `Run ${label}?`
+  return trimmed
+}
+
+function controlKind(spec: Record<string, unknown>): UiControlKind {
+  const raw = artifactString(spec, "kind").toLowerCase()
+  if (isUiControlKind(raw)) return raw
+  return "dropdown"
+}
+
+function controlOperator(spec: Record<string, unknown>, kind: UiControlKind): DesktopParamOperator {
+  const raw = artifactString(spec, "operator").toLowerCase()
+  if (isUiFilterOperator(raw)) return raw
+  return kind === "slider" || kind === "datepicker" ? "gte" : "in"
+}
+
+function distinctFieldValues(rows: Record<string, unknown>[], field: string): unknown[] {
+  const seen = new Set<string>()
+  const out: unknown[] = []
+  for (const row of rows) {
+    const value = row[field]
+    const key = keyOf(value)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+    if (out.length >= MAX_CONTROL_OPTIONS) break
+  }
+  out.sort((a, b) => (a == null ? 1 : b == null ? -1 : String(a).localeCompare(String(b), undefined, { numeric: true })))
+  return out
+}
+
+function fieldBounds(rows: Record<string, unknown>[], field: string): { min: unknown; max: unknown } | null {
+  let min: unknown
+  let max: unknown
+  let any = false
+  for (const row of rows) {
+    const value = row[field]
+    if (value == null) continue
+    if (!any) {
+      min = value
+      max = value
+      any = true
+      continue
+    }
+    if (String(value) < String(min)) min = value
+    if (String(value) > String(max)) max = value
+  }
+  return any ? { min, max } : null
+}
+
+function selectedValues(activeParams: DesktopParamValue[] | undefined, field: string): unknown[] {
+  const param = activeParams?.find((p) => p.field === field && p.cascade === false)
+  if (!param) return []
+  return Array.isArray(param.value) ? param.value : [param.value]
+}
+
+function rawDefaultValue(spec: Record<string, unknown>): unknown {
+  for (const key of ["default_value", "default", "value", "selected"]) {
+    if (!Object.prototype.hasOwnProperty.call(spec, key)) continue
+    const value = spec[key]
+    if (typeof value === "string" && value.trim() === "") continue
+    return value
+  }
+  return undefined
+}
+
+function matchOptionValue(value: unknown, options: unknown[]): unknown {
+  const wanted = keyOf(value)
+  return options.find((option) => keyOf(option) === wanted) ?? value
+}
+
+function parseDefaultList(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (typeof value !== "string") return [value]
+  const trimmed = value.trim()
+  if (!trimmed) return []
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      // fall through to comma splitting
+    }
+  }
+  return trimmed.includes(",")
+    ? trimmed.split(",").map((part) => part.trim()).filter(Boolean)
+    : [value]
+}
+
+function defaultControlValue(spec: Record<string, unknown>, kind: string, options: unknown[]): unknown {
+  const raw = rawDefaultValue(spec)
+  if (raw === undefined) return undefined
+  if (kind === "multiselect") return parseDefaultList(raw).map((value) => matchOptionValue(value, options))
+  return matchOptionValue(raw, options)
+}
+
+function stableDefaultKey(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function FilterControlArtifact({
+  artifact,
+  fill,
+  activeParams,
+  onEmitParam,
+  sourceStmtIndex,
+}: {
+  artifact: UiArtifactRow
+  fill?: boolean
+  activeParams?: DesktopParamValue[]
+  onEmitParam?: (input: UiArtifactParamInput) => void
+  sourceStmtIndex?: number
+}) {
+  const spec = artifact.spec ?? {}
+  const field = artifactString(spec, "field")
+  const kind = controlKind(spec)
+  const operator = controlOperator(spec, kind)
+  const rows = rowsForArtifact(artifact)
+  const selected = selectedValues(activeParams, field)
+  const selectedKeys = new Set(selected.map(keyOf))
+  const options = field ? distinctFieldValues(rows, field) : []
+  const defaultValue = defaultControlValue(spec, kind, options)
+  const defaultKey = defaultValue === undefined ? "" : stableDefaultKey(defaultValue)
+  const defaultSeedKey = defaultKey
+    ? [sourceStmtIndex ?? "root", artifact.artifact_id ?? artifact.renderer ?? UI_RENDERER.FILTER_CONTROL, field, operator, defaultKey].join(":")
+    : ""
+  const disabled = !field || !onEmitParam
+  useEffect(() => {
+    if (!defaultSeedKey || disabled || selected.length > 0 || defaultValue === undefined) return
+    onEmitParam?.({
+      field,
+      value: defaultValue,
+      operator: kind === "multiselect" ? "in" : operator,
+      multiValueAction: kind === "multiselect" ? "replace" : "set",
+      cascade: false,
+      sourceStmtIndex,
+      defaultSeedKey,
+    })
+  }, [defaultSeedKey, defaultValue, disabled, field, kind, onEmitParam, operator, selected.length, sourceStmtIndex])
+
+  if (!field) {
+    return <div className="p-3 text-xs text-chrome-text/50">No field.</div>
+  }
+
+  const emit = (value: unknown, action: UiArtifactParamInput["multiValueAction"] = "set", op = operator) => {
+    onEmitParam?.({ field, value, operator: op, multiValueAction: action, cascade: false, sourceStmtIndex })
+  }
+
+  if (kind === "datepicker") {
+    const bounds = fieldBounds(rows, field)
+    const current = selected[0] == null ? "" : String(selected[0]).slice(0, 10)
+    return (
+      <div className={cn("flex min-w-0 flex-col justify-center gap-2 p-3", fill ? "h-full" : "min-h-28")}>
+        <input
+          type="date"
+          value={current}
+          min={bounds?.min == null ? undefined : String(bounds.min).slice(0, 10)}
+          max={bounds?.max == null ? undefined : String(bounds.max).slice(0, 10)}
+          disabled={disabled}
+          onChange={(event) => emit(event.target.value || null, "set", operator === "lte" ? "lte" : "gte")}
+          className="rounded border border-chrome-border bg-secondary-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-55"
+        />
+        {selected.length > 0 ? (
+          <button type="button" onClick={() => emit(null, "remove", operator)} className="text-left text-[11px] text-chrome-text/55 hover:text-foreground">
+            Clear
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (kind === "slider") {
+    const values = rows.map((row) => Number(row[field])).filter((v) => Number.isFinite(v))
+    const min = values.length ? Math.min(...values) : 0
+    const max = values.length ? Math.max(...values) : 100
+    const current = selected[0] == null || Number.isNaN(Number(selected[0])) ? min : Number(selected[0])
+    return (
+      <div className={cn("flex min-w-0 flex-col justify-center gap-2 p-3", fill ? "h-full" : "min-h-28")}>
+        <div className="flex items-center justify-between gap-2 text-[11px] text-chrome-text/60">
+          <span>{formatCellValue(min)}</span>
+          <span className="font-mono text-foreground">{formatCellValue(current)}</span>
+          <span>{formatCellValue(max)}</span>
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={(max - min) / 100 || 1}
+          value={current}
+          disabled={disabled}
+          onChange={(event) => emit(Number(event.target.value), "set", operator === "lte" ? "lte" : "gte")}
+          className="w-full accent-[var(--rvbbit-accent)] disabled:opacity-55"
+        />
+      </div>
+    )
+  }
+
+  if (kind === "dropdown") {
+    const current = selected.length > 0 ? keyOf(selected[0]) : ""
+    return (
+      <div className={cn("flex min-w-0 flex-col justify-center gap-2 p-3", fill ? "h-full" : "min-h-28")}>
+        <select
+          value={current}
+          disabled={disabled}
+          onChange={(event) => {
+            if (event.target.value === "") {
+              if (selected.length > 0) emit(selected[0], "remove", "in")
+              return
+            }
+            const value = options.find((option) => keyOf(option) === event.target.value)
+            emit(value, "set", "in")
+          }}
+          className="rounded border border-chrome-border bg-secondary-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-55"
+        >
+          <option value="">(any)</option>
+          {options.map((option) => (
+            <option key={keyOf(option)} value={keyOf(option)}>
+              {option == null ? "NULL" : formatCellValue(option)}
+            </option>
+          ))}
+        </select>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn("min-h-0 overflow-auto p-1", fill ? "h-full" : "max-h-80")}>
+      {options.map((option) => {
+        const active = selectedKeys.has(keyOf(option))
+        return (
+          <button
+            key={keyOf(option)}
+            type="button"
+            disabled={disabled}
+            onClick={() => emit(option, "toggle", "in")}
+            className={cn(
+              "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs text-foreground transition-colors disabled:opacity-55",
+              active ? "bg-main/15 ring-1 ring-inset ring-main/45" : "hover:bg-main/10",
+            )}
+          >
+            <span className={cn("grid h-3.5 w-3.5 shrink-0 place-items-center rounded-sm border", active ? "border-main bg-main/30" : "border-chrome-border")}>
+              {active ? <Check className="h-2.5 w-2.5 text-main" /> : null}
+            </span>
+            <span className={cn("truncate", option == null && "italic text-chrome-text/45")}>
+              {option == null ? "NULL" : formatCellValue(option)}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ActionButtonArtifact({
+  artifact,
+  fill,
+  onRunAction,
+}: {
+  artifact: UiArtifactRow
+  fill?: boolean
+  onRunAction?: (input: UiArtifactActionInput) => Promise<UiArtifactActionResult>
+}) {
+  const spec = artifact.spec ?? {}
+  const label = artifactString(spec, "label") || artifact.title || "Run"
+  const sql = artifactString(spec, "sql")
+  const variant = artifactString(spec, "variant").toLowerCase()
+  const refresh = artifactBool(spec, "refresh", true)
+  const confirmMessage = actionConfirmMessage(spec, label)
+  const [state, setState] = useState<{ kind: "idle" | "running" | "done" | "error"; message?: string }>({ kind: "idle" })
+  const disabled = !sql || !onRunAction || state.kind === "running"
+
+  async function run() {
+    if (!sql || !onRunAction) return
+    if (confirmMessage && !window.confirm(confirmMessage)) return
+    setState({ kind: "running" })
+    try {
+      const result = await onRunAction({
+        title: artifact.title || label,
+        sql,
+        refresh,
+        artifact,
+      })
+      if (result.ok) {
+        setState({ kind: "done", message: result.message || "Done" })
+      } else {
+        setState({ kind: "error", message: result.error || "Action failed" })
+      }
+    } catch (error) {
+      setState({ kind: "error", message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  return (
+    <div className={cn("flex min-w-0 flex-col justify-center gap-2 p-3", fill ? "h-full" : "min-h-28")}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => void run()}
+        className={cn(
+          "inline-flex min-h-8 items-center justify-center rounded border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55",
+          variant === "danger"
+            ? "border-danger/45 bg-danger/15 text-danger hover:bg-danger/25"
+            : "border-main/45 bg-main/15 text-main hover:bg-main/25",
+        )}
+      >
+        {state.kind === "running" ? "Running..." : label}
+      </button>
+      {state.kind === "done" ? (
+        <div className="truncate text-[11px] text-success">{state.message}</div>
+      ) : state.kind === "error" ? (
+        <div className="line-clamp-2 text-[11px] text-danger">{state.message}</div>
+      ) : null}
+    </div>
+  )
+}
+
+function MetricCardArtifact({ artifact, fill }: { artifact: UiArtifactRow; fill?: boolean }) {
+  const spec = artifact.spec ?? {}
+  const value = spec.value
+  const label = typeof spec.label === "string" && spec.label.trim() ? spec.label : artifact.title
+  return (
+    <div className={cn("flex min-w-0 flex-col justify-center gap-1 px-4 py-5", fill ? "h-full" : "min-h-32")}>
+      <div className={cn("truncate font-semibold tabular-nums text-foreground", fill ? "text-3xl" : "text-4xl")}>
+        {value === null || value === undefined ? "NULL" : formatCellValue(value)}
+      </div>
+      {label ? (
+        <div className="truncate text-[11px] uppercase tracking-wide text-chrome-text/55">{label}</div>
+      ) : null}
+    </div>
+  )
+}
+
+function numericValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+function artifactNumber(spec: Record<string, unknown>, key: string): number | null {
+  return numericValue(spec[key])
+}
+
+function artifactStringAny(spec: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = artifactString(spec, key)
+    if (value) return value
+  }
+  return ""
+}
+
+function artifactBoolAny(spec: Record<string, unknown>, keys: string[], fallback: boolean): boolean {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(spec, key)) return artifactBool(spec, key, fallback)
+  }
+  return fallback
+}
+
+function valueFromRowOrSpec(
+  spec: Record<string, unknown>,
+  rows: Record<string, unknown>[],
+  valueKey: string,
+  fieldKeys: string[],
+): unknown {
+  if (Object.prototype.hasOwnProperty.call(spec, valueKey)) return spec[valueKey]
+  const field = artifactStringAny(spec, fieldKeys)
+  if (field) return rows[0]?.[field]
+  return undefined
+}
+
+function valuesFromRows(rows: Record<string, unknown>[], field: string): number[] {
+  if (!field) return []
+  return rows.map((row) => numericValue(row[field])).filter((value): value is number => value !== null)
+}
+
+function normalizePercentValue(value: number, unit: string): number {
+  return unit === "%" && Math.abs(value) <= 1 ? value * 100 : value
+}
+
+function formatMetricNumber(value: unknown, unit = ""): string {
+  const n = numericValue(value)
+  if (n === null) return value == null ? "NULL" : formatCellValue(value)
+  if (unit === "%") {
+    const pct = normalizePercentValue(n, unit)
+    return `${pct.toLocaleString(undefined, { maximumFractionDigits: Math.abs(pct) < 10 ? 1 : 0 })}%`
+  }
+  const rendered = Math.abs(n) >= 1000
+    ? n.toLocaleString(undefined, { maximumFractionDigits: 1 })
+    : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  return unit ? `${rendered} ${unit}` : rendered
+}
+
+function statusClass(status: string): string {
+  const normalized = status.toLowerCase()
+  if (["ok", "pass", "passed", "healthy", "success", "succeeded", "green"].includes(normalized)) {
+    return "border-success/35 bg-success/15 text-success"
+  }
+  if (["warn", "warning", "degraded", "late", "amber"].includes(normalized)) {
+    return "border-warning/40 bg-warning/15 text-warning"
+  }
+  if (["fail", "failed", "error", "critical", "red", "unhealthy"].includes(normalized)) {
+    return "border-danger/40 bg-danger/15 text-danger"
+  }
+  return "border-chrome-border bg-foreground/[0.04] text-chrome-text"
+}
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span
+      title={status}
+      className={cn(
+        "max-w-32 shrink-0 truncate rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        statusClass(status),
+      )}
+    >
+      {status}
+    </span>
+  )
+}
+
+function ArtifactEmptyState({
+  label,
+  message,
+  fill,
+  className,
+}: {
+  label?: string
+  message: string
+  fill?: boolean
+  className?: string
+}) {
+  return (
+    <div className={cn("flex min-w-0 flex-col justify-center gap-2 px-4 py-4", fill ? "h-full" : "min-h-32", className)}>
+      {label ? <div className="truncate text-[11px] uppercase tracking-wide text-chrome-text/55">{label}</div> : null}
+      <div className="truncate text-xs text-chrome-text/45">{message}</div>
+    </div>
+  )
+}
+
+function KpiGaugeArtifact({ artifact, fill }: { artifact: UiArtifactRow; fill?: boolean }) {
+  const spec = artifact.spec ?? {}
+  const rows = rowsForArtifact(artifact)
+  const valueField = artifactStringAny(spec, ["value_field", "field"])
+  const value = numericValue(valueFromRowOrSpec(spec, rows, "value", ["value_field", "field"]))
+  const max =
+    artifactNumber(spec, "max") ??
+    numericValue(valueFromRowOrSpec(spec, rows, "max_value", ["max_field"])) ??
+    100
+  const target =
+    artifactNumber(spec, "target") ??
+    numericValue(valueFromRowOrSpec(spec, rows, "target_value", ["target_field"]))
+  const label = artifactStringAny(spec, ["label", "metric", "name"]) || artifact.title || "KPI"
+  const unit = artifactString(spec, "unit")
+  const goodHigh = artifactBoolAny(spec, ["good_high", "higher_is_better"], true)
+  const reading = value === null ? "NULL" : formatMetricNumber(value, unit)
+  const gaugeMax = max > 0 ? max : target && target > 0 ? target : Math.max(1, value ?? 0)
+  const statusField = artifactStringAny(spec, ["status_field", "verdict_field"])
+  const status = statusField ? String(rows[0]?.[statusField] ?? "") : ""
+
+  if (value === null && (valueField || rows.length === 0)) {
+    return <ArtifactEmptyState label={label} message="No KPI data." fill={fill} className="min-h-36" />
+  }
+
+  return (
+    <div className={cn("flex min-w-0 flex-col justify-center gap-3 px-4 py-4", fill ? "h-full" : "min-h-36")}>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-[11px] uppercase tracking-wide text-chrome-text/55">{label}</div>
+          <div className="mt-1 truncate text-3xl font-semibold tabular-nums text-foreground">{reading}</div>
+        </div>
+        {status ? (
+          <StatusPill status={status} />
+        ) : null}
+      </div>
+      <Gauge
+        value={value ?? 0}
+        max={gaugeMax}
+        goodHigh={goodHigh}
+        label={target === null ? undefined : `target ${formatMetricNumber(target, unit)}`}
+        reading={reading}
+      />
+    </div>
+  )
+}
+
+function SparklineArtifact({ artifact, fill }: { artifact: UiArtifactRow; fill?: boolean }) {
+  const spec = artifact.spec ?? {}
+  const rows = rowsForArtifact(artifact)
+  const valueField = artifactStringAny(spec, ["value_field", "field", "y"])
+  const label = artifactStringAny(spec, ["label", "metric", "name"]) || artifact.title
+  const unit = artifactString(spec, "unit")
+  const values = valuesFromRows(rows, valueField)
+  const latest = values.length ? values[values.length - 1] : null
+  const color = artifactString(spec, "color") || "var(--rvbbit-accent)"
+  const yMin = artifactNumber(spec, "y_min") ?? undefined
+  const yMax = artifactNumber(spec, "y_max") ?? undefined
+
+  if (values.length === 0) {
+    return <ArtifactEmptyState label={label} message="No trend data." fill={fill} />
+  }
+
+  return (
+    <div className={cn("flex min-w-0 flex-col justify-center gap-3 px-4 py-4", fill ? "h-full" : "min-h-32")}>
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        {label ? <div className="truncate text-[11px] uppercase tracking-wide text-chrome-text/55">{label}</div> : <span />}
+        <div className="shrink-0 font-mono text-sm tabular-nums text-foreground">
+          {latest === null ? "NULL" : formatMetricNumber(latest, unit)}
+        </div>
+      </div>
+      <Sparkline values={values} height={fill ? 48 : 40} color={color} fillOpacity={0.16} yMin={yMin} yMax={yMax} />
+    </div>
+  )
+}
+
+function sortedTimelineRows(
+  rows: Record<string, unknown>[],
+  timeField: string,
+): Record<string, unknown>[] {
+  if (!timeField) return rows
+  return [...rows].sort((a, b) => String(a[timeField] ?? "").localeCompare(String(b[timeField] ?? "")))
+}
+
+function KpiTimelineArtifact({ artifact, fill }: { artifact: UiArtifactRow; fill?: boolean }) {
+  const spec = artifact.spec ?? {}
+  const rows = sortedTimelineRows(rowsForArtifact(artifact), artifactStringAny(spec, ["time_field", "x", "date_field"]))
+  const valueField = artifactStringAny(spec, ["value_field", "field", "y"])
+  const statusField = artifactStringAny(spec, ["status_field", "verdict_field"])
+  const timeField = artifactStringAny(spec, ["time_field", "x", "date_field"])
+  const values = valuesFromRows(rows, valueField)
+  const latestRow = rows[rows.length - 1]
+  const latest = values.length ? values[values.length - 1] : null
+  const previous = values.length > 1 ? values[values.length - 2] : null
+  const delta = latest !== null && previous !== null ? latest - previous : null
+  const unit = artifactString(spec, "unit")
+  const label = artifactStringAny(spec, ["label", "metric", "name"]) || artifact.title || "KPI"
+  const target = artifactNumber(spec, "target")
+  const max = artifactNumber(spec, "max") ?? (unit === "%" ? 100 : Math.max(target ?? 0, ...values, 1))
+  const goodHigh = artifactBoolAny(spec, ["good_high", "higher_is_better"], true)
+  const status = statusField ? String(latestRow?.[statusField] ?? "") : ""
+  const color = status ? undefined : artifactString(spec, "color")
+  const yMin = artifactNumber(spec, "y_min") ?? undefined
+  const yMax = artifactNumber(spec, "y_max") ?? undefined
+  const normalizedLatest = latest === null ? null : normalizePercentValue(latest, unit)
+  const normalizedMax = normalizePercentValue(max, unit)
+
+  if (values.length === 0) {
+    return <ArtifactEmptyState label={label} message="No timeline data." fill={fill} className="min-h-48" />
+  }
+
+  return (
+    <div className={cn("grid min-w-0 gap-3 px-4 py-4", fill ? "h-full grid-rows-[auto_auto_1fr]" : "min-h-48")}>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-[11px] uppercase tracking-wide text-chrome-text/55">{label}</div>
+          <div className="mt-1 flex min-w-0 items-baseline gap-2">
+            <span className="truncate text-3xl font-semibold tabular-nums text-foreground">
+              {latest === null ? "NULL" : formatMetricNumber(latest, unit)}
+            </span>
+            {delta !== null ? (
+              <span className={cn("shrink-0 text-xs tabular-nums", delta === 0 ? "text-chrome-text/45" : delta > 0 === goodHigh ? "text-success" : "text-danger")}>
+                {delta > 0 ? "+" : ""}{formatMetricNumber(delta, unit)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        {status ? (
+          <StatusPill status={status} />
+        ) : null}
+      </div>
+      <Gauge
+        value={normalizedLatest ?? 0}
+        max={normalizedMax > 0 ? normalizedMax : Math.max(1, normalizedLatest ?? 0)}
+        goodHigh={goodHigh}
+        label={target === null ? undefined : `target ${formatMetricNumber(target, unit)}`}
+        reading={latest === null ? "NULL" : formatMetricNumber(latest, unit)}
+      />
+      <div className="flex min-h-0 flex-col justify-end gap-1">
+        <Sparkline
+          values={values.map((value) => normalizePercentValue(value, unit))}
+          height={fill ? 58 : 46}
+          color={color || "var(--rvbbit-accent)"}
+          fillOpacity={0.16}
+          yMin={yMin}
+          yMax={yMax}
+        />
+        {timeField && latestRow?.[timeField] != null ? (
+          <div className="truncate text-right text-[10px] text-chrome-text/45">
+            latest {formatCellValue(latestRow[timeField])}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function inferVegaType(rows: Record<string, unknown>[], field: string, fallback: "quantitative" | "temporal" | "nominal" = "nominal") {
+  if (!field) return fallback
+  const sample = rows.find((row) => row[field] !== null && row[field] !== undefined)?.[field]
+  if (typeof sample === "number") return "quantitative"
+  if (sample instanceof Date) return "temporal"
+  if (typeof sample === "string") {
+    if (/^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/.test(sample)) return "temporal"
+    if (sample.trim() !== "" && Number.isFinite(Number(sample))) return "quantitative"
+  }
+  return fallback
+}
+
+function basicChartSpec(artifact: UiArtifactRow): Record<string, unknown> {
+  const spec = artifact.spec ?? {}
+  const rows = rowsForArtifact(artifact)
+  const kindRaw = artifactStringAny(spec, ["kind", "mark", "chart"]).toLowerCase()
+  const kind = kindRaw === "scatter" ? "point" : isUiBasicChartKind(kindRaw) ? kindRaw : "bar"
+  const x = artifactStringAny(spec, ["x", "x_field", "field"])
+  const y = artifactStringAny(spec, ["y", "y_field", "value_field"])
+  const color = artifactStringAny(spec, ["color", "color_field", "series_field"])
+  const size = artifactStringAny(spec, ["size", "size_field"])
+  const aggregate = artifactString(spec, "aggregate")
+  const xType = artifactStringAny(spec, ["x_type", "field_type"]) || inferVegaType(rows, x)
+  const yType = artifactString(spec, "y_type") || inferVegaType(rows, y, "quantitative")
+  const sort = spec.sort ?? (kind === "bar" ? "-y" : undefined)
+  const tooltip = [x, y, color, size]
+    .filter(Boolean)
+    .filter((field, index, arr) => arr.indexOf(field) === index)
+    .map((field) => ({ field, type: field === y ? yType : field === x ? xType : inferVegaType(rows, field) }))
+  const encoding: Record<string, unknown> = {}
+
+  if (kind === "histogram") {
+    encoding.x = { field: x || y, type: "quantitative", bin: spec.bin ?? true }
+    encoding.y = { aggregate: "count", type: "quantitative" }
+  } else if (kind === "heatmap" || kind === "rect") {
+    encoding.x = { field: x, type: xType }
+    encoding.y = { field: y, type: yType }
+    encoding.color = color
+      ? { field: color, type: inferVegaType(rows, color, "quantitative"), aggregate: aggregate || undefined }
+      : { aggregate: "count", type: "quantitative" }
+  } else {
+    encoding.x = { field: x, type: xType, ...(sort ? { sort } : {}) }
+    if (y) encoding.y = { field: y, type: yType, ...(aggregate ? { aggregate } : {}) }
+    else encoding.y = { aggregate: "count", type: "quantitative" }
+    if (color) encoding.color = { field: color, type: inferVegaType(rows, color) }
+    if (size) encoding.size = { field: size, type: inferVegaType(rows, size, "quantitative") }
+  }
+  if (tooltip.length > 0) encoding.tooltip = tooltip
+
+  return {
+    $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+    mark: kind === "area"
+      ? { type: "area", interpolate: "monotone", opacity: 0.8 }
+      : kind === "line"
+        ? { type: "line", point: spec.point ?? true, interpolate: "monotone" }
+        : kind === "point"
+          ? { type: "point", filled: true, size: 55 }
+          : kind === "heatmap"
+            ? { type: "rect" }
+            : { type: kind === "histogram" ? "bar" : kind || "bar", cornerRadiusEnd: kind === "bar" ? 2 : undefined },
+    encoding,
+  }
+}
+
+function BasicChartArtifact({
+  artifact,
+  fill,
+  onEmitParam,
+  sourceStmtIndex,
+  highlightFilters,
+}: {
+  artifact: UiArtifactRow
+  fill?: boolean
+  onEmitParam?: (input: UiArtifactParamInput) => void
+  sourceStmtIndex?: number
+  highlightFilters?: CrossFilter[]
+}) {
+  const spec = useMemo(() => basicChartSpec(artifact), [artifact])
+  const vegaArtifact = useMemo(() => ({ ...artifact, renderer: UI_RENDERER.VEGA_LITE, spec }), [artifact, spec])
+  return (
+    <VegaLiteArtifact
+      artifact={vegaArtifact}
+      fill={fill}
+      onEmitParam={onEmitParam}
+      sourceStmtIndex={sourceStmtIndex}
+      highlightFilters={highlightFilters}
+    />
+  )
+}
+
+function vegaEncodingField(spec: Record<string, unknown>, channel: string): string {
+  const encoding = spec.encoding
+  if (!encoding || typeof encoding !== "object" || Array.isArray(encoding)) return ""
+  const channelDef = (encoding as Record<string, unknown>)[channel]
+  if (!channelDef || typeof channelDef !== "object" || Array.isArray(channelDef)) return ""
+  const field = (channelDef as Record<string, unknown>).field
+  return typeof field === "string" ? field : ""
+}
+
+function hasVegaClickParam(spec: Record<string, unknown>): boolean {
+  const params = spec.params
+  return Array.isArray(params) && params.some((param) => {
+    if (!param || typeof param !== "object" || Array.isArray(param)) return false
+    return (param as Record<string, unknown>).name === "click"
+  })
+}
+
+function withVegaClickSelection(spec: Record<string, unknown>, field: string): Record<string, unknown> {
+  if (!field || hasVegaClickParam(spec)) return spec
+  const params = Array.isArray(spec.params) ? spec.params : []
+  const encoding = spec.encoding && typeof spec.encoding === "object" && !Array.isArray(spec.encoding)
+    ? { ...(spec.encoding as Record<string, unknown>) }
+    : {}
+  if (!encoding.opacity) {
+    encoding.opacity = { condition: { param: "click", value: 1, empty: true }, value: 0.35 }
+  }
+  return {
+    ...spec,
+    params: [
+      ...params,
+      {
+        name: "click",
+        select: { type: "point", fields: [field], toggle: "true" },
+      },
+    ],
+    encoding,
+  }
+}
+
+function crossFilterValuesForField(filters: CrossFilter[] | undefined, field: string): unknown[] {
+  if (!field || !filters?.length) return []
+  const out: unknown[] = []
+  for (const filter of filters) {
+    if (filter.column.toLowerCase() !== field.toLowerCase()) continue
+    const values = Array.isArray(filter.value) ? filter.value : [filter.value]
+    for (const value of values) {
+      if (value !== undefined && value !== null) out.push(value)
+    }
+  }
+  return out
+}
+
+function withVegaFilterHighlight(
+  spec: Record<string, unknown>,
+  field: string,
+  selectedValues: unknown[],
+): Record<string, unknown> {
+  if (!field || selectedValues.length === 0) return withVegaClickSelection(spec, field)
+  const encoding = spec.encoding && typeof spec.encoding === "object" && !Array.isArray(spec.encoding)
+    ? { ...(spec.encoding as Record<string, unknown>) }
+    : {}
+  encoding.opacity = {
+    condition: {
+      test: `indexof(${JSON.stringify(selectedValues)}, datum[${JSON.stringify(field)}]) >= 0`,
+      value: 1,
+    },
+    value: 0.35,
+  }
+  return { ...withVegaClickSelection(spec, field), encoding }
+}
+
+function VegaLiteArtifact({
+  artifact,
+  fill,
+  onEmitParam,
+  sourceStmtIndex,
+  highlightFilters,
+}: {
+  artifact: UiArtifactRow
+  fill?: boolean
+  onEmitParam?: (input: UiArtifactParamInput) => void
+  sourceStmtIndex?: number
+  highlightFilters?: CrossFilter[]
+}) {
+  const rows = useMemo(() => rowsForArtifact(artifact), [artifact])
+  const xField = useMemo(
+    () => vegaEncodingField(artifact.spec && typeof artifact.spec === "object" ? artifact.spec : {}, "x"),
+    [artifact.spec],
+  )
+  const highlightValues = useMemo(
+    () => crossFilterValuesForField(highlightFilters, xField),
+    [highlightFilters, xField],
+  )
+  const spec = useMemo(() => {
+    const base = artifact.spec && typeof artifact.spec === "object" ? { ...artifact.spec } : {}
+    const selectable = onEmitParam ? withVegaFilterHighlight(base, xField, highlightValues) : base
+    return {
+      ...selectable,
+      data: selectable.data ?? (rows.length > 0 ? { values: rows } : undefined),
+      config: { ...vegaConfigFromTheme(), ...((selectable.config as Record<string, unknown> | undefined) ?? {}) },
+      width: selectable.width ?? "container",
+      height: fill ? "container" : selectable.height ?? "container",
+      autosize: selectable.autosize ?? { type: "fit", contains: "padding", resize: true },
+    }
+  }, [artifact.spec, fill, highlightValues, onEmitParam, rows, xField])
+
+  function handleEmbed(res: VegaEmbedResult) {
+    if (!onEmitParam || !xField) return
+    const handler = (_event: unknown, item: unknown) => {
+      const datum =
+        item && typeof item === "object" && "datum" in item
+          ? (item as { datum?: unknown }).datum
+          : null
+      if (!datum || typeof datum !== "object" || Array.isArray(datum)) return
+      const raw = (datum as Record<string, unknown>)[xField]
+      if (raw === undefined || raw === null) return
+      onEmitParam({
+        field: xField,
+        value: [raw],
+        operator: "in",
+        multiValueAction: "replace",
+        cascade: false,
+        sourceStmtIndex,
+        requiresBinding: true,
+      })
+    }
+    try {
+      res.view.addEventListener("click", handler)
+    } catch {
+      // Custom Vega views without mark click events are still valid.
+    }
+  }
+
+  return (
+    <div className={cn("min-h-0 p-2", fill ? "h-full w-full" : "h-72 w-full")}>
+      <VegaEmbed
+        spec={spec as unknown as VisualizationSpec}
+        options={{ actions: false, renderer: "svg", tooltip: { theme: "dark" } }}
+        onEmbed={handleEmbed}
+        className="h-full w-full"
+      />
+    </div>
+  )
+}
+
+function TableArtifact({ artifact, fill }: { artifact: UiArtifactRow; fill?: boolean }) {
+  const rows = Array.isArray(artifact.data) ? artifact.data.filter((r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r)) : []
+  const columns = Array.isArray(artifact.spec?.columns)
+    ? artifact.spec.columns.filter((c): c is string => typeof c === "string")
+    : rows[0]
+      ? Object.keys(rows[0])
+      : []
+  if (columns.length === 0) {
+    return <div className="p-3 text-xs text-chrome-text/50">No rows.</div>
+  }
+  return (
+    <div className={cn("overflow-auto", fill ? "h-full" : "max-h-80")}>
+      <table className="w-full border-collapse text-xs">
+        <thead className="sticky top-0 bg-chrome-bg">
+          <tr>
+            {columns.map((col) => (
+              <th key={col} className="border-b border-chrome-border px-2 py-1 text-left font-medium text-chrome-text/70">
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex} className="odd:bg-foreground/[0.02]">
+              {columns.map((col) => (
+                <td key={col} className="border-b border-chrome-border/35 px-2 py-1 text-chrome-text">
+                  {formatCellValue(row[col])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}

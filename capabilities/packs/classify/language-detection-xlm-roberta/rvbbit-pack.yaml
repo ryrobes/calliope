@@ -1,0 +1,77 @@
+api_version: rvbbit.pack/v1
+id: classify/language-detection-xlm-roberta
+name: language_detection_xlm_roberta
+title: XLM-R Language Detection
+description: Detect the language of text for routing, normalization, and multilingual analytics.
+license: mit
+tags:
+- classify
+- language
+- multilingual
+- routing
+- tabular
+capability: capability.yaml
+source:
+  provider: huggingface
+  model: papluca/xlm-roberta-base-language-detection
+  url: https://huggingface.co/papluca/xlm-roberta-base-language-detection
+runtime:
+  mode: build
+  template: hf-rvbbit-fastapi
+  handler: sequence_classification
+  device: auto
+resources:
+  gpu:
+    required: false
+    placement: single_gpu
+    model_size_bytes: 1112264584
+    vram_required_bytes: 1390330730
+    headroom_pct: 25
+    estimate_source: huggingface_weights
+exports:
+  backend: detect_language_xlm_roberta
+  operators:
+  - detect_language
+  - language
+install:
+  mode: build
+  warren: true
+  docker: true
+acceptance:
+  target_selector:
+    capability: true
+    docker: true
+  tests:
+  - name: language_routing_sample
+    description: Detect language on a multilingual support note and assert classifier JSON shape.
+    sql: |
+      DO $$
+      DECLARE
+          result jsonb;
+          label text;
+          started timestamptz := clock_timestamp();
+      BEGIN
+          LOOP
+              SELECT rvbbit.detect_language('el pedido llego tarde y necesito ayuda') INTO result;
+              EXIT WHEN result IS NOT NULL;
+              IF clock_timestamp() - started > interval '2 minutes' THEN
+                  RAISE EXCEPTION 'detect_language returned NULL after readiness window';
+              END IF;
+              PERFORM pg_sleep(2);
+          END LOOP;
+
+          IF jsonb_typeof(result) <> 'object'
+             OR NOT (result ? 'label')
+             OR NOT (result ? 'score') THEN
+              RAISE EXCEPTION 'unexpected language result shape: %', result;
+          END IF;
+          IF (result->>'score')::float8 < 0 OR (result->>'score')::float8 > 1 THEN
+              RAISE EXCEPTION 'language score out of range: %', result;
+          END IF;
+
+          SELECT rvbbit.language('el pedido llego tarde y necesito ayuda') INTO label;
+          IF coalesce(btrim(label), '') = '' THEN
+              RAISE EXCEPTION 'bundled language operator returned empty label';
+          END IF;
+      END
+      $$;

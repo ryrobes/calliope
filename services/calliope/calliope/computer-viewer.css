@@ -1,0 +1,16 @@
+/* Calliope surrounds the protocol-matched Kasm canvas; it never handles input. */
+:root { --void: #0d0b09; --amber: #d9a441; --text: #e8dfd2; }
+html, body { margin: 0 !important; width: 100%; height: 100%; overflow: hidden; background: var(--void) !important; }
+#mySidenav, #noVNC_control_bar_anchor, #noVNC_identify_monitor,
+#noVNC_transition, #noVNC_status { display: none !important; }
+#calliope-viewer-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+#calliope-viewer-backdrop .ascii-veil-canvas { display: block; width: 100%; height: 100%; }
+#noVNC_container { position: absolute !important; z-index: 1; inset: 0 0 24px !important; width: 100% !important; height: calc(100% - 24px) !important; background: transparent !important; }
+#noVNC_container div { background: transparent !important; }
+:root:not(.noVNC_connected) #noVNC_container { visibility: hidden; }
+#calliope-viewer-status { position: fixed; z-index: 2; inset: auto 0 0; min-height: 24px; box-sizing: border-box; padding: 4px 12px; margin: 0; color: var(--text); background: var(--void); font: 11px/16px system-ui, sans-serif; text-align: center; overflow-wrap: anywhere; }
+#calliope-viewer-status[data-state="connected"] { color: color-mix(in srgb, var(--text) 55%, var(--void)); }
+#calliope-viewer-status[data-error="true"] { color: var(--amber); }
+
+#calliope-viewer-status button { border: 0; padding: 0; margin-left: 10px; background: transparent; color: var(--amber); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+#calliope-viewer-status button[hidden] { display: none; }

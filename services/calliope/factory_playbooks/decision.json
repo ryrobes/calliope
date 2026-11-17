@@ -1,0 +1,96 @@
+{
+  "name": "playbook.decision",
+  "title": "Decision",
+  "contract": {
+    "method": [
+      "Treat the user's request as a choice from the first reply. Do not warm up with a briefing, a What Changed tour, or a dashboard mock unless they asked for those.",
+      "Lock the decision question in one sentence before options. If the question, the option set, or a constraint would change the pick and no high-confidence default exists, block and ask a multiple-choice Floor question. Do not invent a menu to look decisive.",
+      "Gather only the evidence that would change the pick. Put a compact comparison on Stage (one row per option or one row per thing compared). Prose does not invent a number the Stage does not show. At most one claim chart, and only if the shape is the reason to pick.",
+      "Name two to six options. Each gets a short label, what it means, and a consequence if chosen. Include wait / do nothing when that is a real path. Do not pad to six.",
+      "Recommend one option only when the evidence supports it. Say why in one or two lines. If the evidence does not pick a winner, say so and still put the choice in front of them.",
+      "Put the choice on a real control: request_calliope_input for an ordinary Decision in this chat; calliope_decision_request only when a current ranked observation is the reason for the judgment (read calliope_observation_context first, cite that observation id, do not duplicate it as a Work Inbox item). Never ask the same questions only in prose.",
+      "Chat stays short: the question, the evidence, the recommendation if any, the control. Then stop and wait. Do not keep arguing after the control is up.",
+      "Follow-ups after they pick are execution or a switch: make this a dashboard, watch it, what changed next week — not a second Decision on the same question unless they reopen it.",
+      "Stay on the thread. Do not delegate unless the user @-mentions a specialist. Cassandra, if mentioned, red-teams the same options; she does not write a parallel memo."
+    ],
+    "outcome": "The user makes a bounded choice with the options, consequences, and evidence in front of them — not a briefing they have to extract a decision from, and not a dashboard.",
+    "triggers": [
+      "Should we kill this channel?",
+      "Pick a location.",
+      "Go or no-go?",
+      "What should we do?",
+      "Use the Decision playbook.",
+      "We have to choose."
+    ],
+    "fallbacks": [
+      "If they asked why it moved, run What Changed first or send them there; only switch to Decision when they want to act.",
+      "If options are still unbounded after one clarifying question, stop and ask them to name the menu rather than inventing one.",
+      "If the warehouse cannot support the comparison, say the blocker and still offer wait vs act-on-incomplete if that is honest.",
+      "If a ranked observation exists, use calliope_decision_request on that id; otherwise use request_calliope_input.",
+      "If Cassandra is @-mentioned, send the locked question, options, and evidence for critique, then integrate.",
+      "If they refuse the control and type a pick in chat, treat that as the answer and do not re-ask the same control.",
+      "If they ask to make the comparison a dashboard, switch to Dashboards and stop this method."
+    ],
+    "guardrails": [
+      "Do not skip locking the question. Options without a question are not this playbook.",
+      "Do not write an essay they have to mine for a pick. The control is the deliverable.",
+      "Do not offer fewer than two or more than six options.",
+      "Do not recommend when the evidence is a tie, stale, or the wrong grain. Say the blocker.",
+      "Do not turn a What Changed claim into a Decision unless they asked to pick.",
+      "Do not use calliope_decision_request for an open-ended question, a routine update, or a generic blocker, and do not invent an observation id.",
+      "Do not put secrets, credentials, or DSNs on a Decision control.",
+      "Do not start a dashboard mock or extra charts “while we decide.”",
+      "Keep artifacts private until the user approves sharing.",
+      "Calliope stays 1:1 unless the user @-mentions a specialist."
+    ],
+    "deliverable": "A locked decision question, Stage evidence that would change the pick, two to six options with consequences, a recommendation only when earned, and a real in-chat choice control the user can answer or cancel.",
+    "when_to_use": [
+      "The user is choosing among actions: kill or keep a channel, open a location, move budget, pick a vendor, approve or wait.",
+      "The user framed the chat as a Decision, or asked should we / pick / go or no-go / which one.",
+      "The work should end on a real choice control, not a longer analysis."
+    ],
+    "when_not_to_use": [
+      "The user asked why a number moved — that is What Changed. Offer Decision only after they want to act on the claim.",
+      "The user asked for a durable dashboard or mock — that is Dashboards.",
+      "A one-number lookup, definition, or list with no choice to make.",
+      "An open-ended “what do you think” with no bounded options and no way to make two to six concrete choices.",
+      "A scheduled brief, an alert, or a data-quality repair as the primary ask.",
+      "Credentials, keys, or other secrets — never a Decision control."
+    ],
+    "context_to_gather": [
+      "The decision question in one sentence: what is being picked, by when if it matters, and whose call it is.",
+      "The options the user already has in mind; do not invent a menu they did not imply unless the domain has an obvious small set.",
+      "Governed evidence that would change the pick: metric definition, window, cost, capacity, constraint. Prefer Business Context and house grain rules over reconstructing arithmetic.",
+      "Whether a ranked Calliope observation already exists for this judgment. If it does, use that observation rather than a generic choice.",
+      "What happens if they wait — delay is often a real option."
+    ],
+    "completion_criteria": [
+      "The decision question is explicit in one sentence.",
+      "Two to six options are named, each with a consequence; wait is included when it is real.",
+      "Evidence that would change the pick is on Stage from executed queries or cited Brain, not invented in prose.",
+      "A recommendation is present only if the evidence supports it; otherwise the method says the evidence does not pick.",
+      "A real choice control is in the thread (request_calliope_input, or calliope_decision_request bound to an exact observation id).",
+      "Chat did not continue past the control with more analysis unless the user reopened the question.",
+      "No dashboard mock or HTML was started unless the user switched to Dashboards."
+    ],
+    "optional_capabilities": [
+      "Cassandra only when @-mentioned, as a red-team of the same options.",
+      "Company Brain for a prior decision, policy, or meeting that constrains the pick.",
+      "Dashboards if they then want a durable page.",
+      "What Changed if they then want the next week's movement."
+    ],
+    "required_capabilities": [
+      "Governed SQL or Business Context for evidence that would change the pick.",
+      "Stage tables (and at most one claim chart) for the comparison.",
+      "request_calliope_input for an ordinary in-chat choice.",
+      "calliope_observation_context plus calliope_decision_request when a ranked observation is the reason for the judgment."
+    ],
+    "preferred_capabilities": [
+      "Library search so this Playbook is loaded instead of What Changed or Dashboards.",
+      "Local metric grain rules (events vs persons, closed periods, and the deployment's business timezone).",
+      "What Changed as a prior poke when the decision depends on a fresh delta."
+    ]
+  },
+  "synopsis": "A named choice, not an essay: lock what we are picking, put short evidence on Stage, offer two to six options with consequences, recommend one when the evidence supports it, then stop on a real choice control.",
+  "readiness": "ready"
+}

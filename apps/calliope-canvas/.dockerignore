@@ -1,0 +1,8 @@
+target
+local
+business/web/node_modules
+business/web/dist
+**/__pycache__
+**/*.sqlite*
+**/*.pyc
+.git

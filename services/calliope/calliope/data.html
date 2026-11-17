@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Calliope · Connected Data</title>
+<link rel="icon" href="/calliope/callie-favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
+<link rel="stylesheet" href="/theme/superior-fonts.css">
+<link rel="stylesheet" href="/floor/floor.css?v=__CALLIOPE_ASSET_VERSION__">
+<link rel="stylesheet" href="/data/data.css?v=__CALLIOPE_ASSET_VERSION__">
+<link rel="stylesheet" href="/theme/warehouse-theme.css">
+<script src="/theme/warehouse-theme.js"></script>
+</head>
+<body data-warehouse-page="floor" data-calliope-surface="data">
+__CALLIOPE_BACKGROUND__
+<div class="floor-wash" aria-hidden="true"></div>
+<nav class="floor-rail" data-warehouse-header aria-label="Calliope navigation">
+  <a class="floor-brand" href="/calliope?view=zen" aria-label="Open Calliope">
+    <span class="calliope-brand"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></span>
+  </a>
+  <div class="floor-rail-nav" aria-label="Workspace views">__CALLIOPE_WORKSPACE_NAV__</div>
+  <div class="floor-rail-actions">
+    <a class="floor-open-calliope" href="/calliope?view=zen&amp;start=1" aria-label="Start with Calliope">
+      <span class="floor-open-calliope-avatar" aria-hidden="true" data-day-src="/calliope/callie-avatar-day.jpg" data-night-src="/calliope/callie-avatar-night.jpg">
+        <img data-floor-launch-avatar alt="" width="56" height="56" decoding="async">
+      </span>
+    </a>
+    <span data-warehouse-theme-anchor></span>
+    __CALLIOPE_ACCOUNT__
+  </div>
+</nav>
+<div class="app">
+  <header class="floor-toolbar">
+    <div class="floor-heading"><div class="subline" id="summaryLine">Taking inventory…</div></div>
+    <div class="controls">
+      <div class="view-toggle" role="group" aria-label="Freshness key">
+        <span class="data-key"><i class="data-dot fresh"></i>Fresh</span>
+        <span class="data-key"><i class="data-dot day"></i>Today</span>
+        <span class="data-key"><i class="data-dot old"></i>Older</span>
+      </div>
+    </div>
+  </header>
+  <div class="contextbar">
+    <div class="contextbar-status"><span class="live-dot" id="liveDot"></span><span id="status">Connecting…</span></div>
+    <label class="search contextbar-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="search" aria-label="Search connected data" placeholder="Search tables, schemas, services"></label>
+    <div class="contextbar-actions"><span>Read-only inventory</span><button type="button" id="reload">Refresh</button></div>
+  </div>
+  <main class="data-layout" id="dataLayout">
+    <aside class="data-tree" id="dataTree" aria-label="Connected data inventory"></aside>
+    <section class="data-map" id="dataMap" aria-label="Data map">
+      <svg id="dataMapSvg" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="data-map-empty" id="dataMapEmpty" hidden>Nothing connected yet — sources appear here as they arrive.</div>
+      <div class="data-map-layers" id="dataLayerToggle" hidden>
+        <button type="button" data-layer="sketch">Briarpatch</button>
+        <button type="button" data-layer="map">Live inventory</button>
+        <span data-layer-stamp></span>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/data/data.js?v=__CALLIOPE_ASSET_VERSION__" defer></script>
+</body>
+</html>
