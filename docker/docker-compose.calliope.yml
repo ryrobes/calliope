@@ -20,13 +20,13 @@ services:
     # specialist memory write (2026-08-19) — the appliance was silently losing
     # agent memory. Size shm to breathe.
     shm_size: 1gb
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ..
       dockerfile: docker/Dockerfile.rvbbit
       labels:
         org.opencontainers.image.title: Calliope Postgres
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
     container_name: calliope-postgres
     environment:
@@ -40,7 +40,7 @@ services:
     extends:
       file: docker-compose.uber.yml
       service: duck
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0}
     container_name: calliope-duck
     environment:
       RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD in /opt/rvbbit/.env}@postgres:5432/${POSTGRES_DB:-rvbbit}
@@ -49,13 +49,13 @@ services:
     extends:
       file: docker-compose.uber.yml
       service: lens
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-datarabbit:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-datarabbit:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ..
       dockerfile: datarabbit/Dockerfile.calliope
       labels:
         org.opencontainers.image.title: Calliope DataRabbit
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
     container_name: calliope-datarabbit
     environment:
@@ -75,13 +75,13 @@ services:
     extends:
       file: docker-compose.uber.yml
       service: warren
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-warren:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-warren:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ..
       dockerfile: docker/Dockerfile.warren-agent
       labels:
         org.opencontainers.image.title: Calliope Warren
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
     container_name: calliope-warren
     environment:
@@ -95,7 +95,7 @@ services:
     extends:
       file: docker-compose.uber.yml
       service: bootstrap
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.0}
     container_name: calliope-bootstrap
     environment:
       RVBBIT_DSN: postgresql://postgres:${POSTGRES_PASSWORD:?Provision POSTGRES_PASSWORD in /opt/rvbbit/.env}@postgres:5432/${POSTGRES_DB:-rvbbit}
@@ -115,13 +115,13 @@ services:
     extends:
       file: docker-compose.uber.yml
       service: doc-extract
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-doc-extract:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-doc-extract:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ../sidecars/doc-extract
       dockerfile: Dockerfile
       labels:
         org.opencontainers.image.title: Calliope Document Extractor
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
     container_name: calliope-doc-extract
 
@@ -167,13 +167,13 @@ services:
     restart: unless-stopped
 
   hermes:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-hermes:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-hermes:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ..
       dockerfile: docker/Dockerfile.calliope-hermes
       labels:
         org.opencontainers.image.title: Calliope Hermes
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
       args:
         HERMES_BASE_IMAGE: ${RVBBIT_HERMES_BASE_IMAGE:-nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3}
@@ -250,13 +250,13 @@ services:
       file: docker-compose.uber.yml
       service: warehouse-mcp
     profiles: !reset []
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-server:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-server:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ..
       dockerfile: services/calliope/Dockerfile
       labels:
         org.opencontainers.image.title: Calliope Server
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
     container_name: calliope-server
     # PID 1 must reap: Playwright's headless Chrome children are reparented to
@@ -326,7 +326,7 @@ services:
       WAREHOUSE_CALLIOPE_DESKTOP_CONTROL_KEY: ${CALLIOPE_DESKTOP_CONTROL_KEY:-}
       WAREHOUSE_CALLIOPE_DESKTOP_VNC_BASIC: ${CALLIOPE_DESKTOP_VNC_BASIC:-}
       WAREHOUSE_CALLIOPE_DESKTOP_VNC_VIEW_BASIC: ${CALLIOPE_DESKTOP_VNC_VIEW_BASIC:-}
-      WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REF: ${CALLIOPE_DESKTOP_IMAGE_REF:-${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0-rc.5}}
+      WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REF: ${CALLIOPE_DESKTOP_IMAGE_REF:-${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0}}
       WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REVISION: ${CALLIOPE_DESKTOP_IMAGE_REVISION:-${CALLIOPE_REVISION:-unknown}}
       WAREHOUSE_CALLIOPE_DESKTOP_STORAGE: /var/lib/calliope-desktop
       # Maps for hosted dashboards: a per-client, URL-restricted Mapbox public

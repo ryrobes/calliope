@@ -1,6 +1,6 @@
 {
   "name": "calliope-charts-runtime",
-  "version": "1.2.0-rc.5",
+  "version": "1.2.0",
   "private": true,
   "description": "Browser-ready TanStack Charts runtime for Calliope artifacts.",
   "type": "module",

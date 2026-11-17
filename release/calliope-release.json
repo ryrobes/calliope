@@ -1,5 +1,5 @@
 {
-  "calliope_version": "1.2.0-rc.5",
+  "calliope_version": "1.2.0",
   "rvbbit_engine_version": "4.2.10",
   "images": [
     "calliope-postgres",
