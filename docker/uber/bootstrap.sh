@@ -676,6 +676,11 @@ deploy_capability() {
     local job_id
 
     if capability_ready "$capability"; then
+        # A ready runtime is left running. The 1.2.0 catalog records
+        # calliope-python-runtime and calliope-mcp-gateway, but this skip
+        # does not recreate containers that still have the previous image.
+        # The next deploy, only after this runtime is no longer ready, pulls
+        # the repository named in the catalog.
         log "$capability already ready; skipping deploy"
         return 0
     fi

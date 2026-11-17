@@ -48,6 +48,7 @@ def validate():
         raise ValueError('Migration hashes changed. Run shipping.py schema-lock to append new migrations; published SQL is immutable.')
     if release['schema']['migration_target'] != registered[-1]:
         raise ValueError('Release migration target does not match the embedded migrations.')
+    runtime_catalog('ghcr.io/ryrobes', version)
     if '-' not in version and release['schema'].get('baseline') is None:
         raise ValueError('Stable shipping releases require a verified fresh-install schema baseline.')
     builds = read(ROOT / 'release/services.json')
@@ -79,10 +80,24 @@ def runtime_catalog(registry, version):
         str(ROOT / 'capabilities/tools/rvbbit-capability'), 'catalog', 'seed-json',
         '--root', str(ROOT / 'capabilities/packs'), '--image-prefix', registry,
         '--image-tag', version, '--default-install-mode', 'image'], text=True))
-    selected = set(read(RELEASE)['runtime_capabilities'])
+    release = read(RELEASE)
+    selected = set(release['runtime_capabilities'])
+    names = release.get('runtime_image_names') or {}
+    if set(names) != selected:
+        raise ValueError('runtime_image_names must name every runtime capability.')
     rows = [r for r in doc['capabilities'] if r['catalog_entry']['id'] in selected]
     if {r['catalog_entry']['id'] for r in rows} != selected:
         raise ValueError('A required runtime capability is missing from the image catalog.')
+    # New bundles publish calliope-python-runtime and calliope-mcp-gateway.
+    # Leave a stored rvbbit-python-runtime / rvbbit-mcp-gateway reference
+    # alone: those tags belong to rvbbit-sql, and :1.2.0 there is not Calliope.
+    prefix = registry.rstrip('/')
+    for row in rows:
+        catalog_id = row['catalog_entry']['id']
+        image = row['catalog_entry']['runtime_image']
+        expected = f"{prefix}/{names[catalog_id]}:{version}"
+        if image != expected:
+            raise ValueError(f'{catalog_id} image is {image}; the release manifest requires {expected}.')
     return rows
 
 

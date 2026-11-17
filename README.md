@@ -37,7 +37,7 @@ login and how people will reach Calliope, then downloads the release, configures
 it and starts it. Run it again to upgrade. To read it first, or to install by
 hand from a release bundle, see [`deploy/README.md`](./deploy/README.md).
 
-The current release is **1.2.0, release candidate** ([`VERSION`](./VERSION)).
+The current release is **1.2.0** ([`VERSION`](./VERSION)).
 
 ## Repository layout
 
@@ -62,7 +62,7 @@ scripts/release/build-calliope.sh           # build every product image
 python3 scripts/release/shipping.py bundle --candidate --output ./calliope-candidate
 ```
 
-[`release/SHIPPING.md`](./release/SHIPPING.md) describes a release candidate end
+[`release/SHIPPING.md`](./release/SHIPPING.md) describes a release end
 to end, and [`docs/RELEASE_IMAGES.md`](./docs/RELEASE_IMAGES.md) covers the
 images. `release/services.json` is the single build inventory.
 

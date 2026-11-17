@@ -15,6 +15,8 @@ import { executeQuery } from "@/lib/db/query"
 export const runtime = "nodejs"
 
 const ENV_GATEWAY_URL = process.env.MCP_GATEWAY_URL ? process.env.MCP_GATEWAY_URL.replace(/\/$/, "") : null
+// Warren container DNS (capability name mcp_gateway), not the
+// calliope-mcp-gateway registry repository.
 const DEFAULT_GATEWAY_URL = "http://rvbbit-mcp-gateway:9180"
 const GATEWAY_TOKEN = process.env.MCP_GATEWAY_TOKEN || null
 

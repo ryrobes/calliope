@@ -1,13 +1,13 @@
 # Shared image, packages and persistent volumes for both deployment layouts.
 services:
   desktop:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0-rc.5}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.0}
     build:
       context: ..
       dockerfile: docker/Dockerfile.calliope-desktop
       labels:
         org.opencontainers.image.title: Callie's Computer
-        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0-rc.5}
+        org.opencontainers.image.version: ${CALLIOPE_VERSION:-1.2.0}
         org.opencontainers.image.revision: ${CALLIOPE_REVISION:-unknown}
       args:
         CALLIOPE_DESKTOP_EXTRA_PACKAGES: ${CALLIOPE_DESKTOP_EXTRA_PACKAGES:-}

@@ -1094,12 +1094,39 @@ def gpu_resource_fields(resources: dict[str, Any], device: str | None) -> dict[s
     }
 
 
+_RUNTIME_IMAGE_NAMES: dict[str, str] | None = None
+
+
+def release_runtime_image_names() -> dict[str, str]:
+    """Repository names owned by release/calliope-release.json.
+
+    Calliope publishes its Python and MCP runtimes as calliope-* images so
+    they do not collide with the rvbbit-sql packages that already own
+    rvbbit-python-runtime:1.2.0 and rvbbit-mcp-gateway:1.2.0. Other packs,
+    including data/dlt-mirror, keep the generic rvbbit-capability-<name> rule.
+    """
+    global _RUNTIME_IMAGE_NAMES
+    if _RUNTIME_IMAGE_NAMES is None:
+        path = REPO_ROOT / "release" / "calliope-release.json"
+        names: dict[str, str] = {}
+        if path.is_file():
+            raw = json.loads(path.read_text()).get("runtime_image_names") or {}
+            if isinstance(raw, dict):
+                names = {str(key): str(value) for key, value in raw.items() if value}
+        _RUNTIME_IMAGE_NAMES = names
+    return _RUNTIME_IMAGE_NAMES
+
+
 def capability_image_name(entry: dict[str, Any]) -> str:
     catalog_id = str(entry.get("id") or "")
+    override = release_runtime_image_names().get(catalog_id)
+    if override:
+        return override
+    # Fallbacks match the release manifest. They apply when that file is absent.
     if catalog_id == "runtimes/python-runtime":
-        return "rvbbit-python-runtime"
+        return "calliope-python-runtime"
     if catalog_id == "runtimes/mcp-gateway":
-        return "rvbbit-mcp-gateway"
+        return "calliope-mcp-gateway"
     if catalog_id == "smoke/warren-echo":
         return "rvbbit-warren-smoke-echo"
     name = str(entry.get("name") or catalog_id).strip().lower()

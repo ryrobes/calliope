@@ -4,7 +4,7 @@ One Compose project contains Calliope, DataRabbit, RVBBIT/Postgres, Warren,
 Hermes, Hindsight, self-hosted Clover and its CPU/API workers, and UI Studio.
 It uses your OpenRouter key; a Clover account and a GPU are not required.
 
-**Current status: 1.2.0 release candidate.** The complete product still needs its
+**Current status: 1.2.0.** The complete product still needs its
 empty-machine acceptance test. Fresh Postgres installs a verified schema baseline
 baked into the image; existing databases apply only missing migrations. Image
 build and schema verification details are recorded in the release artifacts.
@@ -198,7 +198,20 @@ against it ("Database contains migrations absent from this image"), so going
 back means restoring that dump into a fresh database, not just switching
 `current`. The database image verifies baseline equivalence and incremental upgrades during
 its build. The full-product upgrade rehearsal is still outstanding; do not treat
-this candidate as a supported production upgrade.
+this release as a supported production upgrade until that rehearsal is done.
+
+1.2.0 publishes the Python and MCP runtimes as `calliope-python-runtime` and
+`calliope-mcp-gateway`. Warren still names those containers
+`rvbbit-python-runtime` and `rvbbit-mcp-gateway`, from the capability names
+`python_runtime` and `mcp_gateway`, and the registered endpoint URLs keep
+using that DNS. Bootstrap does not redeploy a runtime that is already ready,
+so an upgrade leaves the running containers on their current images. The
+release catalog now records the new repositories for the next deploy. Do not
+point that deploy at `rvbbit-python-runtime:1.2.0` or
+`rvbbit-mcp-gateway:1.2.0`: those tags already exist and were published by
+rvbbit-sql. `data/dlt-mirror` remains `rvbbit-capability-dlt-mirror`.
+Recreate the Python or MCP runtime only after `calliope-python-runtime:1.2.0`
+and `calliope-mcp-gateway:1.2.0` have been published.
 Never use `docker compose down -v` on an instance whose data you need to keep.
 
 ## Diagnostics
