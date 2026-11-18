@@ -94,6 +94,17 @@ free_port() { # free_port 5432 -> 5432, or the next free port above it
     printf '%s' "$p"
 }
 
+local_http_bind() { # local_http_bind URL -> 127.0.0.1:port (80 when an http URL omits the port)
+    local rest=${1#*://}
+    rest=${rest%%[/?#]*}
+    local port=80
+    if [[ "$rest" == *:* ]]; then
+        port=${rest##*:}
+    fi
+    [[ "$port" =~ ^[0-9]+$ ]] || die "CALLIOPE_PUBLIC_URL has no usable port: $1"
+    printf '127.0.0.1:%s' "$port"
+}
+
 random_password() {
     local p=""
     while [ "${#p}" -lt 20 ]; do
@@ -137,6 +148,33 @@ check_machine() {
     fi
 }
 
+latest_version() { # newest tag without a leading v. API first; releases/latest redirect if that fails.
+    # api.github.com allows 60 unauthenticated requests an hour per IP and is
+    # blocked on some networks. /releases/latest is the fallback: it redirects
+    # to /releases/tag/<tag> (the newest stable release; the API also returns
+    # release candidates). CALLIOPE_VERSION is applied by the caller.
+    local releases tag effective
+    if releases=$(curl -fsSL --retry 1 --max-time 30 "https://api.github.com/repos/$REPO/releases?per_page=1"); then
+        tag=$(json_field tag_name <<<"$releases")
+        tag=${tag#v}
+        if [ -n "$tag" ]; then
+            printf '%s' "$tag"
+            return 0
+        fi
+    fi
+    warn "GitHub's release API didn't return a version; trying the releases/latest redirect."
+    if ! effective=$(curl -fsSL -I -o /dev/null --retry 1 --max-time 30 -w '%{url_effective}' -L \
+            "https://github.com/$REPO/releases/latest"); then
+        return 1
+    fi
+    effective=${effective%/}
+    tag=${effective##*/}
+    tag=${tag%%[?#]*}
+    tag=${tag#v}
+    [ -n "$tag" ] || return 1
+    printf '%s' "$tag"
+}
+
 resolve_version() {
     if [ -n "${CALLIOPE_BUNDLE:-}" ]; then
         [ -f "$CALLIOPE_BUNDLE" ] || die "CALLIOPE_BUNDLE=$CALLIOPE_BUNDLE is not a file."
@@ -147,12 +185,7 @@ resolve_version() {
     elif [ -n "${CALLIOPE_VERSION:-}" ]; then
         VERSION=${CALLIOPE_VERSION#v}
     else
-        # The newest release, release candidates included.
-        local releases
-        releases=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=1") \
-            || die "Couldn't list the releases of $REPO; set CALLIOPE_VERSION."
-        VERSION=$(json_field tag_name <<<"$releases")
-        VERSION=${VERSION#v}
+        VERSION=$(latest_version) || die "Couldn't find the latest release of $REPO; set CALLIOPE_VERSION."
     fi
     [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*$ ]] || die "Unexpected release version: '$VERSION'"
 }
@@ -195,6 +228,22 @@ json_field() { # json_field NAME < json: the first "NAME": "value" (string field
     printf '%s' "${match##*\"}"
 }
 
+openrouter_unfunded() { # openrouter_unfunded FILE — true when remaining limit or budget credit is zero or less
+    # Null means "no cap", not zero. Only numeric limit_remaining / remaining_usd count.
+    local file=$1 field line value
+    [ -f "$file" ] || return 1
+    for field in limit_remaining remaining_usd; do
+        while IFS= read -r line; do
+            value=${line#*:}
+            value=${value//[[:space:]]/}
+            if awk -v n="$value" 'BEGIN { exit !(n+0 <= 0) }'; then
+                return 0
+            fi
+        done < <(grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*-?[0-9]+([.][0-9]+)?" "$file" || true)
+    done
+    return 1
+}
+
 release_version() { # the bundle version from a release.json on stdin (older bundles: the product version)
     local manifest version
     manifest=$(cat)
@@ -227,14 +276,23 @@ collect_settings() {
     done
     # A bad key otherwise surfaces minutes later as an unhealthy memory service.
     # The key goes to OpenRouter only, as a header on stdin (never in argv).
-    local status
+    local status body
+    body=$(mktemp)
+    CLEANUP+=("$body")
     status=$(printf 'Authorization: Bearer %s\n' "$OPENROUTER_API_KEY" \
-        | curl -s -o /dev/null -w '%{http_code}' -H @- https://openrouter.ai/api/v1/key || true)
+        | curl -sS -o "$body" -w '%{http_code}' -H @- https://openrouter.ai/api/v1/key || true)
     case "$status" in
-        200) say "${G}✓${N} OpenRouter accepted the key" ;;
+        200)
+            say "${G}✓${N} OpenRouter accepted the key"
+            if openrouter_unfunded "$body"; then
+                OPENROUTER_UNFUNDED=1
+                warn "OpenRouter accepted the key, but it shows no remaining limit or credit. Model calls and Hindsight need a funded key: https://openrouter.ai/settings/credits"
+            fi
+            ;;
         401|403) die "OpenRouter rejected that key (https://openrouter.ai/keys)." ;;
         *) warn "Couldn't check the key with OpenRouter (HTTP $status); continuing." ;;
     esac
+    rm -f "$body"
 
     # 2. Administrator login.
     CALLIOPE_ADMIN_EMAIL=${CALLIOPE_ADMIN_EMAIL:-}
@@ -274,7 +332,6 @@ collect_settings() {
                 local port
                 port=$(free_port 8080)
                 CALLIOPE_PUBLIC_URL="http://localhost:$port"
-                EXTRA_SETTINGS+=("CALLIOPE_HTTP_BIND=127.0.0.1:$port")
                 ;;
             2)
                 local host
@@ -308,6 +365,11 @@ collect_settings() {
             sql_port=$(free_port 5432)
             [ -n "${CALLIOPE_DATA_URL:-}" ] || EXTRA_SETTINGS+=("CALLIOPE_DATA_URL=http://localhost:$data_port" "CALLIOPE_DATA_BIND=127.0.0.1:$data_port")
             [ -n "${CALLIOPE_SQL_BIND:-}" ] || EXTRA_SETTINGS+=("CALLIOPE_SQL_BIND=127.0.0.1:$sql_port")
+            # An unattended CALLIOPE_PUBLIC_URL skips the choice above, which is
+            # what used to leave this published on every interface.
+            if [ -z "${CALLIOPE_HTTP_BIND:-}" ]; then
+                CALLIOPE_HTTP_BIND=$(local_http_bind "$CALLIOPE_PUBLIC_URL")
+            fi
             ;;
         https://*) ;;
         *) die "CALLIOPE_PUBLIC_URL must start with https:// (or be http://localhost:PORT)." ;;
@@ -359,12 +421,74 @@ adopt_durable() { # adopt_durable DIR: move DIR's install data to $ROOT and link
     done
 }
 
+defer_hindsight() { # defer_hindsight FILE — keep Hindsight out of the health wait
+    # `required: false` is not enough: Compose still starts an optional
+    # dependency and `up --wait` waits for it. hermes only needs Hindsight to
+    # have started, so drop that edge. calliope stays required. This is the
+    # only depends_on hindsight in the shipping compose file.
+    cat >"$1" <<'EOF'
+services:
+  hermes:
+    depends_on: !override
+      calliope:
+        condition: service_healthy
+        required: true
+EOF
+}
+
+bring_up() { # bring_up DIR [text appended to the failure message]
+    local dir=$1 suffix=${2:-} listing name override
+    local -a core=()
+    local saw_hindsight=0
+    if ! listing=$(cd "$dir" && docker compose config --services); then
+        die "Couldn't list Calliope's services in $dir."
+    fi
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        if [ "$name" = hindsight ]; then
+            saw_hindsight=1
+        else
+            core+=("$name")
+        fi
+    done <<<"$listing"
+    [ "${#core[@]}" -gt 0 ] || die "Calliope's compose file lists no services in $dir."
+    if [ "$saw_hindsight" -eq 1 ]; then
+        override=$(mktemp)
+        CLEANUP+=("$override")
+        defer_hindsight "$override"
+        # Named services plus their required dependencies. Hindsight is neither,
+        # so a 401 restart loop cannot fail this wait.
+        if ! (cd "$dir" && docker compose -f compose.yaml -f "$override" up -d --wait --wait-timeout 900 --remove-orphans "${core[@]}"); then
+            rm -f "$override"
+            die "Calliope didn't come up healthy. See: cd $dir && docker compose ps -a && docker compose logs --tail 100${suffix}"
+        fi
+        rm -f "$override"
+        start_hindsight "$dir"
+    else
+        (cd "$dir" && docker compose up -d --wait --wait-timeout 900 --remove-orphans "${core[@]}") \
+            || die "Calliope didn't come up healthy. See: cd $dir && docker compose ps -a && docker compose logs --tail 100${suffix}"
+    fi
+}
+
+start_hindsight() { # start_hindsight DIR — non-critical. Sets HINDSIGHT_UNHEALTHY on failure.
+    local dir=$1
+    if [ -n "${OPENROUTER_UNFUNDED:-}" ]; then
+        (cd "$dir" && docker compose up -d hindsight) || true
+        HINDSIGHT_UNHEALTHY=1
+        return 0
+    fi
+    # The healthcheck allows about five minutes. Don't spend the whole stack
+    # timeout here: everything else is already up.
+    if ! (cd "$dir" && docker compose up -d --wait --wait-timeout 420 hindsight); then
+        HINDSIGHT_UNHEALTHY=1
+    fi
+}
+
 start_stack() { # start_stack DIR
     step "Downloading the images (the first time this takes a while)"
     (cd "$1" && docker compose pull)
     step "Starting Calliope"
-    (cd "$1" && docker compose up -d --wait --wait-timeout 900 --remove-orphans) \
-        || die "Calliope didn't come up healthy. See: cd $1 && docker compose ps -a && docker compose logs --tail 100 (re-running the installer resumes)"
+    bring_up "$1" " (re-running the installer resumes)"
 }
 
 install_fresh() {
@@ -433,8 +557,7 @@ upgrade() {
         || die "Database migrations failed. See: cd $new && docker compose logs --tail 100 postgres. The pre-upgrade backup is in ${backup:-(none: CALLIOPE_SKIP_BACKUP was set)}."
     (cd "$new" && docker compose exec -T -e PGUSER=postgres -e PGDATABASE=rvbbit postgres rvbbit-schema-release record >/dev/null)
     step "Starting Calliope $VERSION"
-    (cd "$new" && docker compose up -d --wait --wait-timeout 900 --remove-orphans) \
-        || die "Calliope didn't come up healthy. See: cd $new && docker compose ps -a && docker compose logs --tail 100"
+    bring_up "$new"
     ln -sfn "versions/$VERSION" "$ROOT/current"
     finish "upgraded to $VERSION"
     [ -n "$backup" ] && say "  Backup    $backup  ${D}(before the upgrade)${N}"
@@ -455,6 +578,14 @@ finish() {
     say "  Endpoints $ROOT/current/connections.json  ${D}(web, DataRabbit, MCP, PostgreSQL)${N}"
     say "  Manage    cd $ROOT/current && docker compose ps | logs -f | stop | up -d"
     say "  Upgrade   run this installer again"
+    if [ -n "${HINDSIGHT_UNHEALTHY:-}" ]; then
+        say ""
+        say "  ${Y}Warning${N}   Hindsight did not become healthy, so long-term memory is unavailable."
+        say "            An OpenRouter key with no remaining credit leaves it restarting (HTTP 401)."
+        say "            Credits  https://openrouter.ai/settings/credits"
+        say "            Logs     cd $ROOT/current && docker compose logs --tail 100 hindsight"
+        say "            Retry    cd $ROOT/current && docker compose up -d --wait hindsight"
+    fi
 }
 
 CLEANUP=()

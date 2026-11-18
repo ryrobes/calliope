@@ -49,13 +49,14 @@ Set `CALLIOPE_PUBLIC_URL=https://YOUR_SERVER_NAME` for normal deployment.
 Calliope is served at that origin; remote MCP clients use the same origin's
 `/mcp` endpoint, including its OAuth discovery and authorization routes.
 Use an address resolvable from your phones, desktops and MCP clients.
-Plain HTTP is supported only on localhost for development. Remote addresses,
-including LAN addresses, require HTTPS for the shared MCP OAuth issuer.
+Plain HTTP is supported only on localhost for development, and that web
+listener stays on 127.0.0.1. Remote addresses, including LAN addresses, require
+HTTPS for the shared MCP OAuth issuer.
 Published ports follow the port in that URL (80/443 when omitted).
 Voice/camera and secure browser APIs require HTTPS. A publicly
 resolvable hostname enables Caddy's automatic HTTPS on ports 80/443; LAN-only
 HTTPS requires a trusted local certificate or your own TLS reverse proxy.
-Port mappings listen on the host's network interfaces, not just localhost.
+Port mappings for a public hostname listen on the host's network interfaces.
 `connections.json` records the configured web, DataRabbit, MCP and SQL endpoints without
 including passwords. Public DNS, routing and ports 80/443 must reach this host
 for automatic public certificates; the installer does not configure your router.

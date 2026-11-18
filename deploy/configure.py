@@ -64,6 +64,23 @@ def bind_address(value, name):
     return int(match[2])
 
 
+def default_http_bind(url, public_port, proxy):
+    """Where the plain web listener is published when CALLIOPE_HTTP_BIND is unset.
+
+    Plain HTTP is only allowed on localhost, 127.0.0.1 and ::1. That listener
+    stays on 127.0.0.1 so an unattended localhost install is not published on
+    every interface. HTTPS keeps port 80 for ACME; its public port is the TLS
+    listener, so this default must not reuse that port.
+    """
+    if proxy:
+        return '127.0.0.1:8080'
+    if url.scheme == 'https':
+        return '80'
+    if url.hostname in ('localhost', '127.0.0.1', '::1'):
+        return f'127.0.0.1:{public_port}'
+    return str(public_port)
+
+
 def trusted_proxies(settings):
     """The operator's HTTPS proxy, as this host sees its connections."""
     networks = []
@@ -135,7 +152,7 @@ def prepare(root, workspace, settings):
     if proxy and url.scheme != 'https':
         raise ValueError('CALLIOPE_TLS=proxy means your proxy serves HTTPS; use an https:// CALLIOPE_PUBLIC_URL.')
     proxies = trusted_proxies(settings) if proxy else None
-    http_bind = settings.get('CALLIOPE_HTTP_BIND', '127.0.0.1:8080' if proxy else '80' if url.scheme == 'https' else str(public_port))
+    http_bind = settings.get('CALLIOPE_HTTP_BIND', default_http_bind(url, public_port, proxy))
     http_port = bind_address(http_bind, 'CALLIOPE_HTTP_BIND')
     sql_host, sql_bind, sql_tls, sql_port = sql_endpoint(settings, url.hostname)
     data_url, data_bind, data_listen, data_published, data_port = data_endpoint(settings, url, proxy)

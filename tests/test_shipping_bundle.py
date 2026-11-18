@@ -187,18 +187,56 @@ def test_bad_sql_config_leaves_no_state(artifact, tmp_path, overrides):
     assert not (root / 'connections.json').exists()
 
 
+@pytest.mark.parametrize('origin,proxy,expected', [
+    ('http://localhost:8080', False, '127.0.0.1:8080'),
+    ('http://127.0.0.1:9090', False, '127.0.0.1:9090'),
+    ('http://[::1]:8080', False, '127.0.0.1:8080'),
+    ('http://localhost', False, '127.0.0.1:80'),
+    ('https://calliope.example', False, '80'),
+    ('https://calliope.example:18443', False, '80'),
+    ('https://localhost', False, '80'),
+    ('https://calliope.example', True, '127.0.0.1:8080'),
+])
+def test_default_http_bind_keeps_loopback_http_off_every_interface(origin, proxy, expected):
+    configure = module(ROOT / 'deploy/configure.py', 'configure_http_bind')
+    url = configure.urlsplit(origin)
+    public_port = url.port or (443 if url.scheme == 'https' else 80)
+    assert configure.default_http_bind(url, public_port, proxy) == expected
+
+
+def test_localhost_http_bind_survives_configuration(artifact, tmp_path):
+    root, _, values = initialized(artifact, tmp_path)
+    assert values['CALLIOPE_HTTP_BIND'] == '127.0.0.1:8080'
+    assert "CALLIOPE_HTTP_BIND='127.0.0.1:8080'" in (root / '.env').read_text()
+
+
+def test_explicit_http_bind_overrides_the_loopback_default(artifact, tmp_path):
+    _, _, values = initialized(artifact, tmp_path, CALLIOPE_HTTP_BIND='0.0.0.0:8080')
+    assert values['CALLIOPE_HTTP_BIND'] == '0.0.0.0:8080'
+
+
 @pytest.mark.parametrize('origin,http_port,https_port,https_target', [
     ('http://localhost', 80, 8443, 443),
     ('http://127.0.0.1:8088', 8088, 8443, 443),
+    ('http://[::1]:8080', 8080, 8443, 443),
     ('https://calliope.example', 80, 443, 443),
     ('https://calliope.example:18443', 80, 18443, 18443),
 ])
 def test_public_origin_ports_match_proxy_listeners(artifact, tmp_path, origin, http_port, https_port, https_target):
-    root, _, _ = initialized(artifact, tmp_path, CALLIOPE_PUBLIC_URL=origin)
+    root, _, values = initialized(artifact, tmp_path, CALLIOPE_PUBLIC_URL=origin)
+    if origin.startswith('http://'):
+        assert values['CALLIOPE_HTTP_BIND'] == f'127.0.0.1:{http_port}'
+    else:
+        assert values['CALLIOPE_HTTP_BIND'] == '80'
     proxy = compose_config(root)['services']['origin']
     ports = {int(p['published']): p['target'] for p in proxy['ports']}
     assert ports[http_port] == 80
     assert ports[https_port] == https_target
+    web = next(p for p in proxy['ports'] if int(p['target']) == 80 and int(p['published']) == http_port)
+    if origin.startswith('http://'):
+        assert web.get('host_ip') == '127.0.0.1'
+    else:
+        assert web.get('host_ip', '0.0.0.0') in ('0.0.0.0', '', None)
     if origin.startswith('https:'):
         assert proxy['environment']['ORIGIN_LISTEN'] == origin.removeprefix('https://')
     else:
