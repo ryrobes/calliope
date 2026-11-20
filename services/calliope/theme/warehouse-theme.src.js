@@ -180,6 +180,8 @@ function onAppearanceVisibility() {
 }
 
 function hydrateServerPreferences() {
+  // Public demo pages have no appearance or voice preferences to load.
+  if (window.RVBBIT_DEMO_GUEST) return;
   void hydrateServerAppearance();
   void hydrateServerResponsePreferences();
 }

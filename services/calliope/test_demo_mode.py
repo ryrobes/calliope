@@ -149,6 +149,7 @@ def test_guest_route_allowlist(method, path, allowed):
     "INSERT INTO public_demo.orders VALUES (9, 'West', 1)",
     "SELECT * FROM orders",
     "SELECT * FROM public.customers",
+    "SELECT set_config('role', 'postgres', false)",
 ])
 def test_guest_sql_rejects_operator_and_rvbbit_access(sql):
     with pytest.raises(demo_mode.DemoSQLError):
@@ -169,6 +170,7 @@ def test_published_query_is_canonical_and_limited():
     assert "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA rvbbit TO calliope_demo_guest" not in migration
     registry = (ROOT / "crates/pg_rvbbit/src/migrations.rs").read_text()
     assert "0509_calliope_demo_guest" in registry
+    assert "0510_calliope_demo_login" in registry
     seed = (ROOT / "deploy/demo/seed_public_dashboard.sql").read_text()
     assert canonical in seed
 
@@ -250,12 +252,28 @@ def test_guest_cannot_run_arbitrary_sql_and_can_run_the_published_one(monkeypatc
     )))
     assert ok.status_code == 200
     args, kwargs = calls[0]
-    assert kwargs["_role"] == demo_mode.ROLE
+    assert kwargs["_guest"] is True
+    assert kwargs.get("_role") in (None, demo_mode.ROLE)
     assert kwargs["_statement_timeout_ms"] == demo_mode.timeout_ms()
     assert kwargs["timeout_ms"] is None
     assert "LIMIT 500" in args[0]
     assert "rvbbit" not in args[0].lower()
     assert args[1] is None  # client as_of is ignored
+    body = json.loads(ok.body)
+    assert body["bridge_cache"]["status"] == "miss"
+    assert body["bridge_cache"]["ttl_seconds"] == demo_mode.guest_cache_ttl()
+
+    again = asyncio.run(handler(_request(
+        "POST", "/api/d/public-demo-revenue/q",
+        {"sql": demo_mode.SAMPLE_SQL, "timeout_ms": 1, "cache": "no-store", "version": 1},
+    )))
+    assert again.status_code == 200
+    assert len(calls) == 1
+    assert json.loads(again.body)["bridge_cache"]["status"] == "hit"
+    same = demo_mode.guest_cache_key("public-demo-revenue", 1, demo_mode.prepare_sql(demo_mode.SAMPLE_SQL))
+    other_viewer = demo_mode.guest_cache_key("public-demo-revenue", 1, demo_mode.prepare_sql(demo_mode.SAMPLE_SQL))
+    assert same == other_viewer
+    assert same.startswith("guest:")
 
 
 def test_guest_actions_and_private_routes_are_denied(monkeypatch):
@@ -295,7 +313,8 @@ def test_signed_in_query_is_unchanged_when_demo_mode_is_off(monkeypatch):
         "POST", "/api/d/tasks/q", {"sql": "SELECT 1", "cache": "no-store"},
     )))
     assert response.status_code == 200
-    assert calls[0]["_role"] is None
+    assert calls[0].get("_guest") is False
+    assert calls[0].get("_role") is None
     assert calls[0]["_statement_timeout_ms"] is None
 
 
@@ -373,6 +392,72 @@ def test_demo_rate_limit_applies_only_when_enabled(monkeypatch):
     assert asyncio.run(post("203.0.113.20")) == 429
     monkeypatch.setenv("CALLIOPE_DEMO_MODE", "0")
     assert asyncio.run(post("203.0.113.20")) == 204
+
+
+def test_signed_in_queries_are_not_in_the_guest_bucket(monkeypatch):
+    monkeypatch.setenv("CALLIOPE_DEMO_MODE", "1")
+    monkeypatch.setenv("CALLIOPE_DEMO_QUERY_RATE", "1")
+    auth.JWT_SECRET = "demo-test-secret-signed-in-user!!"
+    response = Response()
+    auth.set_session(response, "ada@example.com", False, identity="ada@example.com", mapped=True)
+    cookie = response.headers["set-cookie"].split(";", 1)[0]
+    hits = {"n": 0}
+
+    async def app(scope, receive, send):
+        hits["n"] += 1
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    wrapped = demo_mode.guest_middleware(app)
+
+    async def post():
+        messages = []
+
+        async def send(message):
+            messages.append(message)
+
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+            "method": "POST", "scheme": "http", "path": "/api/d/public-demo-revenue/q",
+            "raw_path": b"/api/d/public-demo-revenue/q", "query_string": b"",
+            "headers": [(b"cookie", cookie.encode())],
+            "client": ("203.0.113.77", 9), "server": ("app.test", 80),
+        }
+        await wrapped(scope, None, send)
+        return messages[0]["status"]
+
+    assert asyncio.run(post()) == 204
+    assert asyncio.run(post()) == 204
+    assert hits["n"] == 2
+
+
+def test_publish_to_demo_requires_same_origin_json(monkeypatch):
+    monkeypatch.setenv("CALLIOPE_DEMO_MODE", "1")
+    monkeypatch.setattr(server, "_conn", lambda: _Conn())
+    routes = _routes()
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/gallery/artifacts/x/demo",
+        "scheme": "http", "server": ("app.test", 80),
+        "headers": [
+            (b"content-type", b"text/plain"),
+            (b"origin", b"https://evil.test"),
+        ],
+        "path_params": {"slug": "x"},
+    }, None)
+    response = asyncio.run(routes["/api/gallery/artifacts/{slug}/demo"](request))
+    assert response.status_code == 403
+
+
+def test_cookieless_public_pages_do_not_bounce():
+    os.environ["CALLIOPE_DEMO_MODE"] = "1"
+    try:
+        assert demo_mode.anonymous_guest_page("/d/public-demo-revenue") is True
+        assert demo_mode.anonymous_guest_page("/gallery") is True
+        assert demo_mode.anonymous_guest_page("/floor") is False
+        assert demo_mode.signed_in_front_door("/") == "/floor"
+        assert demo_mode.signed_in_front_door("/gallery") is None
+    finally:
+        os.environ.pop("CALLIOPE_DEMO_MODE", None)
 
 
 def test_widget_has_a_build_panel_beside_the_data_overlay():

@@ -2,16 +2,16 @@
 
 Demo mode lets a public Calliope install (the planned host is dataslop.com) show a few published dashboards to anonymous visitors. It is **off** unless `CALLIOPE_DEMO_MODE` is `1`, `true`, `yes`, or `on`. With the flag unset, routes, SQL, cookies, and the front door behave as they do today.
 
-Visitors are not given a database login. The service account `SET ROLE`s to `calliope_demo_guest`, a `NOLOGIN` role, including when `WAREHOUSE_AUTH=shared`. That role can `CONNECT` and `SELECT` only in the schemas named by `CALLIOPE_DEMO_SCHEMAS` (default `public_demo`). It is not granted `USAGE` on `rvbbit` and is not granted `EXECUTE` on `rvbbit` functions. The dashboard bridge also refuses any statement that is not one of the queries recorded for that published version, ignores the client's `timeout_ms`, caps rows with a real `LIMIT`, and rejects `rvbbit` references and operator calls (`get_secret`, `classify`, `means`, `mcp_call`, `synth_sql`, and the rest of the bridge denylist) before they reach the database.
+Guest queries connect as `calliope_demo_login`, a non-superuser `LOGIN` role that inherits `calliope_demo_guest`. They do not `SET ROLE` on the service connection: a statement can undo that and become the superuser again. The login can `CONNECT` and `SELECT` only in the schemas named by `CALLIOPE_DEMO_SCHEMAS` (default `public_demo`). It has no `USAGE` on schema `rvbbit`. `rvbbit` functions are still executable by `PUBLIC` (on the order of a thousand of them); the missing schema `USAGE` is what stops the login from calling them. Do not `GRANT USAGE ON SCHEMA rvbbit TO PUBLIC`. The login also has no `TEMP` privilege and no access to `pg_stat_statements`. The dashboard bridge refuses any statement that is not one of the queries recorded for that published version, ignores the client's `timeout_ms`, caps rows with a real `LIMIT`, and rejects `rvbbit` references and operator calls (`get_secret`, `classify`, `means`, `mcp_call`, `synth_sql`, `set_config`, and the rest of the bridge denylist) before they reach the database. Validation (`rvbbit.route_explain`) runs on the service connection, never as the guest, and guest error text does not include internal function names.
 
 Which dashboards a guest can see is an explicit choice. Nothing is public until an administrator publishes it.
 
 ## What a guest can open
 
 - `GET /demo` mints an HttpOnly `wh_session` cookie for the guest principal and redirects to `/gallery`.
-- `GET /` redirects to `/gallery` (Caddy `CALLIOPE_ROOT_REDIRECT`), not `/floor`.
-- `GET /gallery` lists only dashboards marked public.
-- `GET /d/{slug}` and `GET /d/{slug}/versions/{version}` open a public dashboard. A deep link with no cookie is sent through `/demo` and back.
+- `GET /` is answered by Calliope when `origin` has `CALLIOPE_DEMO_MODE` set. No cookie renders the public gallery and sets the guest cookie on that same response. A signed-in person is redirected to `/floor`.
+- `GET /gallery` lists only dashboards marked public. A request with no cookie is the guest directly.
+- `GET /d/{slug}` and `GET /d/{slug}/versions/{version}` open a public dashboard. A request with no cookie renders that page as the guest and sets the cookie. It is not bounced through `/demo`, so a crawler does not loop.
 - `POST /api/d/{slug}/q` runs one allowlisted statement for that version.
 - `GET /api/d/{slug}/provenance` returns the scrubbed build summary.
 - `GET /api/gallery/metrics` returns metric names and values only. `definition_sql` is not included. Metric detail is denied.
@@ -30,17 +30,16 @@ export CALLIOPE_DEMO_MODE=1
 export CALLIOPE_DEMO_SCHEMAS=public_demo
 ```
 
-When the flag is on, configure sets `CALLIOPE_ROOT_REDIRECT=/gallery`.
+`configure.py` leaves `CALLIOPE_ROOT_REDIRECT` at `/floor`. Demo mode does not change that fallback.
 
 Existing install: edit the install's `.env` (compose reads this, not `settings.env` after the first configure):
 
 ```bash
 CALLIOPE_DEMO_MODE=1
 CALLIOPE_DEMO_SCHEMAS=public_demo
-CALLIOPE_ROOT_REDIRECT=/gallery
 ```
 
-The installed `config/Caddyfile` has to contain the placeholder. Releases copied the file at install time, so an older file still says `redir * /floor 302`. Change that one line to:
+The installed `config/Caddyfile` was copied at install time. Replace the `@root` handle with the block from `docker/origin/Caddyfile.calliope` on this branch. The old `redir * /floor 302` (or a one-line placeholder) sends every visitor, including a crawler, away from Calliope before the app can answer. Keep this line inside the new `route` block:
 
 ```
 redir * {$CALLIOPE_ROOT_REDIRECT:/floor} 302
@@ -51,31 +50,38 @@ If the running `deploy/compose.yaml` does not yet pass the variables through, ad
 ```yaml
 services:
   calliope:
+    image: calliope-server:demo
     environment:
       CALLIOPE_DEMO_MODE: "1"
       CALLIOPE_DEMO_SCHEMAS: public_demo
-      CALLIOPE_DEMO_ROW_LIMIT: "500"
-      CALLIOPE_DEMO_QUERY_TIMEOUT_MS: "5000"
+      CALLIOPE_DEMO_GUEST_PASSWORD: "replace-with-at-least-16-characters"
+      CALLIOPE_DEMO_QUERY_RATE: "2000"
+      CALLIOPE_DEMO_QUERY_BURST: "400"
+      CALLIOPE_DEMO_QUERY_CACHE_SECONDS: "120"
   origin:
     environment:
-      CALLIOPE_ROOT_REDIRECT: /gallery
+      CALLIOPE_DEMO_MODE: "1"
 ```
+
+`CALLIOPE_DEMO_MODE=1` on `origin` makes Caddy hand `/` to Calliope. Anonymous visitors get the gallery. A signed-in person is sent to `/floor`. Leave `CALLIOPE_ROOT_REDIRECT` at `/floor` so a Caddy that does not see the flag still opens the Floor.
 
 `CALLIOPE_DEMO_SCHEMAS` is a comma-separated list of schema names. `public`, `rvbbit`, and `pg_*` are refused. Use a schema that holds only data you are willing to show.
 
 Restart `calliope` and `origin` after the env and Caddyfile changes.
 
-## Guest role
+## Guest login
 
-Migration `0509_calliope_demo_guest` creates the role and the allowlist and provenance tables. It does not grant the role anything to read. After it has run:
+Migration `0509_calliope_demo_guest` creates the `NOLOGIN` grant role and the allowlist and provenance tables. Migration `0510_calliope_demo_login` creates `calliope_demo_login`, revokes `TEMP` from `PUBLIC` (then grants it back to every existing login except the demo login), and revokes `PUBLIC` access to `pg_stat_statements` the same way. A login role created after that does not receive `TEMP` until you grant it. Superusers are unaffected.
+
+Set `CALLIOPE_DEMO_GUEST_PASSWORD` (at least 16 characters). This branch's `configure.py` generates one when demo mode is turned on. The service applies it with `rvbbit.configure_demo_login` the first time a guest query runs. `CALLIOPE_DEMO_GUEST_DSN` overrides the derived DSN if the login is not on the same host as `WAREHOUSE_DSN`.
 
 ```sql
 SELECT rvbbit.configure_demo_guest(ARRAY['public_demo']);
 ```
 
-That grants `CONNECT` on the current database and `USAGE` plus `SELECT` on the named schemas, and revokes `rvbbit` again. Re-run it after you add tables. The seed script does this.
+That grants `CONNECT` on the current database and `USAGE` plus `SELECT` on the named schemas. Re-run it after you add tables. The seed script does this.
 
-PostgreSQL cannot deny a privilege that `PUBLIC` already has without revoking it from `PUBLIC`. This migration does not touch `PUBLIC`, because that would change installs that are not in demo mode. `rvbbit` is not granted to `PUBLIC`. If an operator later runs `GRANT USAGE ON SCHEMA rvbbit TO PUBLIC`, a direct `SET ROLE` could call functions that are executable by `PUBLIC`. The bridge still rejects those statements for guest HTTP queries. Do not grant `rvbbit` to `PUBLIC`.
+`EXECUTE` on `rvbbit` functions remains granted to `PUBLIC`. That is not a grant to the guest role. Without `USAGE` on schema `rvbbit`, the login cannot call those functions. Granting that schema to `PUBLIC` would open them. Do not do that.
 
 ## Publish a dashboard
 
@@ -93,7 +99,16 @@ curl -sS -b admin-cookies.txt -H 'content-type: application/json' \
 
 ## Sample dashboard, no model key
 
-From a checkout, against the install's database (the published port is in `connections.json`):
+On a running install the database DSN is already in the `calliope` container. This marks `public-demo-revenue` public:
+
+```bash
+docker compose exec -T -e PYTHONPATH=/app -e CALLIOPE_DEMO_MODE=1 calliope \
+  python - < scripts/demo/seed_public_dashboard.py
+```
+
+The script refuses to run without `WAREHOUSE_DSN`. Inside the container that variable is already set; do not point it at `port=55433 dbname=bench` unless that really is your database.
+
+From a checkout, against the published port in `connections.json`:
 
 ```bash
 export WAREHOUSE_DSN='host=127.0.0.1 port=5432 dbname=rvbbit user=postgres password=...'
@@ -101,21 +116,25 @@ export CALLIOPE_DEMO_MODE=1
 PYTHONPATH=services/calliope python3 scripts/demo/seed_public_dashboard.py
 ```
 
-Or, if the migration is already applied:
+Or, if both migrations are already applied:
 
 ```bash
 psql "$WAREHOUSE_DSN" -v ON_ERROR_STOP=1 -f deploy/demo/seed_public_dashboard.sql
 ```
 
-That loads `public_demo.orders` and publishes `/d/public-demo-revenue`. The build panel says the model was `fixture` and the only step was `publish_dashboard`, because no model was called. Open `https://your-host/demo`.
+That loads `public_demo.orders` and publishes `/d/public-demo-revenue`. The build panel says the model was `fixture` and the only step was `publish_dashboard`, because no model was called. Open `https://your-host/` with no cookie. A crawler gets the page directly; it is not bounced through `/demo`.
 
-## Rate limits
+## Rate limits and the guest cache
 
-`caddy:2-alpine` does not ship the third-party `rate_limit` handler. Adding that directive would stop Caddy from booting, including when demo mode is off. Demo mode therefore limits, per process and per client IP:
+`caddy:2-alpine` does not ship the third-party `rate_limit` handler. Adding that directive would stop Caddy from booting, including when demo mode is off. Limits are in the Calliope process. Signed-in people are not in the guest bucket, so an administrator on the same address is not throttled by visitors. Defaults are wide on purpose; tighten them only if the host is being flooded.
 
-- `POST /api/d/*/q` — 30 per minute (`CALLIOPE_DEMO_QUERY_RATE`)
+- Guest and anonymous `POST /api/d/*/q` — 2000 per minute (`CALLIOPE_DEMO_QUERY_RATE`) and a burst of 400 per 10 seconds (`CALLIOPE_DEMO_QUERY_BURST`)
 - `POST /login` — 10 per minute (`CALLIOPE_DEMO_LOGIN_RATE`)
-- `GET /demo` — 20 per minute (`CALLIOPE_DEMO_ENTER_RATE`)
+- `GET /demo` — 30 per minute (`CALLIOPE_DEMO_ENTER_RATE`)
+
+`X-Forwarded-For` is used only when the immediate peer is a trusted proxy. With the calliope value unset, loopback and private ranges count, which is Compose's Caddy on the bridge. Leave `CALLIOPE_APP_TRUSTED_PROXIES` empty in that setup. Caddy has its own `CALLIOPE_TRUSTED_PROXIES` (default `127.0.0.1/32`). Add the CDN ranges there, or Caddy keeps the CDN address and every visitor shares it. Set `CALLIOPE_APP_TRUSTED_PROXIES` only when a public proxy connects to Calliope directly.
+
+There is already a 90-second cache of identical dashboard queries per viewer (`WAREHOUSE_DASH_QUERY_CACHE_TTL_SECONDS`, single-flight). Guest results use a separate shared cache keyed by dashboard slug, published version, and the canonical saved statement (`CALLIOPE_DEMO_QUERY_CACHE_SECONDS`, default 120, allowed 60–300). Concurrent identical guest requests run in Postgres once. A guest cannot bypass it with `cache=no-store`.
 
 Guest queries also use `CALLIOPE_DEMO_QUERY_TIMEOUT_MS` (default 5000, maximum 15000) and `CALLIOPE_DEMO_ROW_LIMIT` (default 500, maximum 2000). The client's `timeout_ms` is ignored.
 
@@ -126,9 +145,9 @@ Release images are built only from version tags. Two images change:
 | Image | Why |
 |---|---|
 | `calliope-server` | Guest session, query bridge, gallery, provenance API, receipts widget |
-| `calliope-postgres` | Migration `0509` is compiled into `pg_rvbbit` |
+| `calliope-postgres` | Migrations `0509` and `0510` are compiled into `pg_rvbbit` |
 
-Caddy stays `caddy:2-alpine`. Only the mounted Caddyfile and `CALLIOPE_ROOT_REDIRECT` change.
+Caddy stays `caddy:2-alpine`. The mounted Caddyfile changes, and `origin` needs `CALLIOPE_DEMO_MODE` so `/` is proxied to Calliope instead of redirected. `CALLIOPE_ROOT_REDIRECT` stays `/floor` when demo mode is off.
 
 From the repository root, on the machine that will run Compose:
 
@@ -137,14 +156,15 @@ docker build -f services/calliope/Dockerfile -t calliope-server:demo .
 docker build -f docker/Dockerfile.rvbbit -t calliope-postgres:demo .
 ```
 
-The postgres build compiles the extension and takes a long time. On an **existing** database you can skip it and apply the migration with the current server instead:
+The postgres build compiles the extension. It wants more than 16 GB of RAM; if the build is killed, lower BuildKit parallelism (`BUILDKIT_STEP_LOG_MAX_SIZE` is unrelated — set the Buildx `max-parallelism` or `CARGO_BUILD_JOBS=1`) or skip the image. On an **existing** database the psql files are enough:
 
 ```bash
 psql "$WAREHOUSE_DSN" -v ON_ERROR_STOP=1 \
-  -f crates/pg_rvbbit/sql/migrations/0509_calliope_demo_guest.sql
+  -f crates/pg_rvbbit/sql/migrations/0509_calliope_demo_guest.sql \
+  -f crates/pg_rvbbit/sql/migrations/0510_calliope_demo_login.sql
 ```
 
-The file is idempotent, so a later image whose `rvbbit.migrate()` includes `0509` can run it again. A brand-new database does not have that SQL until the postgres image contains the migration, so a fresh install needs the rebuilt `calliope-postgres` image (bootstrap uses that image too).
+Both files are idempotent, so a later image whose `rvbbit.migrate()` includes `0509` and `0510` can run them again. A brand-new database does not have that SQL until the postgres image contains the migrations, so a fresh install needs the rebuilt `calliope-postgres` image (bootstrap uses that image too).
 
 Point only those two services at the local tags so the rest of the stack keeps its release tag. `CALLIOPE_VERSION` is shared by every product image; do not change it just for this.
 
@@ -158,7 +178,7 @@ services:
     image: calliope-postgres:demo
 ```
 
-`bootstrap` only needs the new postgres image when you want `migrate()` itself to install `0509`. If you applied the SQL file, leave bootstrap on the release image.
+`bootstrap` only needs the new postgres image when you want `migrate()` itself to install `0509` and `0510`. If you applied the SQL files, leave bootstrap on the release image.
 
 Then, from the install directory:
 
@@ -168,4 +188,10 @@ docker compose up -d --no-deps --pull never calliope origin
 
 Add `postgres` to that command when you actually swapped its image. `--pull never` keeps Compose from replacing the local tag with a registry pull.
 
-Sign in as an administrator in a browser that does not have the guest cookie (a private window). The guest cookie is not an admin session; clear it or use another profile to publish dashboards.
+Sign in as an administrator in a browser that does not have the guest cookie (a private window). The guest cookie is not an admin session; clear it or use another profile to publish dashboards. After a real sign-in, `/`, `/gallery`, and `/demo` as a login destination go to `/floor`. The gallery itself stays available at `/gallery`.
+
+This branch's `deploy/compose.yaml` passes the demo variables into `calliope`, and passes `CALLIOPE_DEMO_MODE` into `origin`. A stock 1.2.1 `compose.yaml` does not. On that install, keep using `compose.override.yaml` (shown above) instead of editing the released file. Set `CALLIOPE_DEMO_GUEST_PASSWORD` in that override.
+
+## Known limit
+
+A dashboard that builds SQL in the browser from filters or other variables will not match the saved-query allowlist, so those requests fail for guests. A later version can record a parameterized statement plus the allowed bindings instead of one exact string. That is not in this change.

@@ -1902,6 +1902,7 @@
     }
 
     async function loadTimeline() {
+      if (dashboard.guest) return;
       if (timeline || loading) return loading;
       loadingNode.hidden = false;
       unavailable.hidden = true;
@@ -3502,6 +3503,12 @@
     syncQueryBrowser();
     pollSemanticEnrichment();
     restoreScroll();
+    if (dashboard.guest) {
+      tabs.filter((tab) => tab.dataset.view === "time").forEach((tab) => {
+        tab.hidden = true;
+      });
+      setView("built");
+    }
     lensReady = true;
     revealLensWhenReady();
   }

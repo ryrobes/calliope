@@ -19,6 +19,7 @@ import time
 from typing import Any
 
 ROLE = "calliope_demo_guest"
+LOGIN_ROLE = "calliope_demo_login"
 GUEST_EMAIL = "guest@demo.calliope"
 GUEST_NAME = "Guest"
 
@@ -54,6 +55,10 @@ _DENIED_FUNCTIONS = {
     "dblink_connect",
     "copy",
     "query_to_xml",
+    "set_config",
+    "set_role",
+    "pg_stat_statements",
+    "pg_stat_statements_reset",
 }
 _ALLOWED_FUNCTIONS = {
     "sum",
@@ -200,12 +205,118 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
     return max(low, min(value, high))
 
 
+def guest_cache_ttl() -> int:
+    """Shared guest result lifetime. Distinct from the 90s per-viewer cache."""
+    return _bounded_int("CALLIOPE_DEMO_QUERY_CACHE_SECONDS", 120, 60, 300)
+
+
+def guest_cache_key(slug: str, version, canonical: str) -> str:
+    import hashlib
+    import json
+    payload = json.dumps(
+        {"slug": str(slug), "version": int(version), "sql": canonical},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "guest:" + hashlib.sha256(payload.encode()).hexdigest()
+
+
 def row_limit() -> int:
     return _bounded_int("CALLIOPE_DEMO_ROW_LIMIT", 500, 1, 2_000)
 
 
 def timeout_ms() -> int:
     return _bounded_int("CALLIOPE_DEMO_QUERY_TIMEOUT_MS", 5_000, 1_000, 15_000)
+
+
+def guest_password() -> str:
+    return os.environ.get("CALLIOPE_DEMO_GUEST_PASSWORD", "").strip()
+
+
+def service_dsn() -> str:
+    return os.environ.get(
+        "WAREHOUSE_DSN",
+        "host=localhost port=55433 dbname=bench user=postgres password=rvbbit",
+    )
+
+
+def guest_dsn() -> str | None:
+    explicit = os.environ.get("CALLIOPE_DEMO_GUEST_DSN", "").strip()
+    if explicit:
+        return explicit
+    password = guest_password()
+    if not password:
+        return None
+    import psycopg
+    return psycopg.conninfo.make_conninfo(service_dsn(), user=LOGIN_ROLE, password=password)
+
+
+class guest_connection:
+    """A connection logged in as the demo role. Not a SET ROLE on the superuser."""
+
+    def __init__(self):
+        self._conn = None
+
+    def __enter__(self):
+        import psycopg
+        from psycopg.rows import dict_row
+        dsn = guest_dsn()
+        if not dsn:
+            raise DemoSQLError(
+                "DEMO_LOGIN_UNCONFIGURED",
+                "Set CALLIOPE_DEMO_GUEST_PASSWORD before demo queries can run.",
+            )
+        try:
+            conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
+        except psycopg.OperationalError:
+            ensure_guest_login()
+            conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
+        row = conn.execute(
+            "SELECT current_user AS user_name, rolsuper "
+            "FROM pg_roles WHERE rolname = current_user"
+        ).fetchone()
+        if not row or row.get("rolsuper") or row.get("user_name") != LOGIN_ROLE:
+            conn.close()
+            raise DemoSQLError("DEMO_LOGIN_UNSAFE", "The demo login is not a non-superuser role.")
+        self._conn = conn
+        return conn
+
+    def __exit__(self, *args):
+        if self._conn is not None:
+            self._conn.close()
+        return False
+
+
+def ensure_guest_login(password: str | None = None) -> None:
+    """Create the login if needed and set its password from the environment."""
+    import psycopg
+    from psycopg import sql as pgsql
+    secret = password if password is not None else guest_password()
+    if len(secret) < 16:
+        raise DemoSQLError(
+            "DEMO_LOGIN_UNCONFIGURED",
+            "CALLIOPE_DEMO_GUEST_PASSWORD must be at least 16 characters.",
+        )
+    with psycopg.connect(service_dsn(), autocommit=True) as conn:
+        conn.execute(
+            "DO $role$ BEGIN "
+            "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'calliope_demo_login') THEN "
+            "CREATE ROLE calliope_demo_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS INHERIT; "
+            "END IF; END $role$"
+        )
+        if conn.execute("SELECT 1 FROM pg_roles WHERE rolname = 'calliope_demo_guest'").fetchone():
+            conn.execute("GRANT calliope_demo_guest TO calliope_demo_login")
+        conn.execute(
+            "ALTER ROLE calliope_demo_login NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS INHERIT"
+        )
+        conn.execute("ALTER ROLE calliope_demo_login SET default_transaction_read_only = on")
+        conn.execute(
+            pgsql.SQL("ALTER ROLE calliope_demo_login PASSWORD {}").format(pgsql.Literal(secret))
+        )
+        try:
+            conn.execute("SELECT rvbbit.configure_demo_login(%s)", (secret,))
+        except Exception:
+            pass
 
 
 def schemas() -> tuple[str, ...]:
@@ -256,13 +367,47 @@ def route_allowed(path: str, method: str) -> bool:
     return False
 
 
-def _client_ip(scope: dict) -> str:
-    headers = {k.decode().lower(): v.decode() for k, v in (scope.get("headers") or []) if isinstance(k, bytes)}
-    forwarded = headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:80] or "?"
+def _peer_ip(scope: dict) -> str:
     client = scope.get("client") or ("?", 0)
     return str(client[0] if isinstance(client, tuple) else client)[:80]
+
+
+def _proxy_trusted(ip: str) -> bool:
+    """Trust X-Forwarded-For only from a proxy we configured.
+
+    An empty CALLIOPE_TRUSTED_PROXIES trusts loopback and private ranges, which
+    is the Compose Caddy sitting on the bridge. Set the variable to the CDN
+    ranges when a public proxy connects directly, and to a single address when
+    you want no private-range default.
+    """
+    import ipaddress
+    raw = os.environ.get("CALLIOPE_TRUSTED_PROXIES", "").strip()
+    networks = [part.strip() for part in raw.split(",") if part.strip()] if raw else [
+        "127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+    ]
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for part in networks:
+        try:
+            if "/" in part:
+                if addr in ipaddress.ip_network(part, strict=False):
+                    return True
+            elif addr == ipaddress.ip_address(part):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _client_ip(scope: dict) -> str:
+    peer = _peer_ip(scope)
+    headers = {k.decode().lower(): v.decode() for k, v in (scope.get("headers") or []) if isinstance(k, bytes)}
+    forwarded = headers.get("x-forwarded-for", "")
+    if forwarded and _proxy_trusted(peer):
+        return forwarded.split(",")[0].strip()[:80] or peer
+    return peer
 
 
 class _Limiter:
@@ -287,16 +432,25 @@ class _Limiter:
 LIMITER = _Limiter()
 
 
-def _rate_bucket(path: str, method: str) -> tuple[str, int] | None:
+def _rate_bucket(path: str, method: str, session: dict | None = None) -> tuple[str, int, float] | None:
+    """Limit anonymous and guest traffic. A signed-in person does not share it."""
     path = (path or "/").split("?", 1)[0].rstrip("/") or "/"
     method = (method or "GET").upper()
+    signed_in = bool(session) and not session.get("guest")
     if method == "POST" and re.fullmatch(rf"/api/d/{_SLUG.pattern}/q", path):
-        return "query", _bounded_int("CALLIOPE_DEMO_QUERY_RATE", 30, 1, 600)
+        if signed_in:
+            return None
+        return "guest-query", _bounded_int("CALLIOPE_DEMO_QUERY_RATE", 2000, 1, 100_000), 60
     if method == "POST" and path == "/login":
-        return "login", _bounded_int("CALLIOPE_DEMO_LOGIN_RATE", 10, 1, 120)
+        return "login", _bounded_int("CALLIOPE_DEMO_LOGIN_RATE", 10, 1, 120), 60
     if method == "GET" and path == "/demo":
-        return "enter", _bounded_int("CALLIOPE_DEMO_ENTER_RATE", 20, 1, 120)
+        return "enter", _bounded_int("CALLIOPE_DEMO_ENTER_RATE", 30, 1, 120), 60
     return None
+
+
+def _guest_query_burst_ok(ip: str) -> bool:
+    burst = _bounded_int("CALLIOPE_DEMO_QUERY_BURST", 400, 1, 10_000)
+    return LIMITER.allow(f"guest-query-burst:{ip}", burst, 10)
 
 
 def guest_middleware(app):
@@ -308,12 +462,6 @@ def guest_middleware(app):
             return
         path = scope.get("path") or "/"
         method = scope.get("method") or "GET"
-        bucket = _rate_bucket(path, method)
-        if bucket and not LIMITER.allow(f"{bucket[0]}:{_client_ip(scope)}", bucket[1], 60):
-            await _send_json(send, 429, {
-                "error": {"code": "RATE_LIMITED", "message": "Too many requests. Wait a minute and try again."},
-            })
-            return
         session = None
         try:
             from starlette.requests import Request
@@ -321,6 +469,18 @@ def guest_middleware(app):
             session = auth.read_session_full(Request(scope))
         except Exception:
             session = None
+        bucket = _rate_bucket(path, method, session)
+        client = _client_ip(scope)
+        if bucket and not LIMITER.allow(f"{bucket[0]}:{client}", bucket[1], bucket[2]):
+            await _send_json(send, 429, {
+                "error": {"code": "RATE_LIMITED", "message": "Too many requests. Wait a minute and try again."},
+            })
+            return
+        if bucket and bucket[0] == "guest-query" and not _guest_query_burst_ok(client):
+            await _send_json(send, 429, {
+                "error": {"code": "RATE_LIMITED", "message": "Too many requests. Wait a minute and try again."},
+            })
+            return
         if session and session.get("guest") and not route_allowed(path, method):
             await _send_json(send, 403, {
                 "error": {"code": "FORBIDDEN", "message": "Demo guests cannot open that page."},
@@ -825,14 +985,68 @@ def publish_to_demo(conn, slug: str, public: bool = True) -> dict:
                 queries = raw
         result = record_version(conn, dashboard_id, version, html, manifest, captured=queries)
         recorded += int(result.get("recorded") or 0)
+    if public and recorded == 0:
+        raise DemoSQLError(
+            "NO_PUBLISHED_QUERIES",
+            "Nothing was recorded, so this dashboard was not made public. Its queries have to be "
+            "literal rvbbitQuery statements, or manifest sql fields, before guests can run them.",
+        )
     conn.execute(
         "UPDATE rvbbit.dashboards SET demo_public=%s, updated_at=now() WHERE id=%s",
         (bool(public), dashboard_id),
     )
-    configured = None
-    if public:
-        configured = configure_guest(conn)
+    configured = configure_guest(conn) if public else None
     return {"slug": slug, "public": bool(public), "statements": recorded, "schemas": configured}
+
+
+def public_metric_names(conn) -> set[str]:
+    """Names an administrator published, plus metrics a public dashboard references."""
+    names: set[str] = set()
+    for row in _optional(conn, "SELECT metric_name FROM rvbbit.demo_public_metrics"):
+        if isinstance(row, dict) and row.get("metric_name"):
+            names.add(str(row["metric_name"]))
+    for row in _optional(
+        conn,
+        "SELECT DISTINCT dep.object_ref AS metric_name "
+        "FROM rvbbit.dashboard_deps dep "
+        "JOIN rvbbit.dashboards d ON d.id = dep.dashboard_id AND d.latest_version = dep.version "
+        "WHERE d.demo_public AND NOT d.archived AND dep.kind = 'metric' AND dep.object_ref IS NOT NULL",
+    ):
+        if isinstance(row, dict) and row.get("metric_name"):
+            names.add(str(row["metric_name"]))
+    return names
+
+
+def same_origin_json(request) -> bool:
+    origin = request.headers.get("origin")
+    public = os.environ.get("WAREHOUSE_PUBLIC_URL", "").rstrip("/")
+    allowed = {str(request.base_url).rstrip("/")}
+    if public:
+        allowed.add(public)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        return False
+    if origin and origin.rstrip("/") not in allowed:
+        return False
+    return content_type == "application/json"
+
+
+def anonymous_guest_page(path: str) -> bool:
+    """A cookieless public page is rendered as the guest. No redirect loop."""
+    if not enabled():
+        return False
+    path = (path or "/").split("?", 1)[0].rstrip("/") or "/"
+    if path in {"/", "/gallery"}:
+        return True
+    return bool(re.fullmatch(rf"/d/{_SLUG.pattern}(?:/versions/[1-9][0-9]{{0,8}})?", path))
+
+
+def signed_in_front_door(path: str) -> str | None:
+    """The public front door is the gallery. A signed-in person continues to the Floor."""
+    path = (path or "/").split("?", 1)[0].rstrip("/") or "/"
+    if enabled() and path == "/":
+        return "/floor"
+    return None
 
 
 def scrub_metric_index(payload: dict) -> dict:

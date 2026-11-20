@@ -980,6 +980,15 @@ def _finish_login(request: Request, provider, identity: str, txn: str, nxt: str,
     # where they were headed. The index shows them how to ask for access.
     if not mapped:
         nxt = UNMAPPED_LANDING
+    else:
+        # Demo mode's front door is the gallery. A person who just signed in
+        # was headed there only because "/" now points at it; the Floor is
+        # still their home. A deep link they actually asked for is kept.
+        import demo_mode
+        if demo_mode.enabled():
+            target = (nxt or "/").split("?", 1)[0].rstrip("/") or "/"
+            if target in {"/", "/gallery", "/demo"}:
+                nxt = "/floor"
     resp = RedirectResponse(nxt, status_code=302)
     set_session(resp, sub, secure=request.url.scheme == "https",
                 identity=identity, mapped=mapped, via=via,

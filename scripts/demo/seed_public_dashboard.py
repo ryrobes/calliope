@@ -20,17 +20,22 @@ import demo_mode
 
 
 def main() -> int:
-    dsn = os.environ.get(
-        "WAREHOUSE_DSN",
-        "host=localhost port=55433 dbname=bench user=postgres password=rvbbit",
-    )
+    dsn = os.environ.get("WAREHOUSE_DSN", "").strip()
+    if not dsn:
+        print(
+            "WAREHOUSE_DSN is not set. On a running install:\n"
+            "  docker compose exec -T -e PYTHONPATH=/app calliope python - "
+            "< scripts/demo/seed_public_dashboard.py",
+            file=sys.stderr,
+        )
+        return 2
     if not demo_mode.enabled():
         print("CALLIOPE_DEMO_MODE is off. The fixture still publishes the dashboard;", file=sys.stderr)
         print("set CALLIOPE_DEMO_MODE=1 before visitors can open it.", file=sys.stderr)
     with psycopg.connect(dsn, row_factory=dict_row) as conn:
         result = demo_mode.seed_sample(conn)
     print(f"Public demo dashboard: /d/{result['slug']} (version {result['version']})")
-    print("Open /demo to enter as a guest, or visit that dashboard directly.")
+    print("It is marked public. Open / or /d/" + result["slug"] + " with no cookie.")
     return 0
 
 

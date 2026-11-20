@@ -138,9 +138,11 @@ def demo_config(settings):
         raise ValueError('CALLIOPE_DEMO_SCHEMAS must be a comma-separated list of schema names.')
     if any(part in {'rvbbit', 'rvbbit_meta', 'hindsight', 'information_schema', 'pg_catalog', 'public'} or part.startswith('pg_') for part in parts):
         raise ValueError('CALLIOPE_DEMO_SCHEMAS cannot name a system schema.')
-    redirect = '/gallery' if enabled else '/floor'
+    # Caddy still redirects "/" to the Floor when demo mode is off. While the
+    # flag is on, Caddy proxies "/" and Calliope chooses gallery vs Floor.
+    redirect = '/floor'
     custom = settings.get('CALLIOPE_ROOT_REDIRECT', '').strip()
-    if custom and not enabled:
+    if custom:
         if not re.fullmatch(r'/[A-Za-z0-9_./-]{0,80}', custom) or '//' in custom:
             raise ValueError('CALLIOPE_ROOT_REDIRECT must be one absolute path.')
         redirect = custom
@@ -227,6 +229,9 @@ def prepare(root, workspace, settings):
     if memory_extractor not in ('calliope', 'hindsight'):
         raise ValueError('CALLIOPE_MEMORY_EXTRACTOR must be calliope or hindsight.')
     demo_mode, demo_schemas, demo_redirect = demo_config(settings)
+    demo_password = settings.get('CALLIOPE_DEMO_GUEST_PASSWORD', '').strip()
+    if demo_mode == '1' and len(demo_password) < 16:
+        demo_password = secrets.token_hex(24)
     values = {
         'COMPOSE_PROJECT_NAME': project,
         'CALLIOPE_VERSION': release['calliope_version'],
@@ -258,6 +263,7 @@ def prepare(root, workspace, settings):
         'CALLIOPE_DEMO_MODE': demo_mode,
         'CALLIOPE_DEMO_SCHEMAS': demo_schemas,
         'CALLIOPE_ROOT_REDIRECT': demo_redirect,
+        'CALLIOPE_DEMO_GUEST_PASSWORD': demo_password,
         'COMPOSE_PROFILES': settings.get('COMPOSE_PROFILES', ''),
         'CALLIOPE_COMPUTER_ENABLED': 'true' if 'computer' in settings.get('COMPOSE_PROFILES', '').split(',') else 'false',
     }
