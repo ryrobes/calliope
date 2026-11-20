@@ -579,6 +579,7 @@ def test_native_dashboard_shim_inherits_url_data_time_without_artifact_changes()
     assert "window.RVBBIT_DASHBOARD.as_of" in shim
     assert (
         "body:JSON.stringify({sql:sql,as_of:asOf,limit:opts.limit??null,timeout_ms:opts.timeout_ms??null,"
+        "version:window.RVBBIT_DASHBOARD.version??null,"
         "cache:opts.cache??(Object.keys(window.RVBBIT_DASHBOARD.manifest?.actions||{}).length?'no-store':null)})"
     ) in shim
     assert "window.RVBBIT_DASHBOARD.queryTrace" in shim

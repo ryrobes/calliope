@@ -42,7 +42,11 @@
 	handle @root {
 		# The Floor is the front door of the appliance: a fresh login or a
 		# bare-domain visit lands on the shared work graph, not a subpage.
-		redir * /floor 302
+		# Demo mode sets CALLIOPE_ROOT_REDIRECT=/gallery. The default stays
+		# /floor, so an install that does not set the variable is unchanged.
+		# caddy:2-alpine has no rate_limit module; demo request limits are
+		# enforced in the Calliope process instead. docs/DEMO_MODE.md
+		redir * {$CALLIOPE_ROOT_REDIRECT:/floor} 302
 	}
 
 	# Lens owns the branded login page. Its compiled Next assets stay available

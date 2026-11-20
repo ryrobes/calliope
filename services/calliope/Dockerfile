@@ -103,9 +103,10 @@ COPY services/calliope/ui_app_preview.py services/calliope/ui_app_captures.py ./
 COPY services/calliope/artifact_progress.py services/calliope/artifact_work.py services/calliope/artifact_render.py services/calliope/artifact_document.py services/calliope/artifact_app_preview.py ./
 COPY --from=ui-app-web /build/services/calliope/ui_app_assets ./ui_app_assets
 COPY apps/calliope-canvas/business/catalog.json ./ui_app_assets/catalog.json
+COPY services/calliope/demo_mode.py ./
 # Validate the complete application import graph after every module is copied.
 # This does not start workers or require a database connection.
-RUN python -c "import server, calliope, ui_apps, ui_decisions, meaning_data, native_handoff, stage_capture, stage_references, correspondence, correspondence_routes, sms, sms_simulator, ops_work, file_imports, voice_tagging, take_parts, playbook_home, stage_views"
+RUN python -c "import server, calliope, demo_mode, ui_apps, ui_decisions, meaning_data, native_handoff, stage_capture, stage_references, correspondence, correspondence_routes, sms, sms_simulator, ops_work, file_imports, voice_tagging, take_parts, playbook_home, stage_views"
 EXPOSE 8765
 # Calliope web application and streamable-HTTP MCP service.
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \

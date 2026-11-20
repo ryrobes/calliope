@@ -2055,6 +2055,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0508_semantic_compiler_slice_names",
         include_str!("../sql/migrations/0508_semantic_compiler_slice_names.sql"),
     ),
+    (
+        "0509_calliope_demo_guest",
+        include_str!("../sql/migrations/0509_calliope_demo_guest.sql"),
+    ),
 ];
 
 const SCHEMA_MIGRATIONS_DDL: &str = "\

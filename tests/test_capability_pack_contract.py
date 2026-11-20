@@ -729,8 +729,8 @@ def test_calliope_compose_is_a_pinned_hosted_full_stack():
     assert "{$ORIGIN_LISTEN::80}" in hosted_caddy
     assert "{$BURROW_LISTEN::81}" in hosted_caddy
     assert 'email "{$CALLIOPE_ACME_EMAIL:}"' in hosted_caddy
-    # The Floor is the appliance's front door (9fe1dd16).
-    assert "redir * /floor 302" in hosted_caddy
+    # The Floor is the appliance's front door unless demo mode redirects it.
+    assert "redir * {$CALLIOPE_ROOT_REDIRECT:/floor} 302" in hosted_caddy
     assert "reverse_proxy {$LENS_UPSTREAM:datarabbit:3000}" in hosted_caddy
     assert "reverse_proxy {$WAREHOUSE_UPSTREAM:calliope:8765}" in hosted_caddy
     assert "X-Desktop-Authorization" not in hosted_caddy

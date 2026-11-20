@@ -871,7 +871,8 @@ async def _fetch_gravatar_avatar(identity: str) -> tuple[bytes, str]:
 
 def set_session(resp, sub: str, secure: bool, identity: str | None = None,
                 mapped: bool = True, via: str = "password", name: str = "",
-                picture: str = "", auth_time: int | None = None, account_version: int | None = None) -> None:
+                picture: str = "", auth_time: int | None = None, account_version: int | None = None,
+                guest: bool = False) -> None:
     """Sign the session into wh_session (same JWT secret as the OAuth tokens).
 
     `sub` keeps its established meaning — what surfaces SET ROLE as — so every
@@ -880,8 +881,17 @@ def set_session(resp, sub: str, secure: bool, identity: str | None = None,
     `ryan`, or as rvbbit_guest when the database doesn't know them yet.
     """
     now = int(time.time())
+    # A demo guest is not an account, so it has no account version to look up.
+    if guest:
+        version = 0
+    elif account_version is None:
+        version = _account_version(identity or sub)
+    else:
+        version = account_version
     claims = {"sub": sub, "idt": identity or sub, "mpd": bool(mapped), "via": via,
-              "typ": "session", "iat": now, "aut": auth_time if auth_time is not None else now, "exp": now + SESSION_TTL, "av": _account_version(identity or sub) if account_version is None else account_version}
+              "typ": "session", "iat": now, "aut": auth_time if auth_time is not None else now, "exp": now + SESSION_TTL, "av": version}
+    if guest:
+        claims["gst"] = True
     clean_name = _profile_name(name)
     clean_picture = _google_picture_url(picture) if via == "google" else ""
     if clean_name:
@@ -910,6 +920,25 @@ def read_session_full(request: Request) -> dict | None:
         return None
     if c.get("typ") != "session" or not c.get("sub"):
         return None
+    if c.get("gst"):
+        # Ignored entirely when demo mode is off, so a leftover cookie cannot
+        # become a session and normal logins are unchanged.
+        import demo_mode
+        if not demo_mode.enabled():
+            return None
+        if c.get("sub") != demo_mode.ROLE or (c.get("idt") or "") != demo_mode.GUEST_EMAIL:
+            return None
+        return {
+            "sub": demo_mode.ROLE,
+            "identity": demo_mode.GUEST_EMAIL,
+            "mapped": True,
+            "via": "demo",
+            "guest": True,
+            "auth_time": c.get("aut", c.get("iat", 0)),
+            "account_version": 0,
+            "name": demo_mode.GUEST_NAME,
+            "picture": "",
+        }
     if not _account_valid(c.get("idt") or c["sub"], c.get("av", 0)):
         return None
     via = c.get("via", "password")

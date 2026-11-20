@@ -123,6 +123,30 @@ def data_endpoint(settings, web, proxy=False):
     return origin, bind, data.netloc if data.scheme == 'https' else ':81', port, port if data.scheme == 'https' else 81
 
 
+def demo_config(settings):
+    """Demo mode is off unless the installer was given an explicit flag."""
+    raw = settings.get('CALLIOPE_DEMO_MODE', '').strip().lower()
+    if raw in ('', '0', 'false', 'no', 'off'):
+        enabled = False
+    elif raw in ('1', 'true', 'yes', 'on'):
+        enabled = True
+    else:
+        raise ValueError('CALLIOPE_DEMO_MODE must be 0 or 1.')
+    schemas = settings.get('CALLIOPE_DEMO_SCHEMAS', '').strip() or 'public_demo'
+    parts = [part.strip().lower() for part in schemas.split(',') if part.strip()]
+    if not parts or any(not re.fullmatch(r'[a-z_][a-z0-9_]{0,62}', part) for part in parts):
+        raise ValueError('CALLIOPE_DEMO_SCHEMAS must be a comma-separated list of schema names.')
+    if any(part in {'rvbbit', 'rvbbit_meta', 'hindsight', 'information_schema', 'pg_catalog', 'public'} or part.startswith('pg_') for part in parts):
+        raise ValueError('CALLIOPE_DEMO_SCHEMAS cannot name a system schema.')
+    redirect = '/gallery' if enabled else '/floor'
+    custom = settings.get('CALLIOPE_ROOT_REDIRECT', '').strip()
+    if custom and not enabled:
+        if not re.fullmatch(r'/[A-Za-z0-9_./-]{0,80}', custom) or '//' in custom:
+            raise ValueError('CALLIOPE_ROOT_REDIRECT must be one absolute path.')
+        redirect = custom
+    return ('1' if enabled else '0'), ','.join(parts), redirect
+
+
 def prepare(root, workspace, settings):
     settings = dict(settings)
     required = ('OPENROUTER_API_KEY', 'CALLIOPE_ADMIN_EMAIL', 'CALLIOPE_ADMIN_PASSWORD', 'CALLIOPE_PUBLIC_URL')
@@ -202,6 +226,7 @@ def prepare(root, workspace, settings):
     memory_extractor = settings.get('CALLIOPE_MEMORY_EXTRACTOR', '').strip().lower() or 'calliope'
     if memory_extractor not in ('calliope', 'hindsight'):
         raise ValueError('CALLIOPE_MEMORY_EXTRACTOR must be calliope or hindsight.')
+    demo_mode, demo_schemas, demo_redirect = demo_config(settings)
     values = {
         'COMPOSE_PROJECT_NAME': project,
         'CALLIOPE_VERSION': release['calliope_version'],
@@ -230,6 +255,9 @@ def prepare(root, workspace, settings):
         **({'CALLIOPE_TRUSTED_PROXIES': proxies} if proxy else {}),
         'CALLIOPE_MEMORY_SCOPE': memory_scope,
         'CALLIOPE_MEMORY_EXTRACTOR': memory_extractor,
+        'CALLIOPE_DEMO_MODE': demo_mode,
+        'CALLIOPE_DEMO_SCHEMAS': demo_schemas,
+        'CALLIOPE_ROOT_REDIRECT': demo_redirect,
         'COMPOSE_PROFILES': settings.get('COMPOSE_PROFILES', ''),
         'CALLIOPE_COMPUTER_ENABLED': 'true' if 'computer' in settings.get('COMPOSE_PROFILES', '').split(',') else 'false',
     }

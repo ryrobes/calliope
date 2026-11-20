@@ -6769,6 +6769,7 @@ def tool_run_sql(
     _max_rows=None,
     _statement_timeout_ms=None,
     _decision_usage=False,
+    _role=None,
 ) -> dict:
     """Governed read-only execute: validate -> safe_select gate -> read-only run + LIMIT."""
     discovery_redirect = _catalog_discovery_redirect(sql)
@@ -6799,7 +6800,10 @@ def tool_run_sql(
         return {"error": {"code": "BAD_AS_OF", "message": str(exc)}}
     t0 = time.time()
     logic_capture = None
-    with _conn(role=_session_pg_role()) as c:
+    role = _session_pg_role() if _role is None else _role
+    if role is not None and not _BURROW_ROLE_RE.fullmatch(str(role)):
+        return {"error": {"code": "BAD_ROLE", "message": "role is not a valid database role"}}
+    with _conn(role=role) as c:
         if re.search(r'\bbusiness_logic\s*\(', sql, re.I):
             import business_logic_runtime
             subject = _application_authorization_context().subject
@@ -13364,6 +13368,15 @@ def _artifact_browser_check(slug, version):
     }
 
 
+def _remember_demo_publication(conn, dashboard_id, version, html, manifest, session_id=None):
+    """Record a saved-query allowlist. Never fails the publication itself."""
+    try:
+        import demo_mode
+        demo_mode.record_version(conn, dashboard_id, version, html, manifest, session_id)
+    except Exception as exc:  # noqa: BLE001 — publishing stays available when demo tables are not
+        print(f"demo publication record: {exc}", file=sys.stderr)
+
+
 def tool_publish_dashboard(name, html=None, team=None, description=None, kind="live",
                            source_artifact_id=None, manifest=None):
     manifest = _optional_publish_argument(manifest)
@@ -13420,6 +13433,7 @@ def tool_publish_dashboard(name, html=None, team=None, description=None, kind="l
             "VALUES (%s,1,%s,%s,%s,%s::jsonb)",
             (d["id"], html, kind, caller, _json_default(manifest_doc)),
         )
+        _remember_demo_publication(c, d["id"], 1, html, manifest_doc, home)
     crawl = _crawl_safe(slug, use_llm=False)   # fast deterministic deps at publish
     enrichment = _enqueue_semantic_enrichment(d["id"], 1)
     catalog_enrichment = _enqueue_artifact_catalog_enrichment(d["id"], 1)
@@ -13546,6 +13560,7 @@ def tool_update_dashboard(slug, html=None, notes=None, source_artifact_id=None, 
             "WHERE id=%s",
             (nv, _json_default(next_manifest), d["id"]),
         )
+        _remember_demo_publication(c, d["id"], nv, html, next_manifest, editor.get("home_session_id"))
     crawl = _crawl_safe(slug, use_llm=False)
     enrichment = _enqueue_semantic_enrichment(d["id"], nv)
     catalog_enrichment = _enqueue_artifact_catalog_enrichment(d["id"], nv)
@@ -13887,6 +13902,7 @@ def tool_create_live_app(name, html=None, runtime_kind="html", app_kind="dashboa
             "(dashboard_id,version,html,kind,created_by,manifest,source_files) "
             "VALUES (%s,1,%s,%s,%s,%s::jsonb,%s::jsonb)",
             (d["id"], html, runtime_kind, caller, _json_default(manifest_doc), _json_default(source_files)))
+        _remember_demo_publication(c, d["id"], 1, html, manifest_doc, home)
     crawl = _crawl_safe(slug, use_llm=False)
     enrichment = _enqueue_semantic_enrichment(d["id"], 1)
     catalog_enrichment = _enqueue_artifact_catalog_enrichment(d["id"], 1)
@@ -14029,6 +14045,7 @@ def tool_update_live_app(slug, html=None, notes=None, manifest=None, source_file
                 "VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)",
                 (d["id"], nv, next_html, next_runtime, caller, notes,
                  _json_default(next_manifest), _json_default(next_sources)))
+            _remember_demo_publication(c, d["id"], nv, next_html, next_manifest, editor.get("home_session_id"))
             c.execute(
                 "UPDATE rvbbit.dashboards SET latest_version=%s, updated_at=now(), runtime_kind=%s, "
                 "app_kind=%s, manifest=%s::jsonb, last_health=%s::jsonb WHERE id=%s",
@@ -23686,7 +23703,7 @@ _DASH_SHIM_TRANSPORT = (
     "window.rvbbitQuery=async function(sql,opts){opts=opts||{};"
     "const asOf=opts.as_of||window.RVBBIT_DASHBOARD.as_of||null;"
     "try{const r=await fetch('/api/d/'+__SLUG__+'/q',{method:'POST',headers:{'content-type':'application/json'},"
-    "body:JSON.stringify({sql:sql,as_of:asOf,limit:opts.limit??null,timeout_ms:opts.timeout_ms??null,cache:opts.cache??(Object.keys(window.RVBBIT_DASHBOARD.manifest?.actions||{}).length?'no-store':null)})});"
+    "body:JSON.stringify({sql:sql,as_of:asOf,limit:opts.limit??null,timeout_ms:opts.timeout_ms??null,version:window.RVBBIT_DASHBOARD.version??null,cache:opts.cache??(Object.keys(window.RVBBIT_DASHBOARD.manifest?.actions||{}).length?'no-store':null)})});"
     "let d=null;try{d=await r.json();}catch(_notJson){d=null;}"
     "if(!r.ok||!d||d.error){throw Object.assign(new Error((d&&d.error&&d.error.message)||('query failed '+r.status)),{code:(d&&d.error&&d.error.code)||null,status:r.status});}"
     "window.RVBBIT_DASHBOARD._recordQueryTrace(sql,asOf,d,null);return d;"
@@ -23801,7 +23818,7 @@ def _fill_dash_shim(template, slug, version=None, manifest=None):
     )
 
 
-def _dash_shim(slug, version=None, manifest=None, *, receipts=True):
+def _dash_shim(slug, version=None, manifest=None, *, receipts=True, guest=False):
     """Full serving shim: root + runtime primitives + cookie-bearing transport."""
     # Receipts is a human inspection overlay, not part of the authored app.
     # Omit it entirely for the agent's browser and captures, including its
@@ -23809,7 +23826,10 @@ def _dash_shim(slug, version=None, manifest=None, *, receipts=True):
     template = _DASH_SHIM
     if not receipts:
         template = template.replace(_DASH_RECEIPTS_HEAD, "").replace(_DASH_RECEIPTS_TAIL, "")
-    return _fill_dash_shim(template, slug, version, manifest)
+    filled = _fill_dash_shim(template, slug, version, manifest)
+    if guest:
+        filled += "<script>window.RVBBIT_DASHBOARD=window.RVBBIT_DASHBOARD||{};window.RVBBIT_DASHBOARD.guest=true;</script>"
+    return filled
 
 
 def _dash_runtime_shim(slug, version=None, manifest=None):
@@ -26638,7 +26658,7 @@ def _start_calliope_watch_worker():
     return True
 
 
-def _dashboard_version_document(slug, version=None, viewer=None, *, receipts=True):
+def _dashboard_version_document(slug, version=None, viewer=None, *, receipts=True, guest=False):
     """Load one exact stored dashboard/app document, or the current version.
 
     Named Home objects intentionally retain the artifact version whose semantic
@@ -26655,7 +26675,11 @@ def _dashboard_version_document(slug, version=None, viewer=None, *, receipts=Tru
     if selected is not None and selected < 1:
         raise ValueError("version must be a positive integer")
     with _conn() as conn:
-        if viewer is not None:
+        if guest:
+            import demo_mode
+            if not demo_mode.artifact_public(conn, slug):
+                return None
+        elif viewer is not None:
             try:
                 artifact_access.require_view(conn, slug, viewer)
             except artifact_access.ArtifactAccessError:
@@ -26684,7 +26708,7 @@ def _dashboard_version_document(slug, version=None, viewer=None, *, receipts=Tru
         "latest_version": int(dashboard["latest_version"]),
         "app_kind": str(dashboard.get("app_kind") or "dashboard"),
         "html": artifact_document.with_injected_head(
-            _dash_shim(slug, selected, version_row.get("manifest"), receipts=receipts),
+            _dash_shim(slug, selected, version_row.get("manifest"), receipts=receipts, guest=guest),
             _ensure_html_document_title(app_html, dashboard.get("name")),
         ),
     }
@@ -28719,7 +28743,7 @@ def _unmapped_html(identity, session=None):
 </body></html>"""
 
 
-def _landing_html(rows, viewer, session=None, *, can_administer=False, artifact_admin=False):
+def _landing_html(rows, viewer, session=None, *, can_administer=False, artifact_admin=False, guest=False):
     import auth
     import warehouse_theme
     from html import escape as e
@@ -28740,12 +28764,24 @@ def _landing_html(rows, viewer, session=None, *, can_administer=False, artifact_
     # The personal working set exists only with the Hermes-backed Calliope
     # surface; warehouse-only installs keep the original public gallery.
     import calliope
-    calliope_enabled = calliope.is_enabled()
-    account = warehouse_theme.account_control(
-        session or {"identity": viewer, "via": "password"},
-        workspace_menu=calliope_enabled,
-        can_administer=bool(calliope_enabled and can_administer),
-    )
+    if guest:
+        calliope_enabled = False
+        can_administer = False
+        artifact_admin = False
+        account = '<span class="pill dim">Guest</span>'
+        brand_href = "/gallery"
+        workspace_nav = '<a href="/gallery" aria-current="page">Gallery</a>'
+    else:
+        calliope_enabled = calliope.is_enabled()
+        account = warehouse_theme.account_control(
+            session or {"identity": viewer, "via": "password"},
+            workspace_menu=calliope_enabled,
+            can_administer=bool(calliope_enabled and can_administer),
+        )
+        brand_href = "/calliope?view=zen"
+        workspace_nav = warehouse_theme.workspace_navigation(
+            "gallery", can_administer=bool(calliope_enabled and can_administer),
+        )
 
     areas, cards = {}, []
     for card_index, r in enumerate(rows):
@@ -29101,9 +29137,9 @@ def _landing_html(rows, viewer, session=None, *, can_administer=False, artifact_
 {_bg_layer}
 <div class="wash"></div>
 <nav data-warehouse-header>
- <a class="calliope-brand" href="/calliope?view=zen" aria-label="Open Calliope"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></a>
+ <a class="calliope-brand" href="{brand_href}" aria-label="Calliope"><span class="calliope-brand-name">Calliope</span><span class="calliope-brand-provenance"><img class="calliope-brand-rabbit" src="/theme/datarabbit-mark.svg" alt=""><span class="calliope-brand-byline">by RVBBIT.AI</span></span></a>
  <div class="gallery-rail-nav" aria-label="Workspace views">
-  {warehouse_theme.workspace_navigation("gallery", can_administer=bool(calliope_enabled and can_administer))}
+  {workspace_nav}
  </div>
  <span class="who"><span data-warehouse-theme-anchor></span>{account}</span></nav>
 <aside id="gallery-presence" class="gallery-presence" aria-label="Local time and upcoming meetings">
@@ -29183,6 +29219,15 @@ def register_dashboard_routes(m):
         if not subject:
             return None, session, _json({"error": {"code": "UNAUTHORIZED"}}, 401)
         slug = request.path_params.get("slug")
+        if session.get("guest"):
+            import demo_mode
+            if not demo_mode.enabled() or not demo_mode.route_allowed(request.url.path, request.method):
+                return None, session, _json({"error": {"code": "FORBIDDEN", "message": "Demo guests cannot open that page."}}, 403)
+            with _conn() as conn:
+                allowed = bool(slug) and demo_mode.artifact_public(conn, slug)
+            if not allowed:
+                return None, session, _json({"error": {"code": "NOT_FOUND"}}, 404)
+            return subject, session, None
         with _conn() as conn:
             allowed = artifact_access.can_view(
                 conn, slug, subject, include_archived=include_archived
@@ -29263,6 +29308,10 @@ def register_dashboard_routes(m):
         # /gallery, which the ingress routes here.
         s = auth.read_session_full(request)
         if not s:
+            import demo_mode
+            if demo_mode.enabled() and request.url.path in {"/", "/gallery"}:
+                target = "/gallery" if request.url.path == "/" else request.url.path
+                return RedirectResponse(f"/demo?next={quote(target)}", status_code=302)
             return RedirectResponse(f"/login?next={quote(request.url.path)}", status_code=302)
         # Authenticated, but the database has no account for them. Show the
         # request-access state and query NOTHING: they have no grants, so every
@@ -29271,6 +29320,17 @@ def register_dashboard_routes(m):
         if not s["mapped"]:
             return HTMLResponse(_unmapped_html(s["identity"], s),
                                 headers=browser_page_headers)
+        if s.get("guest"):
+            import demo_mode
+            try:
+                with _conn() as conn:
+                    rows = demo_mode.public_rows(conn)
+            except Exception as ex:  # noqa: BLE001
+                print(f"demo gallery: {ex}", file=sys.stderr)
+                rows = []
+            return HTMLResponse(_landing_html(
+                rows, s["identity"], s, can_administer=False, artifact_admin=False, guest=True,
+            ), headers=browser_page_headers)
         try:
             rows = _landing_rows(s["identity"])
         except Exception as ex:   # noqa: BLE001 — an index that can't query is still a page
@@ -29300,6 +29360,98 @@ def register_dashboard_routes(m):
     @m.custom_route("/gallery", methods=["GET"])
     async def _landing_alias(request):
         return await _landing(request)
+
+    @m.custom_route("/demo", methods=["GET"])
+    async def _demo_enter(request):
+        """Mint the HttpOnly guest cookie and return to the gallery or a public dashboard."""
+        import demo_mode
+        if not demo_mode.enabled():
+            return RedirectResponse("/login", status_code=302)
+        nxt = auth._safe_next(request.query_params.get("next") or "/gallery")
+        path = nxt.split("?", 1)[0]
+        if path.startswith("/demo") or not demo_mode.route_allowed(path, "GET"):
+            nxt = "/gallery"
+        resp = RedirectResponse(nxt, status_code=302)
+        auth.set_session(
+            resp, demo_mode.ROLE, secure=request.url.scheme == "https",
+            identity=demo_mode.GUEST_EMAIL, mapped=True, via="demo",
+            name=demo_mode.GUEST_NAME, guest=True,
+        )
+        return resp
+
+    @m.custom_route("/api/d/{slug}/provenance", methods=["GET"])
+    async def _demo_provenance(request):
+        import demo_mode
+        subject, session, error = _browser_artifact(request)
+        if error:
+            return error
+        if session and session.get("guest") and not demo_mode.enabled():
+            return _json({"error": {"code": "FORBIDDEN"}}, 403)
+        slug = request.path_params["slug"]
+        version = request.query_params.get("version")
+        try:
+            with _conn() as conn:
+                if session and session.get("guest"):
+                    document = demo_mode.provenance_document(conn, slug, version)
+                elif not artifact_access.can_view(conn, slug, subject):
+                    document = None
+                else:
+                    # Signed-in viewers see the same scrubbed summary. Full traces stay out of this endpoint.
+                    selected = version or None
+                    row = conn.execute(
+                        "SELECT latest_version FROM rvbbit.dashboards WHERE slug=%s", (slug,)
+                    ).fetchone()
+                    if not row:
+                        document = None
+                    else:
+                        chosen = int(version) if version else int(row["latest_version"])
+                        stored = conn.execute(
+                            "SELECT p.version, p.thread_id, p.models, p.token_cost, p.token_count, p.wall_ms, p.steps "
+                            "FROM rvbbit.demo_build_provenance p "
+                            "JOIN rvbbit.dashboards d ON d.id=p.dashboard_id "
+                            "WHERE d.slug=%s AND p.version=%s",
+                            (slug, chosen),
+                        ).fetchone()
+                        document = demo_mode.scrub_provenance(dict(stored) if stored else {"version": chosen})
+        except Exception as exc:  # noqa: BLE001
+            print(f"provenance ({slug}): {exc}", file=sys.stderr)
+            return _json({"error": {"code": "PROVENANCE_UNAVAILABLE"}}, 503)
+        if document is None:
+            return _json({"error": {"code": "NOT_FOUND"}}, 404)
+        return _json({"provenance": document})
+
+    @m.custom_route("/api/gallery/artifacts/{slug}/demo", methods=["POST"])
+    async def _publish_demo(request):
+        """Admin: mark a dashboard public and backfill its saved-query allowlist."""
+        owner, session, error = _home_owner(request)
+        if error:
+            return error
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        public = True if not isinstance(body, dict) else bool(body.get("public", True))
+        slug = request.path_params["slug"]
+
+        def work():
+            import demo_mode
+            with _conn() as conn:
+                if not artifact_access.is_admin(conn, owner):
+                    return {"error": {"code": "FORBIDDEN", "message": "An administrator publishes a dashboard to the demo."}, "_status": 403}
+                try:
+                    result = demo_mode.publish_to_demo(conn, slug, public)
+                except demo_mode.DemoSQLError as exc:
+                    status = 404 if exc.code == "NOT_FOUND" else 400
+                    return {"error": {"code": exc.code, "message": str(exc)}, "_status": status}
+                return result
+
+        try:
+            result = await asyncio.to_thread(work)
+        except Exception as exc:  # noqa: BLE001
+            print(f"publish demo ({slug}): {exc}", file=sys.stderr)
+            return _json({"error": {"code": "DEMO_UNAVAILABLE"}}, 503)
+        status = result.pop("_status", 200) if isinstance(result, dict) else 200
+        return _json(result, status)
 
     @m.custom_route("/thumbs/{kind}/{slug}.png", methods=["GET"])
     async def _thumb(request):
@@ -29379,6 +29531,16 @@ def register_dashboard_routes(m):
     async def _render_artifact_document(request, version=None, record_view=True):
         session = auth.read_session_full(request)
         if not session:
+            import demo_mode
+            slug = request.path_params.get("slug")
+            if demo_mode.enabled() and slug:
+                try:
+                    with _conn() as conn:
+                        public = demo_mode.artifact_public(conn, slug)
+                except Exception:
+                    public = False
+                if public:
+                    return RedirectResponse(f"/demo?next={quote(request.url.path)}", status_code=302)
             return RedirectResponse(f"/login?next={quote(request.url.path)}", status_code=302)
         if not session.get("mapped", True):
             return _artifact_not_found_response(session)
@@ -29387,6 +29549,7 @@ def register_dashboard_routes(m):
         try:
             document = _dashboard_version_document(
                 slug, version, viewer, receipts=session.get("via") != "computer",
+                guest=bool(session.get("guest")),
             )
         except ValueError:
             return _artifact_not_found_response(session)
@@ -29487,6 +29650,12 @@ def register_dashboard_routes(m):
         owner = str(session.get("identity") or "").strip().lower()
         if not owner:
             return None, session, _json({"error": {"code": "UNAUTHORIZED"}}, 401)
+        if session.get("guest"):
+            # The values index is the only gallery API a guest may read.
+            # Metric detail includes definition_sql and stays closed.
+            if request.method == "GET" and request.url.path.rstrip("/") == "/api/gallery/metrics":
+                return owner, session, None
+            return None, session, _json({"error": {"code": "FORBIDDEN", "message": "Demo guests cannot open that page."}}, 403)
         return owner, session, None
 
     @m.custom_route("/api/gallery/meetings", methods=["GET"])
@@ -29695,7 +29864,7 @@ def register_dashboard_routes(m):
         if error:
             return error
         try:
-            return _json(_metric_catalog_snapshot(
+            snapshot = _metric_catalog_snapshot(
                 owner,
                 search=request.query_params.get("search"),
                 category=request.query_params.get("category"),
@@ -29704,7 +29873,12 @@ def register_dashboard_routes(m):
                 ticks=request.query_params.get("ticks"),
                 time_basis=request.query_params.get("time_basis") or "business",
                 floor_period=request.query_params.get("floor_period"),
-            ))
+            )
+            session = auth.read_session_full(request)
+            if session and session.get("guest"):
+                import demo_mode
+                snapshot = demo_mode.scrub_metric_index(snapshot)
+            return _json(snapshot)
         except (TypeError, ValueError) as exc:
             return _json({"error": {"code": "BAD_METRIC_QUERY", "message": str(exc)}}, 400)
         except Exception as exc:  # noqa: BLE001 — artifact Gallery must remain usable
@@ -30334,9 +30508,11 @@ def register_dashboard_routes(m):
                 or request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json"):
             return _json({"error": {"code": "INVALID_ORIGIN", "message": "Use the app's authenticated JSON action bridge"}}, 403)
         loop = asyncio.get_running_loop()
-        actor, _, error = await loop.run_in_executor(_CONTROL_EXECUTOR, contextvars.copy_context().run, _browser_artifact, request)
+        actor, session, error = await loop.run_in_executor(_CONTROL_EXECUTOR, contextvars.copy_context().run, _browser_artifact, request)
         if error:
             return error
+        if session and session.get("guest"):
+            return _json({"error": {"code": "FORBIDDEN", "message": "Demo guests cannot run actions."}}, 403)
         try:
             raw = await request.body()
             if len(raw) > 160000:
@@ -30356,7 +30532,7 @@ def register_dashboard_routes(m):
     async def _data(request):
         loop = asyncio.get_running_loop()
         access_context = contextvars.copy_context()
-        email, _, access_error = await loop.run_in_executor(
+        email, session, access_error = await loop.run_in_executor(
             _CONTROL_EXECUTOR,
             access_context.run,
             _browser_artifact,
@@ -30365,6 +30541,7 @@ def register_dashboard_routes(m):
         if access_error:
             return access_error
         slug = request.path_params["slug"]
+        guest = bool(session and session.get("guest"))
         try:
             body = await request.json()
         except Exception:   # noqa: BLE001
@@ -30376,8 +30553,35 @@ def register_dashboard_routes(m):
         limit = (body or {}).get("limit")
         # A dashboard may ask for a longer (or shorter) statement timeout for a
         # heavy query, within the same bounds a direct run_sql call accepts.
-        timeout_ms = (body or {}).get("timeout_ms")
-        if timeout_ms is not None:
+        # Guests cannot choose a timeout; the bridge uses a fixed low cap.
+        timeout_ms = None if guest else (body or {}).get("timeout_ms")
+        query_role = None
+        query_timeout_override = None
+        demo_row_cap = ARTIFACT_ROW_CAP
+        if guest:
+            import demo_mode
+            try:
+                canonical = demo_mode.prepare_sql(sql)
+            except demo_mode.DemoSQLError as exc:
+                return _json({"error": {"code": exc.code, "message": str(exc)}}, 403)
+            version = (body or {}).get("version")
+            def allowed():
+                with _conn() as conn:
+                    return demo_mode.on_allowlist(conn, slug, version, canonical)
+            try:
+                published = await loop.run_in_executor(_CONTROL_EXECUTOR, contextvars.copy_context().run, allowed)
+            except Exception as exc:  # noqa: BLE001
+                print(f"demo allowlist ({slug}): {exc}", file=sys.stderr)
+                return _json({"error": {"code": "QUERY_UNAVAILABLE", "message": "This query could not be checked."}}, 503)
+            if not published:
+                return _json({"error": {"code": "QUERY_NOT_PUBLISHED", "message": "That query is not part of this published dashboard."}}, 403)
+            sql = demo_mode.with_limit(canonical)
+            as_of = None
+            limit = demo_mode.row_limit()
+            query_role = demo_mode.ROLE
+            query_timeout_override = demo_mode.timeout_ms()
+            demo_row_cap = demo_mode.row_limit()
+        elif timeout_ms is not None:
             if type(timeout_ms) is not int or not 1000 <= timeout_ms <= 180000:
                 return _json({"error": {"code": "INVALID_TIMEOUT", "message": "timeout_ms must be an integer from 1000 to 180000"}}, 400)
         refresh_cache = (body or {}).get("cache") in {False, "refresh", "reload"}
@@ -30394,7 +30598,9 @@ def register_dashboard_routes(m):
                     as_of,
                     limit,
                     timeout_ms=timeout_ms,
-                    _max_rows=ARTIFACT_ROW_CAP,
+                    _max_rows=demo_row_cap if guest else ARTIFACT_ROW_CAP,
+                    _statement_timeout_ms=query_timeout_override,
+                    _role=query_role,
                 )
                 return res
             finally:
@@ -30418,7 +30624,10 @@ def register_dashboard_routes(m):
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the page gets an answer and the activity log a record
-            res, failure_status = _dashboard_query_failure(exc, timeout_ms)
+            res, failure_status = _dashboard_query_failure(exc, query_timeout_override if guest else timeout_ms)
+            if guest and isinstance(res.get("error"), dict) and res["error"].get("code") == "QUERY_TIMEOUT":
+                seconds = max(1, round((query_timeout_override or 5000) / 1000))
+                res["error"]["message"] = f"This query was stopped after {seconds} s."
         res["bridge_cache"] = {
             "status": cache_status,
             "ttl_seconds": DASH_QUERY_CACHE_TTL_SECONDS,
@@ -32702,6 +32911,10 @@ def _calliope_artifact_text_edit(
                         _json_default(next_manifest),
                         _json_default(current.get("source_files") or {}),
                     ),
+                )
+                _remember_demo_publication(
+                    conn, dashboard["id"], next_version, next_html, next_manifest,
+                    dashboard.get("home_session_id"),
                 )
                 conn.execute(
                     "UPDATE rvbbit.dashboards SET latest_version=%s,updated_at=now(),"
@@ -35001,8 +35214,10 @@ def _serve_http():
         print(f"Calliope MCP (OAuth AS) → {public}/mcp  (issuer {public}, login {public}/login)",
               file=sys.stderr)
         import calliope
+        import demo_mode
         import desktop_routes
-        uvicorn.run(calliope.capture_server_loop(desktop_routes.attach_websocket(m.streamable_http_app(), m)), host=host, port=port,
+        app = calliope.capture_server_loop(desktop_routes.attach_websocket(m.streamable_http_app(), m))
+        uvicorn.run(demo_mode.guest_middleware(app), host=host, port=port,
                     log_level="warning",
                     forwarded_allow_ips="*")   # trust X-Forwarded-* from the fronting proxy
         return
@@ -35018,7 +35233,8 @@ def _serve_http():
     print(f"Calliope MCP → http://{host}:{port}{path}  (auth: {'on' if key else 'OFF'})",
           file=sys.stderr)
     import calliope
-    uvicorn.run(calliope.capture_server_loop(_with_api_key(app, key)), host=host, port=port,
+    import demo_mode
+    uvicorn.run(demo_mode.guest_middleware(calliope.capture_server_loop(_with_api_key(app, key))), host=host, port=port,
                 log_level="warning")
 
 

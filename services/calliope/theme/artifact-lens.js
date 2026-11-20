@@ -1193,6 +1193,7 @@
         <nav class="tabs" aria-label="Receipts views">
           <button type="button" class="tab active" data-view="time">Data time</button>
           <button type="button" class="tab" data-view="trace">Objects</button>
+          <button type="button" class="tab" data-view="built">Built</button>
           <button type="button" class="query-browser" aria-label="Browse dashboard query data"
             title="Browse dashboard query data" disabled>
             <span>Query data</span><small class="query-count">0</small>
@@ -1238,6 +1239,14 @@
             <span>Following the evidence…</span>
           </div>
           <div class="trace-result" hidden></div>
+        </div>
+        <div class="view built-view" hidden>
+          <div class="built-loading loading" role="status">
+            <i aria-hidden="true"></i>
+            <span>Reading how this was built…</span>
+          </div>
+          <div class="built-error" hidden></div>
+          <div class="built-body" hidden></div>
         </div>
         <footer>Versioned semantic map · dashboard code stays independent</footer>
       </section>
@@ -1317,6 +1326,8 @@
     const queryCount = root.querySelector(".query-count");
     const timeView = root.querySelector(".time-view");
     const traceView = root.querySelector(".trace-view");
+    const builtView = root.querySelector(".built-view");
+    let builtLoaded = false;
     const loadingNode = root.querySelector(".timeline-loading");
     const unavailable = root.querySelector(".timeline-unavailable");
     const unavailableCopy = root.querySelector(".unavailable-copy");
@@ -1731,8 +1742,73 @@
       candidateTimer = window.setTimeout(renderCandidateHighlights, 80);
     }
 
+    function formatBuiltCost(value) {
+      const amount = Number(value);
+      if (!Number.isFinite(amount)) return "Not recorded";
+      if (amount === 0) return "$0";
+      return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
+    }
+
+    function formatBuiltTime(value) {
+      const ms = Number(value);
+      if (!Number.isFinite(ms) || ms < 0) return "Not recorded";
+      if (ms < 1000) return `${Math.round(ms)} ms`;
+      const seconds = ms / 1000;
+      if (seconds < 90) return `${seconds.toFixed(1)} s`;
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} min ${Math.round(seconds % 60)} s`;
+    }
+
+    function renderBuilt(data) {
+      const provenance = data?.provenance || {};
+      const models = Array.isArray(provenance.models) && provenance.models.length
+        ? provenance.models.join(", ")
+        : "Not recorded";
+      const steps = Array.isArray(provenance.steps) ? provenance.steps : [];
+      const stepList = steps.length
+        ? `<ol class="built-steps">${steps.map((step) => (
+          `<li><b>${escapeHtml(step.tool || "step")}</b><span>${escapeHtml(step.count || 0)}</span></li>`
+        )).join("")}</ol>`
+        : `<p class="built-empty">No tool steps were recorded for this version.</p>`;
+      const tokens = Number.isFinite(Number(provenance.token_count))
+        ? `<div><span>Tokens</span><strong>${escapeHtml(Number(provenance.token_count).toLocaleString())}</strong></div>`
+        : "";
+      builtView.querySelector(".built-body").innerHTML = `
+        <h3>How this was built</h3>
+        <p class="built-note">A short summary of the published version. Prompts and secrets are not shown.</p>
+        <div class="built-stats">
+          <div><span>Model</span><strong>${escapeHtml(models)}</strong></div>
+          <div><span>Cost</span><strong>${escapeHtml(formatBuiltCost(provenance.token_cost))}</strong></div>
+          <div><span>Time</span><strong>${escapeHtml(formatBuiltTime(provenance.wall_ms))}</strong></div>
+          ${tokens}
+        </div>
+        <h4>Steps</h4>
+        ${stepList}`;
+      builtView.querySelector(".built-loading").hidden = true;
+      builtView.querySelector(".built-error").hidden = true;
+      builtView.querySelector(".built-body").hidden = false;
+    }
+
+    async function loadBuilt() {
+      if (builtLoaded) return;
+      const loading = builtView.querySelector(".built-loading");
+      const error = builtView.querySelector(".built-error");
+      loading.hidden = false;
+      error.hidden = true;
+      try {
+        const version = dashboard.version ? `?version=${encodeURIComponent(dashboard.version)}` : "";
+        const data = await fetchJson(`/api/d/${encodeURIComponent(dashboard.slug)}/provenance${version}`);
+        builtLoaded = true;
+        renderBuilt(data);
+      } catch (failure) {
+        loading.hidden = true;
+        error.hidden = false;
+        error.innerHTML = `<b>Build summary unavailable</b><span>${escapeHtml(failure instanceof Error ? failure.message : failure)}</span>`;
+      }
+    }
+
     function setView(view, explicit = false) {
-      const next = view === "trace" ? "trace" : "time";
+      const next = view === "trace" ? "trace" : view === "built" ? "built" : "time";
       if (explicit) viewExplicitlyChosen = true;
       shell.dataset.view = next;
       tabs.forEach((tab) => {
@@ -1742,10 +1818,15 @@
       });
       timeView.hidden = next !== "time";
       traceView.hidden = next !== "trace";
+      builtView.hidden = next !== "built";
       if (next === "time") {
         closeQueryDrawer();
         stopPicker();
         loadTimeline();
+      } else if (next === "built") {
+        closeQueryDrawer();
+        stopPicker();
+        loadBuilt();
       } else {
         if (shell.dataset.open === "true" && !pickerActive) startPicker();
         scheduleCandidateHighlights();
@@ -1766,6 +1847,7 @@
         if (!pickerActive) startPicker();
         scheduleCandidateHighlights();
       }
+      if (open && shell.dataset.view === "built") loadBuilt();
       if (!open) {
         // Closing the Lens is a hard interaction boundary. Always tear down
         // capture listeners and every visual selection affordance, even if a
@@ -2263,7 +2345,7 @@
       ].filter(Boolean).join(" · ");
       queryDrawerLoading.hidden = true;
       queryDrawerError.hidden = true;
-      queryAnalyze.hidden = !(
+      queryAnalyze.hidden = Boolean(dashboard.guest) || !(
         context.sql
         && (dashboard.calliope_enabled || currentInspection?.calliope_enabled)
       );
