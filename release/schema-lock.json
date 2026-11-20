@@ -508,6 +508,8 @@
     "0505_hermes_messages_assistant_index": "f217ba3228adc16c4121cfc1ae802ff8c43e7c9069302382c48184856968f626",
     "0506_semantic_compiler_measures_and_slices": "146aec2cee03cc1d4d290abc4a1b0630dbc0312d20cb41d7b2fdb468eaf0245a",
     "0507_semantic_compiler_values_and_grids": "1faaaaba09381746801cdb32bc0c6f608505fd03f2887ce091a688b462dc6556",
-    "0508_semantic_compiler_slice_names": "0be6928495809ac5fd2f3097158b235d37f8ea0b379c6c435a2e45e712cdffdd"
+    "0508_semantic_compiler_slice_names": "0be6928495809ac5fd2f3097158b235d37f8ea0b379c6c435a2e45e712cdffdd",
+    "0509_calliope_demo_guest": "dde0330a45aaa4571fd2ce2a3e2a1b8494bd036d2510108ecc2de755934c52d6",
+    "0510_calliope_demo_login": "a440955281d495a93fd95ef9c5e5ffcade00a7db9f535a148c837e27158be544"
   }
 }

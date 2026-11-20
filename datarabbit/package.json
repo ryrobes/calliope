@@ -1,6 +1,6 @@
 {
   "name": "calliope-datarabbit",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "The DataRabbit SQL and operational console shipped with Calliope.",
   "scripts": {

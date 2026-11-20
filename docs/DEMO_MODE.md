@@ -195,7 +195,7 @@ Add `postgres` to that command when you actually swapped its image. `--pull neve
 
 Sign in as an administrator in a browser that does not have the guest cookie (a private window). The guest cookie is not an admin session; clear it or use another profile to publish dashboards. After a real sign-in, `/`, `/gallery`, and `/demo` as a login destination go to `/floor`. The gallery itself stays available at `/gallery`.
 
-This branch's `deploy/compose.yaml` passes the demo variables into `calliope`, and passes `CALLIOPE_DEMO_MODE` into `origin`. A stock 1.2.1 `compose.yaml` does not. On that install, keep using `compose.override.yaml` (shown above) instead of editing the released file. Set `CALLIOPE_DEMO_GUEST_PASSWORD` in that override.
+Starting with 1.2.2, `deploy/compose.yaml` passes the demo variables into `calliope`, and passes `CALLIOPE_DEMO_MODE` into `origin`. A stock 1.2.1 or earlier `compose.yaml` does not. On that install, keep using `compose.override.yaml` (shown above) instead of editing the released file. Set `CALLIOPE_DEMO_GUEST_PASSWORD` in that override.
 
 ## Known limit
 
