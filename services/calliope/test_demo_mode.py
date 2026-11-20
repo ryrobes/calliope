@@ -466,8 +466,173 @@ def test_widget_has_a_build_panel_beside_the_data_overlay():
     assert 'data-view="built"' in script
     assert "How this was built" in script
     assert "/provenance" in script
-    assert "dashboard.guest" in script
+    assert "dashboard.guest || !dashboard.calliope_enabled" in script
     assert ".built-view" in style
     caddy = (ROOT / "docker/origin/Caddyfile.calliope").read_text()
     assert "redir * {$CALLIOPE_ROOT_REDIRECT:/floor} 302" in caddy
     assert "rate_limit {" not in caddy
+
+
+class _ProvenanceConn:
+    def __init__(self):
+        self.rows = {}
+        self.provenance_writes = []
+
+    def transaction(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql, params=None):
+        self.sql = sql
+        self.params = params
+        if "INSERT INTO rvbbit.demo_build_provenance" in sql:
+            self.provenance_writes.append(params)
+            import json as _json
+            self.rows[(params[0], params[1])] = {
+                "thread_id": params[2],
+                "models": _json.loads(params[3]),
+                "token_cost": params[4],
+                "token_count": params[5],
+                "wall_ms": params[6],
+                "steps": _json.loads(params[7]),
+            }
+        return self
+
+    def fetchall(self):
+        if "demo_build_provenance" in getattr(self, "sql", "") and self.params:
+            row = self.rows.get((self.params[0], self.params[1]))
+            return [row] if row else []
+        return []
+
+    def fetchone(self):
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
+
+def test_toggle_keeps_existing_provenance_and_does_not_copy_the_previous_version():
+    conn = _ProvenanceConn()
+    conn.rows[(7, 1)] = {
+        "thread_id": None,
+        "models": ["fixture"],
+        "token_cost": 0,
+        "token_count": 0,
+        "wall_ms": 0,
+        "steps": [{"tool": "publish_dashboard", "count": 1}],
+    }
+    demo_mode.record_version(conn, 7, 1, demo_mode.sample_html(), None, None)
+    assert conn.provenance_writes == []
+    assert conn.rows[(7, 1)]["models"] == ["fixture"]
+    demo_mode.record_version(conn, 7, 2, demo_mode.sample_html(), None, None)
+    assert conn.rows[(7, 1)]["models"] == ["fixture"]
+    assert conn.rows[(7, 2)]["models"] == []
+    assert conn.rows[(7, 2)]["steps"] == []
+
+
+def test_seed_updates_the_existing_version(monkeypatch):
+    class Conn:
+        def __init__(self):
+            self.statements = []
+
+        def execute(self, sql, params=None):
+            self.statements.append(sql)
+            self.sql = sql
+            return self
+
+        def fetchone(self):
+            if "FROM rvbbit.dashboards WHERE slug" in self.sql:
+                return {"id": 4, "latest_version": 2}
+            return None
+
+    monkeypatch.setattr(demo_mode, "configure_guest", lambda *args, **kwargs: "public_demo")
+    monkeypatch.setattr(demo_mode, "ensure_tables", lambda conn: None)
+    monkeypatch.setattr(demo_mode, "record_version", lambda *args, **kwargs: {"recorded": 1})
+    monkeypatch.setattr(demo_mode, "ensure_card", lambda *args, **kwargs: None)
+    conn = Conn()
+    result = demo_mode.seed_sample(conn)
+    assert result["version"] == 2
+    assert not any("INSERT INTO rvbbit.dashboard_versions" in sql for sql in conn.statements)
+    assert any("UPDATE rvbbit.dashboard_versions" in sql for sql in conn.statements)
+
+
+def test_publish_rejects_a_foreign_referer_when_origin_is_absent():
+    foreign = Request({
+        "type": "http", "method": "POST", "path": "/api/gallery/artifacts/x/demo",
+        "scheme": "http", "server": ("app.test", 80), "headers": [
+            (b"content-type", b"application/json"),
+            (b"referer", b"https://evil.test/gallery"),
+        ],
+    }, None)
+    assert demo_mode.same_origin_json(foreign) is False
+    same = Request({
+        "type": "http", "method": "POST", "path": "/api/gallery/artifacts/x/demo",
+        "scheme": "http", "server": ("app.test", 80), "headers": [
+            (b"content-type", b"application/json"),
+            (b"referer", b"http://app.test/gallery"),
+        ],
+    }, None)
+    assert demo_mode.same_origin_json(same) is True
+
+
+def test_signed_in_demo_entry_does_not_replace_the_session(monkeypatch):
+    monkeypatch.setenv("CALLIOPE_DEMO_MODE", "1")
+    monkeypatch.setattr(server, "_conn", lambda: _Conn())
+    routes = _routes()
+    auth.JWT_SECRET = "demo-test-secret-signed-in-user!!"
+    issued = Response()
+    auth.set_session(issued, "ada@example.com", False, identity="ada@example.com", mapped=True)
+    cookie = issued.headers["set-cookie"].split(";", 1)[0]
+    request = _request("GET", "/demo", cookie=cookie)
+    response = asyncio.run(routes["/demo"](request))
+    assert response.status_code == 302
+    assert response.headers["location"] == "/gallery"
+    assert "set-cookie" not in {name.lower() for name in response.headers}
+
+
+def test_guest_shim_disables_calliope_before_the_lens_runs():
+    html = server._dash_shim("public-demo-revenue", guest=True)
+    assert "RVBBIT_DASHBOARD.guest=true" in html
+    assert "RVBBIT_DASHBOARD.calliope_enabled=false" in html
+    assert html.index("calliope_enabled=false") < html.index('src="/theme/artifact-lens.js"')
+
+
+def test_guest_gallery_has_site_share_tags(monkeypatch):
+    monkeypatch.setenv("CALLIOPE_DEMO_SITE_NAME", "Dataslop")
+    monkeypatch.setenv("CALLIOPE_DEMO_SITE_DESCRIPTION", "Sample dashboards")
+    monkeypatch.setenv("WAREHOUSE_PUBLIC_URL", "https://dataslop.test")
+    html = server._landing_html([], "guest@calliope.local", {"guest": True}, guest=True)
+    assert "<title>Dataslop</title>" in html
+    assert 'property="og:title" content="Dataslop"' in html
+    assert 'property="og:description" content="Sample dashboards"' in html
+    assert 'content="https://dataslop.test/thumbs/demo/site.png"' in html
+    assert 'name="twitter:card"' in html
+
+
+def test_public_dashboard_card_is_served_without_a_cookie(monkeypatch, tmp_path):
+    monkeypatch.setenv("CALLIOPE_DEMO_MODE", "1")
+    monkeypatch.setattr(server, "_live_app_capture_root", lambda: tmp_path)
+    monkeypatch.setattr(server, "_conn", lambda: _Conn())
+    routes = _routes()
+    request = Request({
+        "type": "http", "method": "GET",
+        "path": "/thumbs/dashboard/public-demo-revenue.png",
+        "scheme": "http", "server": ("app.test", 80), "headers": [],
+        "path_params": {"kind": "dashboard", "slug": "public-demo-revenue"},
+        "query_string": b"",
+    }, None)
+    response = asyncio.run(routes["/thumbs/{kind}/{slug}.png"](request))
+    assert response.status_code == 200
+    assert response.body.startswith(b"\x89PNG")
+    assert response.headers["cache-control"].startswith("public")
+    site = Request({
+        "type": "http", "method": "GET", "path": "/thumbs/demo/site.png",
+        "scheme": "http", "server": ("app.test", 80), "headers": [],
+        "path_params": {"kind": "demo", "slug": "site"}, "query_string": b"",
+    }, None)
+    site_response = asyncio.run(routes["/thumbs/{kind}/{slug}.png"](site))
+    assert site_response.status_code == 200
+    assert site_response.body.startswith(b"\x89PNG")

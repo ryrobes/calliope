@@ -1345,7 +1345,7 @@
     // The chat this artifact was made in: members go back to it, anyone else
     // can knock. Only the artifact's existence is known to a non-member.
     async function loadHomeRoom() {
-      if (!homeRoom || !dashboard.calliope_enabled) return;
+      if (!homeRoom || dashboard.guest || !dashboard.calliope_enabled) return;
       let data;
       try {
         data = await fetchJson(`/api/calliope/artifacts/${encodeURIComponent(dashboard.slug)}/room`);

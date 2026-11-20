@@ -23854,7 +23854,17 @@ def _dash_shim(slug, version=None, manifest=None, *, receipts=True, guest=False)
         template = template.replace(_DASH_RECEIPTS_HEAD, "").replace(_DASH_RECEIPTS_TAIL, "")
     filled = _fill_dash_shim(template, slug, version, manifest)
     if guest:
-        filled += "<script>window.RVBBIT_DASHBOARD=window.RVBBIT_DASHBOARD||{};window.RVBBIT_DASHBOARD.guest=true;</script>"
+        # The lens script is deferred, so this has to run first or it still
+        # asks for the artifact room and gets a 403.
+        flag = (
+            "<script>window.RVBBIT_DASHBOARD=window.RVBBIT_DASHBOARD||{};"
+            "window.RVBBIT_DASHBOARD.guest=true;"
+            "window.RVBBIT_DASHBOARD.calliope_enabled=false;</script>\n"
+        )
+        if _DASH_RECEIPTS_TAIL in filled:
+            filled = filled.replace(_DASH_RECEIPTS_TAIL, flag + _DASH_RECEIPTS_TAIL, 1)
+        else:
+            filled = flag + filled
     return filled
 
 
@@ -26684,26 +26694,34 @@ def _start_calliope_watch_worker():
     return True
 
 
+def _public_demo_dashboard(slug: str) -> bool:
+    try:
+        import demo_mode
+        with _conn() as conn:
+            return demo_mode.artifact_public(conn, slug)
+    except Exception:
+        return False
+
+
+def _public_card_response(request, path):
+    from starlette.responses import Response
+    st = path.stat()
+    etag = f'W/"{int(st.st_mtime)}-{st.st_size}"'
+    headers = {"etag": etag, "cache-control": "public, max-age=300"}
+    if request.headers.get("if-none-match", "") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(path.read_bytes(), media_type="image/png", headers=headers)
+
+
 def _demo_share_meta(dashboard, slug) -> str:
     """Open Graph tags for a public dashboard. Not noindex."""
-    from html import escape as e
+    import demo_mode
     title = str((dashboard or {}).get("name") or slug)
     description = str((dashboard or {}).get("description") or "A published Calliope dashboard.")
     public = os.environ.get("WAREHOUSE_PUBLIC_URL", "").rstrip("/")
     image = f"{public}/thumbs/dashboard/{slug}.png" if public else f"/thumbs/dashboard/{slug}.png"
     page = f"{public}/d/{slug}" if public else f"/d/{slug}"
-    return (
-        '<meta name="robots" content="index,follow">'
-        f'<meta property="og:type" content="website">'
-        f'<meta property="og:title" content="{e(title)}">'
-        f'<meta property="og:description" content="{e(description[:300])}">'
-        f'<meta property="og:url" content="{e(page)}">'
-        f'<meta property="og:image" content="{e(image)}">'
-        '<meta name="twitter:card" content="summary_large_image">'
-        f'<meta name="twitter:title" content="{e(title)}">'
-        f'<meta name="twitter:description" content="{e(description[:300])}">'
-        f'<meta name="twitter:image" content="{e(image)}">'
-    )
+    return '<meta name="robots" content="index,follow">' + demo_mode.share_tags(title, description, page, image)
 
 
 def _dashboard_version_document(slug, version=None, viewer=None, *, receipts=True, guest=False):
@@ -29179,6 +29197,14 @@ def _landing_html(rows, viewer, session=None, *, can_administer=False, artifact_
 
     robots = "index,follow" if guest else "noindex,nofollow"
     guest_flag = "<script>window.RVBBIT_DEMO_GUEST=true</script>" if guest else ""
+    share = ""
+    page_title = "Calliope · Gallery"
+    if guest:
+        import demo_mode
+        public = os.environ.get("WAREHOUSE_PUBLIC_URL", "").rstrip("/")
+        from html import escape as e
+        share = demo_mode.site_share_tags(public)
+        page_title = e(demo_mode.site_name())
     presence = "" if guest else """<aside id="gallery-presence" class="gallery-presence" aria-label="Local time and upcoming meetings">
  <div class="presence-clock">
   <div class="presence-time-row" aria-label="Local time">
@@ -29195,7 +29221,8 @@ def _landing_html(rows, viewer, session=None, *, can_administer=False, artifact_
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="{robots}">
-<title>Calliope · Gallery</title>
+<title>{page_title}</title>
+{share}
 {guest_flag}
 {warehouse_theme.metric_card_assets()}
 <style>{_LANDING_CSS}{_GALLERY_METRICS_CSS}</style>
@@ -29443,6 +29470,9 @@ def register_dashboard_routes(m):
         import demo_mode
         if not demo_mode.enabled():
             return RedirectResponse("/login", status_code=302)
+        signed_in = auth.read_session_full(request)
+        if signed_in and not signed_in.get("guest"):
+            return RedirectResponse("/gallery", status_code=302)
         nxt = auth._safe_next(request.query_params.get("next") or "/gallery")
         path = nxt.split("?", 1)[0]
         if path.startswith("/demo") or not demo_mode.route_allowed(path, "GET"):
@@ -29522,6 +29552,21 @@ def register_dashboard_routes(m):
                 except demo_mode.DemoSQLError as exc:
                     status = 404 if exc.code == "NOT_FOUND" else 400
                     return {"error": {"code": exc.code, "message": str(exc)}, "_status": status}
+                if isinstance(result, dict) and result.get("public"):
+                    try:
+                        meta = conn.execute(
+                            "SELECT name, description FROM rvbbit.dashboards WHERE slug=%s",
+                            (slug,),
+                        ).fetchone() or {}
+                        demo_mode.ensure_card(
+                            _live_app_capture_root(),
+                            slug,
+                            (meta.get("name") if isinstance(meta, dict) else None) or slug,
+                            (meta.get("description") if isinstance(meta, dict) else None) or "",
+                            refresh=True,
+                        )
+                    except Exception as exc:  # noqa: BLE001 — the public flag already stuck
+                        print(f"demo card ({slug}): {exc}", file=sys.stderr)
                 return result
 
         try:
@@ -29538,8 +29583,37 @@ def register_dashboard_routes(m):
         # artifact itself. A shared service key cannot stand in for a person.
         kind = request.path_params["kind"]
         slug = request.path_params["slug"]
-        if kind not in ("app", "dashboard") or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", slug, re.I):
+        if kind not in ("app", "dashboard", "demo") or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", slug, re.I):
             return _json({"error": "bad artifact handle"}, 400)
+        import demo_mode
+        if kind == "demo" and not (demo_mode.enabled() and slug == "site"):
+            return _json({"error": "bad artifact handle"}, 400)
+        if demo_mode.enabled() and (
+            (kind == "demo" and slug == "site")
+            or (kind == "dashboard" and _public_demo_dashboard(slug))
+        ):
+            try:
+                if kind == "demo":
+                    path = demo_mode.ensure_card(
+                        _live_app_capture_root(), "site", demo_mode.site_name(),
+                        demo_mode.site_description(), site=True,
+                    )
+                else:
+                    with _conn() as c:
+                        meta = c.execute(
+                            "SELECT name, description FROM rvbbit.dashboards WHERE slug=%s",
+                            (slug,),
+                        ).fetchone() or {}
+                    path = demo_mode.ensure_card(
+                        _live_app_capture_root(),
+                        slug,
+                        (meta.get("name") if isinstance(meta, dict) else None) or slug,
+                        (meta.get("description") if isinstance(meta, dict) else None) or "",
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"demo card ({kind}:{slug}): {exc}", file=sys.stderr)
+                return _json({"error": "no thumbnail"}, 404)
+            return _public_card_response(request, path)
         actor, _, access_error = _browser_artifact(request)
         if access_error:
             return access_error

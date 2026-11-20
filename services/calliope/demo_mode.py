@@ -362,6 +362,8 @@ def route_allowed(path: str, method: str) -> bool:
         return True
     if method == "GET" and re.fullmatch(rf"/thumbs/dashboard/{slug}\.png", path):
         return True
+    if method == "GET" and path == "/thumbs/demo/site.png":
+        return True
     if method == "POST" and re.fullmatch(rf"/api/d/{slug}/q", path):
         return True
     return False
@@ -797,18 +799,35 @@ def record_version(conn, dashboard_id, version, html, manifest=None, session_id=
     statements = statements_from_publication(html, manifest, captured)
     try:
         with conn.transaction():
-            try:
-                provenance = build_provenance(conn, session_id) if session_id else None
-            except Exception:
-                provenance = None
+            provenance = None
+            if session_id:
+                try:
+                    provenance = build_provenance(conn, session_id)
+                except Exception:
+                    provenance = None
+            # No session means this is a backfill (the public toggle), not a new
+            # build. Keep the summary already stored for this version. Never
+            # copy another version's models or cost into this one.
+            keep_existing = False
             if provenance is None:
-                previous = _optional(
+                existing = _optional(
                     conn,
                     "SELECT thread_id, models, token_cost, token_count, wall_ms, steps "
                     "FROM rvbbit.demo_build_provenance WHERE dashboard_id=%s AND version=%s",
-                    (dashboard_id, version - 1),
+                    (dashboard_id, version),
                 )
-                provenance = scrub_provenance(dict(previous[0]) if previous else {})
+                if existing:
+                    keep_existing = True
+                    row = existing[0]
+                    if isinstance(row, dict):
+                        provenance = scrub_provenance(dict(row))
+                    else:
+                        provenance = scrub_provenance({
+                            "thread_id": row[0], "models": row[1], "token_cost": row[2],
+                            "token_count": row[3], "wall_ms": row[4], "steps": row[5],
+                        })
+                else:
+                    provenance = scrub_provenance({})
             provenance["version"] = version
             conn.execute(
                 "DELETE FROM rvbbit.demo_query_allowlist WHERE dashboard_id=%s AND version=%s",
@@ -821,22 +840,23 @@ def record_version(conn, dashboard_id, version, html, manifest=None, session_id=
                     "ON CONFLICT (dashboard_id, version, sql_hash) DO NOTHING",
                     (dashboard_id, version, hashlib.sha256(statement.encode()).hexdigest(), statement),
                 )
-            import json
-            conn.execute(
-                "INSERT INTO rvbbit.demo_build_provenance "
-                "(dashboard_id, version, thread_id, models, token_cost, token_count, wall_ms, steps) "
-                "VALUES (%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb) "
-                "ON CONFLICT (dashboard_id, version) DO UPDATE SET "
-                "thread_id=EXCLUDED.thread_id, models=EXCLUDED.models, token_cost=EXCLUDED.token_cost, "
-                "token_count=EXCLUDED.token_count, wall_ms=EXCLUDED.wall_ms, steps=EXCLUDED.steps, "
-                "recorded_at=now()",
-                (
-                    dashboard_id, version, provenance.get("thread_id"),
-                    json.dumps(provenance.get("models") or []),
-                    provenance.get("token_cost"), provenance.get("token_count"),
-                    provenance.get("wall_ms"), json.dumps(provenance.get("steps") or []),
-                ),
-            )
+            if not keep_existing:
+                import json
+                conn.execute(
+                    "INSERT INTO rvbbit.demo_build_provenance "
+                    "(dashboard_id, version, thread_id, models, token_cost, token_count, wall_ms, steps) "
+                    "VALUES (%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb) "
+                    "ON CONFLICT (dashboard_id, version) DO UPDATE SET "
+                    "thread_id=EXCLUDED.thread_id, models=EXCLUDED.models, token_cost=EXCLUDED.token_cost, "
+                    "token_count=EXCLUDED.token_count, wall_ms=EXCLUDED.wall_ms, steps=EXCLUDED.steps, "
+                    "recorded_at=now()",
+                    (
+                        dashboard_id, version, provenance.get("thread_id"),
+                        json.dumps(provenance.get("models") or []),
+                        provenance.get("token_cost"), provenance.get("token_count"),
+                        provenance.get("wall_ms"), json.dumps(provenance.get("steps") or []),
+                    ),
+                )
     except Exception:
         if not _retry:
             return {"recorded": 0, "error": "unavailable"}
@@ -1028,6 +1048,14 @@ def same_origin_json(request) -> bool:
         return False
     if origin and origin.rstrip("/") not in allowed:
         return False
+    if not origin:
+        referer = request.headers.get("referer") or ""
+        if referer:
+            from urllib.parse import urlsplit
+            parts = urlsplit(referer)
+            referer_origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+            if referer_origin.rstrip("/") not in allowed:
+                return False
     return content_type == "application/json"
 
 
@@ -1064,6 +1092,135 @@ def scrub_metric_index(payload: dict) -> dict:
     return walk(payload or {})
 
 
+def site_name() -> str:
+    return (os.environ.get("CALLIOPE_DEMO_SITE_NAME", "Calliope").strip() or "Calliope")[:80]
+
+
+def site_description() -> str:
+    return (
+        os.environ.get(
+            "CALLIOPE_DEMO_SITE_DESCRIPTION",
+            "Published dashboards you can open without an account.",
+        ).strip()
+        or "Published dashboards you can open without an account."
+    )[:300]
+
+
+def share_tags(title: str, description: str, url: str, image: str) -> str:
+    from html import escape as e
+    safe_title = e(str(title or "")[:200])
+    safe_description = e(str(description or "")[:300])
+    safe_url = e(str(url or ""))
+    safe_image = e(str(image or ""))
+    return (
+        '<meta property="og:type" content="website">'
+        f'<meta property="og:title" content="{safe_title}">'
+        f'<meta property="og:description" content="{safe_description}">'
+        f'<meta property="og:url" content="{safe_url}">'
+        f'<meta property="og:image" content="{safe_image}">'
+        '<meta name="twitter:card" content="summary_large_image">'
+        f'<meta name="twitter:title" content="{safe_title}">'
+        f'<meta name="twitter:description" content="{safe_description}">'
+        f'<meta name="twitter:image" content="{safe_image}">'
+    )
+
+
+def site_share_tags(public_base: str = "") -> str:
+    base = (public_base or os.environ.get("WAREHOUSE_PUBLIC_URL", "")).rstrip("/")
+    image = os.environ.get("CALLIOPE_DEMO_SITE_IMAGE", "").strip()
+    if not image:
+        image = f"{base}/thumbs/demo/site.png" if base else "/thumbs/demo/site.png"
+    page = f"{base}/gallery" if base else "/gallery"
+    return share_tags(site_name(), site_description(), page, image)
+
+
+def card_path(root, name: str, *, site: bool = False):
+    from pathlib import Path
+    base = Path(root) / "thumbs" / "demo"
+    if site:
+        return base / "site.png"
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", name):
+        raise ValueError("bad card name")
+    return base / "dashboards" / f"{name}.png"
+
+
+def _card_font(size: int):
+    from pathlib import Path
+    from PIL import ImageFont
+    path = Path(__file__).parent / "theme" / "fonts" / "LTSuperior-Regular.otf"
+    try:
+        return ImageFont.truetype(str(path), size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _wrap_card_text(draw, text: str, font, width: int) -> str:
+    words = str(text or "").split()
+    if not words:
+        return ""
+    lines = []
+    current = ""
+    for word in words:
+        trial = word if not current else current + " " + word
+        try:
+            fits = draw.textlength(trial, font=font) <= width
+        except Exception:
+            fits = len(trial) <= 32
+        if fits:
+            current = trial
+        else:
+            if current:
+                lines.append(current)
+            current = word
+        if len(lines) == 3:
+            break
+    if current and len(lines) < 3:
+        lines.append(current)
+    return "\n".join(lines)
+
+
+def render_card(title: str, subtitle: str) -> bytes:
+    """A 1200×630 card. Used when a public dashboard has no captured thumbnail."""
+    import io
+    from PIL import Image, ImageDraw
+    image = Image.new("RGB", (1200, 630), (16, 13, 11))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, 14, 630), fill=(245, 180, 70))
+    title_font = _card_font(64)
+    body_font = _card_font(28)
+    label_font = _card_font(22)
+    draw.text((72, 150), "CALLIOPE", font=label_font, fill=(245, 180, 70))
+    draw.multiline_text(
+        (72, 210),
+        _wrap_card_text(draw, title or "Dashboard", title_font, 1000),
+        font=title_font,
+        fill=(232, 221, 204),
+        spacing=8,
+    )
+    draw.multiline_text(
+        (72, 460),
+        _wrap_card_text(draw, subtitle or site_description(), body_font, 1000),
+        font=body_font,
+        fill=(180, 168, 150),
+        spacing=6,
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def ensure_card(root, name: str, title: str, subtitle: str = "", *, site: bool = False, refresh: bool = False):
+    path = card_path(root, name, site=site)
+    if path.is_file() and not refresh:
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = render_card(title, subtitle)
+    temporary = path.with_suffix(".tmp.png")
+    temporary.write_bytes(payload)
+    temporary.replace(path)
+    return path
+
+
 def sample_html() -> str:
     return (
         "<!doctype html><html><head><title>Regional revenue</title></head><body>"
@@ -1098,22 +1255,26 @@ def seed_sample(conn) -> dict:
         "wall_ms": 0,
         "steps": [{"tool": "publish_dashboard", "count": 1}],
     })
-    row = conn.execute("SELECT id FROM rvbbit.dashboards WHERE slug=%s", (SAMPLE_SLUG,)).fetchone()
+    row = conn.execute(
+        "SELECT id, latest_version FROM rvbbit.dashboards WHERE slug=%s", (SAMPLE_SLUG,)
+    ).fetchone()
     if row:
         dashboard_id = row.get("id") if isinstance(row, dict) else row[0]
-        current = conn.execute(
-            "SELECT latest_version FROM rvbbit.dashboards WHERE id=%s", (dashboard_id,)
-        ).fetchone()
-        version = int(current.get("latest_version") if isinstance(current, dict) else current[0]) + 1
-        conn.execute(
-            "INSERT INTO rvbbit.dashboard_versions (dashboard_id, version, html, kind, created_by, notes) "
-            "VALUES (%s,%s,%s,'live','demo-seed','public demo fixture')",
-            (dashboard_id, version, html),
+        version = int(row.get("latest_version") if isinstance(row, dict) else row[1])
+        updated = conn.execute(
+            "UPDATE rvbbit.dashboard_versions SET html=%s WHERE dashboard_id=%s AND version=%s",
+            (html, dashboard_id, version),
         )
+        if getattr(updated, "rowcount", 1) == 0:
+            conn.execute(
+                "INSERT INTO rvbbit.dashboard_versions (dashboard_id, version, html, kind, created_by, notes) "
+                "VALUES (%s,%s,%s,'live','demo-seed','public demo fixture')",
+                (dashboard_id, version, html),
+            )
         conn.execute(
-            "UPDATE rvbbit.dashboards SET latest_version=%s, demo_public=true, archived=false, "
-            "app_kind='dashboard', updated_at=now() WHERE id=%s",
-            (version, dashboard_id),
+            "UPDATE rvbbit.dashboards SET demo_public=true, archived=false, app_kind='dashboard', "
+            "name=%s, description=%s, updated_at=now() WHERE id=%s",
+            ("Regional revenue", "A small public demo dashboard. No model was called.", dashboard_id),
         )
     else:
         version = 1
@@ -1142,4 +1303,13 @@ def seed_sample(conn) -> dict:
             provenance["token_count"], provenance["wall_ms"], json.dumps(provenance["steps"]),
         ),
     )
+    try:
+        import tempfile
+        from pathlib import Path
+        root = os.environ.get("WAREHOUSE_LIVE_APP_CAPTURE_DIR") or str(
+            Path(tempfile.gettempdir()) / "rvbbit-live-app-captures"
+        )
+        ensure_card(root, SAMPLE_SLUG, "Regional revenue", "A small public demo dashboard. No model was called.", refresh=True)
+    except Exception:
+        pass
     return {"slug": SAMPLE_SLUG, "version": version, "url": f"/d/{SAMPLE_SLUG}"}

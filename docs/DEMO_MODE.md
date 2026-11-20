@@ -15,6 +15,7 @@ Which dashboards a guest can see is an explicit choice. Nothing is public until 
 - `POST /api/d/{slug}/q` runs one allowlisted statement for that version.
 - `GET /api/d/{slug}/provenance` returns the scrubbed build summary.
 - `GET /api/gallery/metrics` returns metric names and values only. `definition_sql` is not included. Metric detail is denied.
+- `GET /thumbs/dashboard/{slug}.png` for a public dashboard, and `GET /thumbs/demo/site.png`, return a card image with no cookie. A captured screenshot is not required.
 - Static files under `/theme`, `/charts`, `/vendor`, and `/bg`.
 
 Everything else is denied for that cookie, including `/calliope`, `/data`, `/floor`, `/team`, `/desk`, `/ops`, `/mcp`, app actions, and arbitrary SQL. A normal signed-in session is not a guest and is not subject to this list. Turn demo mode off and a leftover guest cookie is ignored.
@@ -83,6 +84,8 @@ That grants `CONNECT` on the current database and `USAGE` plus `SELECT` on the n
 
 `EXECUTE` on `rvbbit` functions remains granted to `PUBLIC`. That is not a grant to the guest role. Without `USAGE` on schema `rvbbit`, the login cannot call those functions. Granting that schema to `PUBLIC` would open them. Do not do that.
 
+PostgreSQL lets a role change its own password, and event triggers cannot see `ALTER ROLE`, so `calliope_demo_login` cannot be forbidden from doing that. A new password does not make it a superuser or a member of `postgres`. The next guest connection that fails authentication sets the password back from `CALLIOPE_DEMO_GUEST_PASSWORD`.
+
 ## Publish a dashboard
 
 Publishing or updating a dashboard records a canonical allowlist for that version from `rvbbitQuery("...")` literals and manifest `sql` fields. Statements the bridge would reject are left off the list, so they cannot run for a guest. Existing dashboards are not public and have no list until an administrator backfills them.
@@ -95,7 +98,9 @@ curl -sS -b admin-cookies.txt -H 'content-type: application/json' \
   https://your-host/api/gallery/artifacts/THE-SLUG/demo
 ```
 
-`{"public": false}` hides it again. Only `app_kind = dashboard` can be marked public.
+`{"public": false}` hides it again. Only `app_kind = dashboard` can be marked public. Toggling public refreshes the saved-query allowlist and leaves each version's build summary in place. It does not copy one version's models or cost onto another.
+
+`/`, `/gallery`, and a public dashboard carry Open Graph and Twitter tags while demo mode is on. The site title and description are `CALLIOPE_DEMO_SITE_NAME` (default `Calliope`) and `CALLIOPE_DEMO_SITE_DESCRIPTION`. Set `CALLIOPE_DEMO_SITE_IMAGE` to a full image URL to replace the generated site card. `WAREHOUSE_PUBLIC_URL` should be the public origin so those image URLs are absolute.
 
 ## Sample dashboard, no model key
 
@@ -106,7 +111,7 @@ docker compose exec -T -e PYTHONPATH=/app -e CALLIOPE_DEMO_MODE=1 calliope \
   python - < scripts/demo/seed_public_dashboard.py
 ```
 
-The script refuses to run without `WAREHOUSE_DSN`. Inside the container that variable is already set; do not point it at `port=55433 dbname=bench` unless that really is your database.
+The script refuses to run without `WAREHOUSE_DSN`. Inside the container that variable is already set; do not point it at `port=55433 dbname=bench` unless that really is your database. Running it again updates the existing version in place. It does not append a new version.
 
 From a checkout, against the published port in `connections.json`:
 
@@ -156,7 +161,7 @@ docker build -f services/calliope/Dockerfile -t calliope-server:demo .
 docker build -f docker/Dockerfile.rvbbit -t calliope-postgres:demo .
 ```
 
-The postgres build compiles the extension. It wants more than 16 GB of RAM; if the build is killed, lower BuildKit parallelism (`BUILDKIT_STEP_LOG_MAX_SIZE` is unrelated — set the Buildx `max-parallelism` or `CARGO_BUILD_JOBS=1`) or skip the image. On an **existing** database the psql files are enough:
+The postgres build compiles the extension and wants more than 16 GB of RAM. If the build is killed, set `CARGO_BUILD_JOBS=1` or lower Buildx `max-parallelism`. On an **existing** database, skip the image and apply the SQL files instead:
 
 ```bash
 psql "$WAREHOUSE_DSN" -v ON_ERROR_STOP=1 \
