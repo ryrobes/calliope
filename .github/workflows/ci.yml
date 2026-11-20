@@ -27,7 +27,7 @@ jobs:
           python -m py_compile \
             scripts/release/bump-version.py \
             scripts/release/bump-calliope-version.py
-          pytest -q tests/test_capability_pack_contract.py
+          pytest -q tests/test_capability_pack_contract.py tests/test_schema_baseline_roles.py
 
       - name: Validate hosted Compose
         env:
@@ -150,6 +150,37 @@ jobs:
       - name: Install pg_rvbbit into PostgreSQL 18
         working-directory: crates/pg_rvbbit
         run: cargo pgrx install --pg-config /usr/lib/postgresql/18/bin/pg_config
+
+      # The calliope-postgres image flattens every migration into a baseline at
+      # build time, and fresh installs run that baseline instead of migrate().
+      # Run the same builder against this commit's extension, then install the
+      # result on a second, empty cluster: roles are cluster-wide, so only a
+      # separate cluster shows what a fresh install actually gets.
+      - name: Build and install the flattened schema baseline
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: baseline-ci-only
+        run: |
+          export PATH="/usr/lib/postgresql/18/bin:$PATH"
+          python3 -m venv /tmp/schema-env
+          /tmp/schema-env/bin/pip install -q pglast==7.20
+          for cluster in baseline:55597 fresh:55596; do
+            sudo pg_createcluster 18 "${cluster%%:*}" -p "${cluster##*:}" \
+              -o "shared_preload_libraries=pg_rvbbit" --start
+            sudo -u postgres psql -p "${cluster##*:}" -c "ALTER USER postgres PASSWORD '$PGPASSWORD'"
+          done
+          engine="$(python3 -c "import json;print(json.load(open('release/calliope-release.json'))['rvbbit_engine_version'])")"
+          PGPORT=55597 PGDATABASE=postgres /tmp/schema-env/bin/python scripts/schema/baseline.py \
+            --existing-cluster --output /tmp/schema-baseline \
+            --lock release/schema-lock.json --engine "$engine" \
+            --extdir "$(pg_config --sharedir)/extension"
+          PGPORT=55596 createdb rvbbit
+          PGPORT=55596 PGDATABASE=rvbbit PGOPTIONS='-c rvbbit.force_heap_scan=on' psql -X -q -v ON_ERROR_STOP=1 \
+            --single-transaction -f /tmp/schema-baseline/baseline.sql
+          PGPORT=55596 PGDATABASE=rvbbit python3 scripts/schema/check-baseline-roles.py
+          PGPORT=55596 PGDATABASE=rvbbit psql -X -Atq -v ON_ERROR_STOP=1 -c "SELECT rvbbit.migrate()" | grep -q 'up to date'
+          for cluster in baseline fresh; do sudo pg_dropcluster 18 "$cluster" --stop; done
 
       - name: Start PostgreSQL with rvbbit, and a plain one to compare against
         run: |

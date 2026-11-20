@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Verify the Postgres image's real empty-volume entrypoint and release guard."""
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import time
 import uuid
+
+_spec = importlib.util.spec_from_file_location('baseline_roles', Path(__file__).with_name('check-baseline-roles.py'))
+baseline_roles = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(baseline_roles)
 
 
 def run(*args, input=None, check=True):
@@ -77,6 +82,8 @@ def main():
         assert labels.get('org.opencontainers.image.version') == release['calliope_version']
         assert int(sql('SELECT count(*) FROM rvbbit.schema_migrations')) == len(manifest['migrations'])
         assert sql('SELECT DISTINCT provenance FROM rvbbit.schema_release_migrations') == 'baseline'
+        # Roles are cluster-wide, so only an empty volume proves the baseline creates them.
+        baseline_roles.verify(json.loads(sql(baseline_roles.QUERY)))
         assert 'up to date' in sql('SELECT rvbbit.migrate()')
         assert json.loads(guard('check').stdout)['pending'] == 0
         # Bootstrap has no local Postgres socket. Exercise the actual image
@@ -118,7 +125,7 @@ def main():
                   'revision': labels.get('org.opencontainers.image.revision'),
                   'baseline': manifest['id'], 'migration_count': len(manifest['migrations']),
                   'build_verification': manifest['verification'],
-                  'empty_volume_baseline': True, 'restart_preserves_data': True, 'pending_only_upgrade': True,
+                  'empty_volume_baseline': True, 'baseline_demo_roles': True, 'restart_preserves_data': True, 'pending_only_upgrade': True,
                   'newer_schema_rejected': True, 'checksum_mismatch_rejected': True,
                   'sql_tls_verified': True, 'sql_wrong_hostname_rejected': True,
                   'sql_password_required': True, 'internal_sql_compatible': True,

@@ -181,25 +181,118 @@ def normalized_data(data, mappings):
     return {k: sorted(v, key=lambda r: json.dumps(r, sort_keys=True)) for k, v in data.items()}
 
 
-def role_seed(db, source):
-    roles = db.json(source, """SELECT coalesce(json_agg(json_build_object('name',rolname,'login',rolcanlogin,
+# Non-rvbbit roles a migration may create, with the exact attributes and
+# settings the baseline recreates. Anything else stays an error. A password
+# is never carried into the image; demo mode sets it at runtime.
+SEED_ROLES = {
+    'calliope_demo_guest': {'login': False, 'inherit': False, 'config': None},
+    'calliope_demo_login': {'login': True, 'inherit': True,
+                            'config': ['default_transaction_read_only=on']},
+}
+ROLE_FLAGS = ('super', 'createdb', 'createrole', 'replication', 'bypassrls')
+
+ROLES = """SELECT coalesce(json_agg(json_build_object('name',rolname,'login',rolcanlogin,'inherit',rolinherit,
     'super',rolsuper,'createdb',rolcreatedb,'createrole',rolcreaterole,'replication',rolreplication,
-    'bypassrls',rolbypassrls,'password',rolpassword,'config',(SELECT rolconfig FROM pg_roles WHERE oid=pg_authid.oid)) ORDER BY rolname),'[]')
-    FROM pg_authid WHERE rolname<>'postgres' AND rolname NOT LIKE 'pg_%'""")
+    'bypassrls',rolbypassrls,'password',rolpassword IS NOT NULL,
+    'config',(SELECT rolconfig FROM pg_roles WHERE oid=pg_authid.oid),
+    'comment',shobj_description(oid,'pg_authid')) ORDER BY rolname),'[]')
+    FROM pg_authid WHERE rolname<>'postgres' AND rolname NOT LIKE 'pg_%'"""
+
+MEMBERSHIPS = """SELECT coalesce(json_agg(json_build_object('role',r.rolname,'member',m.rolname,
+    'admin',am.admin_option,'inherit',am.inherit_option,'set',am.set_option) ORDER BY r.rolname,m.rolname),'[]')
+    FROM pg_auth_members am JOIN pg_roles r ON r.oid=am.roleid JOIN pg_roles m ON m.oid=am.member
+    WHERE r.rolname LIKE 'rvbbit_%' OR r.rolname = ANY(ARRAY[{names}]::text[])"""
+
+DATABASE_ACL = """SELECT json_build_object('owner',pg_get_userbyid(d.datdba),'acl',(
+    SELECT json_agg(json_build_object('grantee',CASE WHEN a.grantee=0 THEN NULL ELSE pg_get_userbyid(a.grantee) END,
+      'privilege',a.privilege_type,'grantable',a.is_grantable)
+      ORDER BY CASE WHEN a.grantee=0 THEN '' ELSE pg_get_userbyid(a.grantee) END,a.privilege_type)
+    FROM aclexplode(d.datacl) a)) FROM pg_database d WHERE d.datname=current_database()"""
+
+
+def check_seed_role(role):
+    name = role['name']
+    if name.startswith('rvbbit_'):
+        if role['login'] or role['password'] or role['config'] or any(role[k] for k in ROLE_FLAGS):
+            raise ValueError('Unexpected non-seed role in the disposable baseline database')
+        return
+    spec = SEED_ROLES.get(name)
+    if spec is None or any(role[k] for k in ROLE_FLAGS):
+        raise ValueError('Unexpected non-seed role in the disposable baseline database')
+    if role['password']:
+        raise ValueError(f'Seed role {name} has a password; the baseline never carries one')
+    if (role['login'], role['inherit'], role['config']) != (spec['login'], spec['inherit'], spec['config']):
+        raise ValueError(f'Seed role {name} does not match its reviewed attributes')
+
+
+def role_setting(item):
+    key, _, value = item.partition('=')
+    if not re.fullmatch(r'[a-z_][a-z0-9_.]*', key):
+        raise ValueError(f'Unexpected role setting: {item}')
+    return key, value
+
+
+def role_seed(db, source):
+    roles = db.json(source, ROLES)
     commands = []
     for role in roles:
-        if (not role['name'].startswith('rvbbit_') or any(role[k] for k in
-                ('login', 'super', 'createdb', 'createrole', 'replication', 'bypassrls', 'password', 'config'))):
-            raise ValueError('Unexpected non-seed role in the disposable baseline database')
+        check_seed_role(role)
         name = role['name']
-        commands.append(f"DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname={literal(name)}) THEN CREATE ROLE {ident(name)} NOLOGIN; END IF; END $$;")
-    memberships = db.json(source, """SELECT coalesce(json_agg(json_build_object('role',r.rolname,'member',m.rolname,
-      'admin',am.admin_option) ORDER BY r.rolname,m.rolname),'[]') FROM pg_auth_members am
-      JOIN pg_roles r ON r.oid=am.roleid JOIN pg_roles m ON m.oid=am.member
-      WHERE r.rolname LIKE 'rvbbit_%'""")
-    for item in memberships:
-        commands.append(f"GRANT {ident(item['role'])} TO {ident(item['member'])}" + (' WITH ADMIN OPTION;' if item['admin'] else ';'))
+        if name.startswith('rvbbit_'):
+            commands.append(f"DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname={literal(name)}) THEN CREATE ROLE {ident(name)} NOLOGIN; END IF; END $$;")
+            continue
+        attributes = ('LOGIN' if role['login'] else 'NOLOGIN') + ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS ' + (
+            'INHERIT' if role['inherit'] else 'NOINHERIT')
+        commands.append(f"DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname={literal(name)}) THEN CREATE ROLE {ident(name)} {attributes}; END IF; END $$;")
+        commands.append(f'ALTER ROLE {ident(name)} {attributes};')
+        for item in role['config'] or []:
+            key, value = role_setting(item)
+            commands.append(f'ALTER ROLE {ident(name)} SET {key} TO {literal(value)};')
+        if role['comment'] is not None:
+            commands.append(f'COMMENT ON ROLE {ident(name)} IS {literal(role["comment"])};')
+    names = ','.join(literal(name) for name in sorted(SEED_ROLES))
+    for item in db.json(source, MEMBERSHIPS.format(names=names)):
+        grant = f"GRANT {ident(item['role'])} TO {ident(item['member'])}"
+        if item['role'].startswith('rvbbit_'):
+            commands.append(grant + (' WITH ADMIN OPTION;' if item['admin'] else ';'))
+        else:
+            options = ', '.join(f'{k.upper()} {str(bool(item[k])).upper()}' for k in ('admin', 'inherit', 'set'))
+            commands.append(f'{grant} WITH {options};')
     return '\n'.join(commands)
+
+
+def database_acl(db, name):
+    """The database's privileges with its owner written as OWNER, so two databases compare."""
+    doc = db.json(name, DATABASE_ACL)
+    if doc['acl'] is None:
+        return None
+    return [{**item, 'grantee': 'OWNER' if item['grantee'] == doc['owner'] else item['grantee']} for item in doc['acl']]
+
+
+def database_acl_seed(db, source):
+    # Migrations may change database privileges (0510 revokes TEMP from
+    # PUBLIC). pg_dump of one database leaves those out, so restate them for
+    # whichever database the baseline is installed into.
+    acl = database_acl(db, source)
+    if acl is None:
+        return ''
+    lines = ["DO $database_acl$ DECLARE db text := current_database();",
+             " owner text := (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()); BEGIN",
+             " EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC', db);",
+             " EXECUTE format('REVOKE ALL ON DATABASE %I FROM %I', db, owner);"]
+    for item in acl:
+        privilege = item['privilege']
+        if privilege not in ('CREATE', 'TEMPORARY', 'CONNECT'):
+            raise ValueError(f'Unexpected database privilege: {privilege}')
+        option = ' WITH GRANT OPTION' if item['grantable'] else ''
+        if item['grantee'] is None:
+            lines.append(f" EXECUTE format('GRANT {privilege} ON DATABASE %I TO PUBLIC{option}', db);")
+        elif item['grantee'] == 'OWNER':
+            lines.append(f" EXECUTE format('GRANT {privilege} ON DATABASE %I TO %I{option}', db, owner);")
+        else:
+            lines.append(f" EXECUTE format('GRANT {privilege} ON DATABASE %I TO %I{option}', db, {literal(item['grantee'])});")
+    lines.append('END $database_acl$;')
+    return '\n'.join(lines)
 
 
 def generate(db, out, lock, engine, extdir):
@@ -221,6 +314,7 @@ def generate(db, out, lock, engine, extdir):
     members = db.json(source, MEMBERS)
     reattach = attach_sql(members)
     roles = role_seed(db, source)
+    acl = database_acl_seed(db, source)
     fixes, mappings = db.oid_fixups(source)
     source_data = db.data(source)
     db.sql(source, DETACH)
@@ -238,13 +332,15 @@ def generate(db, out, lock, engine, extdir):
     script = ('-- Generated from a clean database, never from a running instance.\n'
               'SET LOCAL rvbbit.force_heap_scan=on;\nSET LOCAL session_replication_role=replica;\n' + roles + '\n'
               f'CREATE EXTENSION pg_rvbbit VERSION {literal(shell_version)};\n' + body + '\n' + fixes + '\n'
-              + reattach + f'ALTER EXTENSION pg_rvbbit UPDATE TO {literal(engine)};\n')
+              + reattach + f'ALTER EXTENSION pg_rvbbit UPDATE TO {literal(engine)};\n' + acl + '\n')
     (out / 'baseline.sql').write_text(script)
     print('baseline: restoring flattened DDL and seed data', flush=True)
     db.sql(restored, 'BEGIN;\n' + script + '\nCOMMIT;')
     actual_members = db.json(restored, MEMBERS)
     if actual_members != members:
         raise ValueError('Baseline changed extension membership')
+    if database_acl(db, restored) != database_acl(db, source):
+        raise ValueError('Baseline changed database privileges')
     # Compare complete schema with extension objects visible on both sides.
     db.sql(restored, DETACH)
     actual_schema = db.schema(restored)
