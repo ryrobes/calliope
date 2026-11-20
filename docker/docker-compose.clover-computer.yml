@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Optional GPU worker. Add to the Clover compose files only when wanted.
 # Fetch immutable weights once with:
 #   docker compose ... run --rm --no-deps clover-computer python3 models.py

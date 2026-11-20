@@ -33,6 +33,8 @@ npm run dev
 
 ## Docker
 
+Local image only. This is not the product install:
+
 ```bash
 docker build -t ghcr.io/ryrobes/calliope-datarabbit:local .
 docker run --rm -p 3000:3000 \
@@ -41,14 +43,13 @@ docker run --rm -p 3000:3000 \
   ghcr.io/ryrobes/calliope-datarabbit:local
 ```
 
-For the complete hosted product, use the repository-root Calliope Compose file.
+DataRabbit ships inside Calliope. Install with
+`curl -fsSL https://usecalliope.com/install.sh | bash`. It is served at
+`https://YOUR_SERVER_NAME:3001` and at `/datarabbit` on the Calliope
+origin. See [`deploy/README.md`](../deploy/README.md). Files under
+`docker/docker-compose*.yml` are development stacks.
 
-```bash
-docker compose --env-file /opt/rvbbit/.env \
-  -f ../docker/docker-compose.calliope.yml up -d
-```
-
-Docs: [rvbbit.ai/docs/data-rabbit](https://rvbbit.ai/docs/data-rabbit)
+SQL desktop docs: [rvbbit.ai/docs/data-rabbit](https://rvbbit.ai/docs/data-rabbit).
 
 ## Layout
 

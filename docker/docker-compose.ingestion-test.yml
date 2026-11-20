@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 name: rvbbit-ingestion-fixtures
 
 # Disposable source databases for exercising the hosted appliance mirror path.

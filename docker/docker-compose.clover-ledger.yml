@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Optional Postgres ledger overlay, after clover-selfhosted.yml.
 # First run scripts/clover/ledger.py prepare and apply ledger-bootstrap.sql to
 # the Calliope database as its administrator. Never use the admin DSN in Clover.

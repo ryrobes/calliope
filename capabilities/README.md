@@ -17,6 +17,25 @@ shape of a standalone capability repository. Users should be able to inspect
 the pack metadata, deploy manifest, image reference, and any local source before
 adding the capability to their database catalog.
 
+## Connecting
+
+Commands that talk to Postgres read `RVBBIT_DSN` (or `--dsn`). On a
+Calliope install the database is `rvbbit`, the role is `postgres`, and
+SQL is published from `CALLIOPE_SQL_BIND` (default port **5432**) with
+TLS. The password is `POSTGRES_PASSWORD` in the install's private
+`.env`. It is generated per install. Do not put it in a URL you commit.
+From `./calliope/current`:
+
+```bash
+set -a && . ./.env && set +a
+export PGPASSWORD="$POSTGRES_PASSWORD"
+export PGSSLROOTCERT="${PGSSLROOTCERT:-state/postgres-tls/ca.crt}"
+export RVBBIT_DSN="host=${CALLIOPE_SQL_HOST} port=${CALLIOPE_SQL_BIND##*:} dbname=rvbbit user=postgres sslmode=verify-full sslrootcert=${PGSSLROOTCERT}"
+```
+
+See [`deploy/README.md`](../deploy/README.md). `docker/docker-compose*.yml`
+is development tooling, not this connection.
+
 ## Quick Start
 
 Render SQL only:
@@ -37,9 +56,9 @@ python capabilities/tools/rvbbit-capability scaffold \
 Install locally in one command:
 
 ```bash
-RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench \
 python capabilities/tools/rvbbit-capability install \
   capabilities/packs/extract/gliner-medium-v2.1 \
+  --dsn "$RVBBIT_DSN" \
   --gpu
 ```
 
@@ -47,18 +66,18 @@ Queue deployment through a Warren agent instead of installing on the current
 machine:
 
 ```bash
-RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench \
 python capabilities/tools/rvbbit-capability deploy \
   capabilities/packs/smoke/warren-echo \
+  --dsn "$RVBBIT_DSN" \
   --target '{"gpu":false}'
 ```
 
 Run a pack's Warren acceptance tests:
 
 ```bash
-RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench \
 python capabilities/tools/rvbbit-capability test \
-  capabilities/packs/smoke/warren-echo
+  capabilities/packs/smoke/warren-echo \
+  --dsn "$RVBBIT_DSN"
 ```
 
 The command above is equivalent to:

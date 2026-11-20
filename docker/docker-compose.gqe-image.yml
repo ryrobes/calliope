@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Optional GPU/GQE image override for pg-rvbbit.
 #
 # This replaces the normal pg-rvbbit service image with a GPU/GQE-capable image

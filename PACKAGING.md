@@ -1,137 +1,98 @@
 # Installing pg_rvbbit
 
-Three supported install paths, ordered from easiest to most flexible.
-
 **Supported PostgreSQL version:** 18. (PG17 backport is tracked but not
 shipped — `EXPLAIN (SEMANTIC ON)` and parts of the GROUP BY rewriter use
 PG18-only APIs.)
 
-## 1. Pre-built Docker image (recommended for getting started)
+The supported way to run the engine is a Calliope install. Standalone
+`rvbbit-postgres` / `rvbbit-lens` images and `rvbbit-sql` release tarballs
+are not published and are not an install path. `https://rvbbit.ai/install.sh`
+only points at the Calliope installer. Engine and SQL docs live at
+[rvbbit.ai](https://rvbbit.ai).
+
+## 1. Calliope (supported)
 
 ```bash
-docker run -d --name rvbbit \
-    -p 55433:5432 \
-    -e POSTGRES_PASSWORD=rvbbit \
-    -e POSTGRES_DB=bench \
-    ghcr.io/ryrobes/rvbbit-postgres:latest
+curl -fsSL https://usecalliope.com/install.sh | bash
+```
 
-psql postgresql://postgres:rvbbit@localhost:55433/bench \
+The engine image is `ghcr.io/ryrobes/calliope-postgres:<version>`, tagged
+with the Calliope release ([`VERSION`](VERSION)). It is built from
+[`crates/pg_rvbbit`](crates/pg_rvbbit) by
+[`docker/Dockerfile.rvbbit`](docker/Dockerfile.rvbbit): Postgres 18,
+`pg_rvbbit`, `rvbbit-duck`, and the first-boot catalog. The shipping
+Compose project is [`deploy/compose.yaml`](deploy/compose.yaml).
+
+From the install directory (`./calliope/current`):
+
+```bash
+set -a && . ./.env && set +a
+export PGPASSWORD="$POSTGRES_PASSWORD"
+psql "host=${CALLIOPE_SQL_HOST} port=${CALLIOPE_SQL_BIND##*:} dbname=rvbbit user=postgres sslmode=verify-full sslrootcert=state/postgres-tls/ca.crt" \
     -c 'SELECT rvbbit.rvbbit_version();'
 ```
 
-The image is `postgres:18` + `pg_rvbbit` + `rvbbit-duck` + first-boot init
-that runs `CREATE EXTENSION pg_rvbbit;`. `shared_preload_libraries` is
-pre-configured. The published tags follow `vMAJOR.MINOR.PATCH`,
-`MAJOR.MINOR`, `MAJOR`, plus `latest` for the most recent release.
+Published SQL listens on **5432** unless `CALLIOPE_SQL_BIND` says
+otherwise. The database name is `rvbbit`. The superuser password is
+`POSTGRES_PASSWORD` in the private `.env` (generated per install, not
+the web login). Clients outside the Compose network must use TLS; copy
+only `state/postgres-tls/ca.crt`. Details:
+[`deploy/README.md`](deploy/README.md).
 
-To pin a version: `ghcr.io/ryrobes/rvbbit-postgres:0.56.0`.
+Files under `docker/docker-compose*.yml` and
+`scripts/release/build-and-push.sh` are development tooling. They are
+not how you install Calliope. Product images are published by
+[`.github/workflows/calliope-images.yml`](.github/workflows/calliope-images.yml);
+see [`release/SHIPPING.md`](release/SHIPPING.md).
 
-### Full clean-slate stack
+## 2. Build from source (development)
 
-For a single-host install that includes Postgres, Lens, and a Warren agent:
+The extension crate is [`crates/pg_rvbbit`](crates/pg_rvbbit), a member
+of the workspace `Cargo.toml`. These commands match the image build in
+`docker/Dockerfile.rvbbit`. They install into whatever PostgreSQL 18
+`pg_config` points at. This is not the supported product install.
 
-```bash
-RVBBIT_VERSION=1.0.0 \
-docker compose -f docker/docker-compose.release.yml up -d
-```
+Requirements:
 
-This uses published images only:
+- Rust stable 1.95+ (`rustup`)
+- `cargo-pgrx = 0.18.0` (`cargo install --locked cargo-pgrx --version 0.18.0`)
+- PostgreSQL 18 development headers (`postgresql-server-dev-18` on Debian)
+- `libzstd-dev`, `libclang-dev`, `pkg-config`, `build-essential`, `protobuf-compiler`
 
-- `ghcr.io/ryrobes/rvbbit-postgres:<version>`
-- `ghcr.io/ryrobes/rvbbit-lens:<version>`
-- `ghcr.io/ryrobes/rvbbit-warren-agent:<version>`
-- one versioned image per built-in Warren capability
-
-The Warren service mounts `/var/run/docker.sock` so it can launch capability
-containers on the local Docker host. See `docs/RELEASE_IMAGES.md` for the full
-image matrix and release script.
-
-### Turnkey uber stack
-
-For the easiest first-run path, use the uber compose file. It starts Postgres,
-Lens, Warren, then runs a one-shot bootstrap container that deploys and verifies
-the baseline Warren capabilities:
-
-- `smoke/warren-echo`
-- `runtimes/python-runtime`
-- `runtimes/mcp-gateway`
+From the repository root:
 
 ```bash
-RVBBIT_VERSION=1.0.0 \
-docker compose -f docker/docker-compose.uber.yml up -d
+cargo pgrx init --pg18 "$(which pg_config)"
+cargo pgrx install --release --pg-config "$(which pg_config)"
+cargo build --release --locked --manifest-path crates/rvbbit_duck/Cargo.toml --bin rvbbit-duck
+sudo cp crates/rvbbit_duck/target/release/rvbbit-duck /usr/local/bin/
 ```
 
-If the GHCR images are private, create a simple Docker auth config and point the
-stack at it so Warren can pull capability images:
+Then add `pg_rvbbit` to `shared_preload_libraries`, restart Postgres, and
+run `CREATE EXTENSION pg_rvbbit;` in the target database.
 
-```bash
-export RVBBIT_DOCKER_CONFIG=/tmp/rvbbit-ghcr-auth
-mkdir -p "$RVBBIT_DOCKER_CONFIG"
-echo "$CR_PAT" | docker --config "$RVBBIT_DOCKER_CONFIG" login ghcr.io -u "$GH_USER" --password-stdin
+### Local development tarball
 
-RVBBIT_VERSION=1.0.0 \
-RVBBIT_DOCKER_CONFIG="$RVBBIT_DOCKER_CONFIG" \
-docker compose -f docker/docker-compose.uber.yml up -d
-```
-
-If the GHCR packages have been made public, no Docker login or
-`RVBBIT_DOCKER_CONFIG` is needed for this compose path.
-
-## 2. Release tarball (for installing into existing PG18 hosts)
-
-Download a release archive from
-<https://github.com/ryrobes/rvbbit-sql/releases>:
-
-```bash
-VER=0.56.0
-ARCH=$(dpkg --print-architecture)   # amd64 or arm64
-curl -L -o rvbbit.tar.gz \
-    https://github.com/ryrobes/rvbbit-sql/releases/download/v${VER}/rvbbit-${VER}-pg18-linux-${ARCH}.tar.gz
-
-tar xzf rvbbit.tar.gz
-cd rvbbit-${VER}-pg18-linux-${ARCH}
-sudo ./install.sh
-```
-
-The tarball's `install.sh` is `scripts/install-pg-extension.sh` in this repository. It is not the Calliope product installer (`deploy/install.sh`). It auto-detects `pg_config` and drops:
-
-- `pg_rvbbit.so` → `$(pg_config --pkglibdir)`
-- `pg_rvbbit*.control` + the generated base SQL (`pg_rvbbit--<version>.sql`) and versioned `pg_rvbbit--<from>--<to>.sql` migration scripts → `$(pg_config --sharedir)/extension`
-- `rvbbit-duck` binary → `/usr/local/bin/` (override with `DUCK_BIN_DIR=`)
-
-Then add `pg_rvbbit` to `shared_preload_libraries` in `postgresql.conf`,
-restart Postgres, and run `CREATE EXTENSION pg_rvbbit;` in your target
-database.
-
-### Building a tarball locally
+`make package` builds the development `pg-rvbbit` image from
+`docker/docker-compose.yml` and extracts a tarball under `dist/`:
 
 ```bash
 make package
 ls dist/
-# rvbbit-0.56.0-pg18-linux-amd64.tar.gz
+# rvbbit-<workspace version>-pg18-linux-<arch>.tar.gz
 ```
 
-`make package` builds the docker image (so it inherits all of Docker's
-build-time guarantees) and extracts the binaries into a self-contained
-archive. The resulting tarball is portable across any Debian/Ubuntu host
-running PG18 with matching glibc + libstdc++ — no other runtime deps.
+There is no download for this archive. The name is the workspace
+version in `Cargo.toml`, not the Calliope release. The unpacked
+`install.sh` is `scripts/install-pg-extension.sh`. It is not
+`deploy/install.sh`. It copies:
 
-## 3. Build from source (for development or non-PG18 builds)
+- `pg_rvbbit.so` → `$(pg_config --pkglibdir)`
+- `pg_rvbbit*.control` + `pg_rvbbit--*.sql` → `$(pg_config --sharedir)/extension`
+- `rvbbit-duck` → `/usr/local/bin/` (override with `DUCK_BIN_DIR=`)
 
-Requirements:
-- Rust stable 1.95+ (`rustup`)
-- `cargo-pgrx = 0.18.0` (`cargo install --locked cargo-pgrx --version 0.18.0`)
-- PostgreSQL 18 development headers (`postgresql-server-dev-18` on Debian)
-- `libzstd-dev`, `libclang-dev`, `pkg-config`, `build-essential`
-
-Build:
-
-```bash
-cargo pgrx init --pg18 $(which pg_config)
-cargo pgrx install --release --pg-config $(which pg_config)
-cargo build --release --locked --manifest-path crates/rvbbit_duck/Cargo.toml
-sudo cp crates/rvbbit_duck/target/release/rvbbit-duck /usr/local/bin/
-```
+The archive runs on a Debian/Ubuntu host with PostgreSQL 18 and a
+matching glibc and libstdc++. Nothing else is required at runtime.
 
 ## Runtime characteristics
 
@@ -141,7 +102,8 @@ sudo cp crates/rvbbit_duck/target/release/rvbbit-duck /usr/local/bin/
   standard system libraries.
 - **`shared_preload_libraries = 'pg_rvbbit'` is mandatory**. Without it,
   `CREATE EXTENSION` succeeds but planner hooks never register and no
-  parquet routing happens — silent fallback to heap scans. `install.sh`
+  parquet routing happens — silent fallback to heap scans. The
+  development tarball's `install.sh` (`scripts/install-pg-extension.sh`)
   warns on missing preload.
 - **`CREATE EXTENSION pg_rvbbit` requires superuser**. The control file
   sets `superuser = true`. Not usable on hosted Postgres without
@@ -158,7 +120,11 @@ sudo cp crates/rvbbit_duck/target/release/rvbbit-duck /usr/local/bin/
 
 ## Upgrading
 
-**2.0.14 is the first generally-available release.** In-place
+A Calliope install upgrades by running the installer again. It backs up
+the database and applies `rvbbit.migrate()`. Do not replace
+`calliope-postgres` with a standalone image.
+
+**2.0.14 is the first generally-available extension release.** In-place
 `ALTER EXTENSION ... UPDATE` is supported only *from 2.0.14 onward* —
 the versioned `pg_rvbbit--<from>--<to>.sql` migration scripts are
 installed alongside the `.control` file and Postgres walks that chain
@@ -166,8 +132,8 @@ from your installed version to the new `default_version`, preserving
 database state (parquet files, judgment cache, embeddings, KG, route
 decisions).
 
-To upgrade a 2.0.14+ install, drop in the new artifacts (tarball,
-docker pull, or rebuild), then:
+To upgrade the extension on a database you built yourself, drop in the
+new development artifacts (a local tarball or a rebuild), then:
 
 ```sql
 ALTER EXTENSION pg_rvbbit UPDATE;

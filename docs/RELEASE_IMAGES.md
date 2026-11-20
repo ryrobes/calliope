@@ -1,6 +1,30 @@
-# Rvbbit Release Images
+# Rvbbit development images
 
-Rvbbit ships three product images plus the core Warren runtime/smoke capability
+This document describes the older image set built by
+[`scripts/release/build-and-push.sh`](../scripts/release/build-and-push.sh)
+and started from `docker/docker-compose.release.yml` /
+`docker/docker-compose.uber.yml`. That set is development tooling. It
+is not the Calliope install path, and `ghcr.io/ryrobes/rvbbit-postgres`
+and `ghcr.io/ryrobes/rvbbit-lens` are not supported product images.
+
+Install Calliope with:
+
+```bash
+curl -fsSL https://usecalliope.com/install.sh | bash
+```
+
+The engine image is `ghcr.io/ryrobes/calliope-postgres:<version>`, built
+from `crates/pg_rvbbit`. Ports, database name, and credentials are in
+[`deploy/compose.yaml`](../deploy/compose.yaml) and
+[`deploy/README.md`](../deploy/README.md). Product image publishing is
+[`.github/workflows/calliope-images.yml`](../.github/workflows/calliope-images.yml)
+and [`release/SHIPPING.md`](../release/SHIPPING.md). Engine and SQL
+docs: [rvbbit.ai](https://rvbbit.ai).
+
+The rest of this page is how the development script lays out its own
+images. Do not use it as an install guide.
+
+Rvbbit's development script builds three images plus the core Warren runtime/smoke capability
 images. The rest of the built-in Warren capability images can also be built,
 but they are opt-in because the full catalog build is expensive. GHCR is the
 canonical registry for V1; GitHub Releases hold native tarballs and Warren

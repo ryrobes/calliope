@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Optional host-built NVIDIA GQE mount for local GPU/GQE experiments.
 #
 # Build GQE on the host or in NVIDIA's GQE development container, then run

@@ -1,9 +1,10 @@
 name: calliope
 
-# Hosted Calliope appliance. This intentionally extends the generic uber
-# service definitions while making hosted-only dependencies and secrets
-# explicit. Product images share one Calliope release version. Run from the
-# repository root with:
+# Development appliance overlay. Not the Calliope install path
+# (https://usecalliope.com/install.sh, deploy/compose.yaml). This file
+# extends the generic uber service definitions and makes hosted-only
+# dependencies explicit. Run from the repository root only when working
+# on that overlay:
 #
 #   docker compose --env-file /opt/rvbbit/.env \
 #     -f docker/docker-compose.calliope.yml up -d

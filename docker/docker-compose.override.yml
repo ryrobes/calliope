@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # DEV-ONLY (uncommitted): fleet token for the read-fleet window/probe testing.
 services:
   pg-rvbbit:

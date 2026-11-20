@@ -63,8 +63,9 @@ python3 scripts/release/shipping.py bundle --candidate --output ./calliope-candi
 ```
 
 [`release/SHIPPING.md`](./release/SHIPPING.md) describes a release end
-to end, and [`docs/RELEASE_IMAGES.md`](./docs/RELEASE_IMAGES.md) covers the
-images. `release/services.json` is the single build inventory.
+to end. [`docs/RELEASE_IMAGES.md`](./docs/RELEASE_IMAGES.md) describes
+the older development image set and is not the install path.
+`release/services.json` is the single build inventory.
 
 Calliope's version is in [`VERSION`](./VERSION). The RVBBIT extension keeps its
 own forward-only version and migrations, because `pg_rvbbit`, schema `rvbbit`

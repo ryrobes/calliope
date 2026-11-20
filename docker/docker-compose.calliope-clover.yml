@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Layer after docker-compose.calliope.yml and docker-compose.clover-selfhosted.yml.
 # Use generated client.env alongside the ordinary Calliope appliance env file.
 services:

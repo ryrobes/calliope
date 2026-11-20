@@ -6,7 +6,31 @@ set -euo pipefail
 # any notebook SQL file not sitting next to it is fetched on first run.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_URL="${BIGFOOT_BASE_URL:-https://rvbbit.ai/bigfoot}"
-DSN="${RVBBIT_DSN:-postgresql://postgres:rvbbit@localhost:55433/bench}"
+# Calliope install (deploy/compose.yaml): database rvbbit, role postgres,
+# published port from CALLIOPE_SQL_BIND (default 5432), TLS verify-full.
+# Password is PGPASSWORD, or POSTGRES_PASSWORD from the install .env.
+# Override the whole connection with RVBBIT_DSN. No password is stored here.
+if [[ -z "${RVBBIT_DSN:-}" ]]; then
+  if [[ -z "${PGPASSWORD:-}" && -n "${POSTGRES_PASSWORD:-}" ]]; then
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+  fi
+  sql_host="${CALLIOPE_SQL_HOST:-127.0.0.1}"
+  if [[ -n "${CALLIOPE_SQL_BIND:-}" ]]; then
+    sql_port="${CALLIOPE_SQL_BIND##*:}"
+  else
+    sql_port=5432
+  fi
+  sql_db="${POSTGRES_DB:-rvbbit}"
+  sql_user="${PGUSER:-postgres}"
+  DSN="host=${sql_host} port=${sql_port} dbname=${sql_db} user=${sql_user} sslmode=${PGSSLMODE:-verify-full}"
+  if [[ -n "${PGSSLROOTCERT:-}" ]]; then
+    DSN="${DSN} sslrootcert=${PGSSLROOTCERT}"
+  elif [[ -f state/postgres-tls/ca.crt ]]; then
+    DSN="${DSN} sslrootcert=state/postgres-tls/ca.crt"
+  fi
+else
+  DSN="${RVBBIT_DSN}"
+fi
 SAMPLE_ROWS="${BIGFOOT_SAMPLE_ROWS:-500}"
 CLASSIFY_ROWS="${BIGFOOT_CLASSIFY_ROWS:-250}"
 EXTRACT_ROWS="${BIGFOOT_EXTRACT_ROWS:-12}"
