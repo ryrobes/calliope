@@ -4,7 +4,7 @@ One Compose project contains Calliope, DataRabbit, RVBBIT/Postgres, Warren,
 Hermes, Hindsight, self-hosted Clover and its CPU/API workers, and UI Studio.
 It uses your OpenRouter key; a Clover account and a GPU are not required.
 
-**Current status: 1.2.2.** The complete product still needs its
+**Current status: 1.2.3.** The complete product still needs its
 empty-machine acceptance test. Fresh Postgres installs a verified schema baseline
 baked into the image; existing databases apply only missing migrations. Image
 build and schema verification details are recorded in the release artifacts.

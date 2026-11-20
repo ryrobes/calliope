@@ -44,7 +44,7 @@ services:
       RVBBIT_CLOVER_BASE_URL: http://clover:8090
       RVBBIT_CLOVER_CATALOG_SQL: /etc/clover/catalog.sql
       RVBBIT_RELEASE_CATALOG_SQL: /etc/calliope/capabilities.sql
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: 'no'
@@ -184,7 +184,7 @@ services:
       CALLIOPE_STAGE_CONTEXT_SESSIONS: ${CALLIOPE_STAGE_CONTEXT_SESSIONS:-}
       WAREHOUSE_CALLIOPE_DEBUG_TOKEN_METER: ${WAREHOUSE_CALLIOPE_DEBUG_TOKEN_METER:-true}
       WAREHOUSE_CALLIOPE_DESKTOP_CONTROL_KEY: ${CALLIOPE_DESKTOP_CONTROL_KEY:-}
-      WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REF: ${CALLIOPE_DESKTOP_IMAGE_REF:-${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.2}}
+      WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REF: ${CALLIOPE_DESKTOP_IMAGE_REF:-${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.3}}
       WAREHOUSE_CALLIOPE_DESKTOP_IMAGE_REVISION: ${CALLIOPE_DESKTOP_IMAGE_REVISION:-${CALLIOPE_REVISION:-unknown}}
       WAREHOUSE_CALLIOPE_DESKTOP_STORAGE: /var/lib/calliope-desktop
       WAREHOUSE_CALLIOPE_DESKTOP_URL: ${CALLIOPE_DESKTOP_URL:-http://desktop:9000}
@@ -221,7 +221,7 @@ services:
     extra_hosts:
     - host.docker.internal:host-gateway
     init: true
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-server:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-server:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -289,7 +289,7 @@ services:
       RVBBIT_LOCAL_WORK_ROOT: ${RVBBIT_LOCAL_WORK_ROOT:-/data}
       RVBBIT_MODE: burrow
       WAREHOUSE_MCP_KEY: ${WAREHOUSE_MCP_KEY:-}
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-datarabbit:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-datarabbit:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -325,7 +325,7 @@ services:
       - python3 -c "import json,os,urllib.request; r=urllib.request.Request('http://127.0.0.1:9000/health',headers={'X-Calliope-Desktop-Key':os.environ['CALLIOPE_DESKTOP_CONTROL_KEY']});
         assert json.load(urllib.request.urlopen(r,timeout=3))['ready']"
       timeout: 5s
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-desktop:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     profiles:
@@ -343,7 +343,7 @@ services:
       type: volume
       volume: {}
   doc-extract:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-doc-extract:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-doc-extract:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -390,7 +390,7 @@ services:
         wc -l); test "$$live" -ge "$$workers" && find /run/rvbbit/duck -maxdepth 1 -type s -name 'rvbbit-duck-*.sock'
         | grep -q .
       timeout: 3s
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -458,7 +458,7 @@ services:
       - 'curl -fsS -H "Authorization: Bearer $${API_SERVER_KEY}" http://127.0.0.1:8642/health >/dev/null && curl
         -fsS http://127.0.0.1:9222/json/version >/dev/null'
       timeout: 5s
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-hermes:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-hermes:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -577,7 +577,7 @@ services:
     - ${CALLIOPE_HTTPS_BIND:-127.0.0.1:8443}:${CALLIOPE_HTTPS_PORT:-443}
     - ${CALLIOPE_DATA_BIND:-127.0.0.1:3001}:${CALLIOPE_DATA_PORT:-81}
   postgres-tls:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.3}
     entrypoint: [python3, /usr/local/bin/rvbbit-postgres-tls]
     environment:
       CALLIOPE_SQL_HOST: ${CALLIOPE_SQL_HOST:?Provision the SQL hostname using ./configure.py}
@@ -647,7 +647,7 @@ services:
       - CMD-SHELL
       - grep -qx postgres /proc/1/comm && pg_isready -U postgres -d ${POSTGRES_DB:-rvbbit}
       timeout: 3s
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -721,7 +721,7 @@ services:
       WARREN_RECONCILE_MS: ${WARREN_RECONCILE_MS:-15000}
       WARREN_WORK_DIR: /var/lib/rvbbit/warren
       RVBBIT_CLOVER_BASE_URL: http://clover:8090
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-warren:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-warren:${CALLIOPE_VERSION:-1.2.3}
     networks:
       default: null
     restart: unless-stopped
@@ -736,7 +736,7 @@ services:
       type: volume
       volume: {}
   clover:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover:${CALLIOPE_VERSION:-1.2.3}
     command:
     - --config
     - /etc/hutch/hutch.json
@@ -787,7 +787,7 @@ services:
         condition: service_completed_successfully
     stop_grace_period: 30s
   clover-decisions:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-decisions:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-decisions:${CALLIOPE_VERSION:-1.2.3}
     environment:
       OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
     volumes:
@@ -816,7 +816,7 @@ services:
       timeout: 5s
       retries: 3
   clover-web:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-web:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-web:${CALLIOPE_VERSION:-1.2.3}
     environment:
       CLOVER_WEB_BIND: 0.0.0.0:8091
     restart: unless-stopped
@@ -831,7 +831,7 @@ services:
     cpus: 2.0
     volumes: []
   clover-utilities:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-utilities:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-utilities:${CALLIOPE_VERSION:-1.2.3}
     environment:
       OPENROUTER_API_KEY_FILE: /run/clover-credentials/openrouter.key
     volumes:
@@ -865,7 +865,7 @@ services:
       timeout: 5s
       retries: 3
   clover-research:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-research:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-research:${CALLIOPE_VERSION:-1.2.3}
     env_file:
     - path: ./state/clover/providers.env
       format: raw
@@ -896,7 +896,7 @@ services:
     mem_limit: 512m
     cpus: 2.0
   storage-init:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-postgres:${CALLIOPE_VERSION:-1.2.3}
     restart: 'no'
     depends_on:
       postgres:
@@ -922,7 +922,7 @@ services:
       bind:
         create_host_path: false
   clover-analytics:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-analytics:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-analytics:${CALLIOPE_VERSION:-1.2.3}
     environment:
       ANALYTICS_THREADS: ${CLOVER_ANALYTICS_THREADS:-2}
     env_file:
@@ -944,7 +944,7 @@ services:
       timeout: 5s
       retries: 5
   clover-gliner:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-gliner:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-gliner:${CALLIOPE_VERSION:-1.2.3}
     profiles:
     - specialists
     environment:
@@ -967,7 +967,7 @@ services:
       retries: 40
       start_period: 120s
   clover-tspulse:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-tspulse:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-clover-tspulse:${CALLIOPE_VERSION:-1.2.3}
     profiles:
     - specialists
     environment:
@@ -990,7 +990,7 @@ services:
       retries: 40
       start_period: 120s
   ui-studio:
-    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-ui-studio:${CALLIOPE_VERSION:-1.2.2}
+    image: ${CALLIOPE_REGISTRY:-ghcr.io/ryrobes}/calliope-ui-studio:${CALLIOPE_VERSION:-1.2.3}
     restart: unless-stopped
     init: true
     read_only: true

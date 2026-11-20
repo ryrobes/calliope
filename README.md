@@ -37,7 +37,7 @@ login and how people will reach Calliope, then downloads the release, configures
 it and starts it. Run it again to upgrade. To read it first, or to install by
 hand from a release bundle, see [`deploy/README.md`](./deploy/README.md).
 
-The current release is **1.2.2** ([`VERSION`](./VERSION)).
+The current release is **1.2.3** ([`VERSION`](./VERSION)).
 
 ## Repository layout
 
