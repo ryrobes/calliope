@@ -160,7 +160,9 @@ def test_questions_read_the_terminal_not_stdin():
     assert 'read -r -p "$2${3:+ ${D}[$3]${N}}: " reply </dev/tty' in text
     assert 'read -r -s -p "$2: " reply </dev/tty' in text
     # The key is checked with OpenRouter as a header on stdin, never in argv.
-    assert '-H @- https://openrouter.ai/api/v1/key' in text
+    # -sS would print curl's own "curl: (7) ..." before the installer's warning.
+    assert "curl -s -o \"$body\" -w '%{http_code}' -H @- https://openrouter.ai/api/v1/key" in text
+    assert 'curl -sS ' not in text
 
 
 def test_versions_compare_numerically():
@@ -434,3 +436,111 @@ finish installed
     quiet = run_installer(script.replace('HINDSIGHT_UNHEALTHY=1\n', ''), tmp_path)
     assert 'Hindsight did not become healthy' not in quiet.stdout
     assert 'http://localhost:8080' in quiet.stdout
+
+
+def test_key_check_does_not_print_curl_transport_errors(tmp_path):
+    write_stub(tmp_path / 'bin', 'curl', '''#!/bin/bash
+for arg in "$@"; do
+  if [ "$arg" = -sS ]; then
+    echo "curl: (7) Failed to connect" >&2
+  fi
+done
+exit 7
+''')
+    result = run_installer(r'''
+CALLIOPE_YES=1
+OPENROUTER_API_KEY=sk-or-test
+CALLIOPE_ADMIN_EMAIL=owner@example.invalid
+CALLIOPE_ADMIN_PASSWORD=test-only-strong-password
+CALLIOPE_PUBLIC_URL=https://calliope.example
+collect_settings
+printf 'continued\n'
+''', tmp_path)
+    assert 'continued' in result.stdout
+    assert 'curl:' not in result.stderr
+    assert "Couldn't check the key with OpenRouter" in result.stderr
+
+
+def test_releases_page_without_a_tag_is_a_lookup_failure(tmp_path):
+    write_stub(tmp_path / 'bin', 'curl', CURL_STUB)
+    result = run_installer('resolve_version; printf %s "$VERSION"\n', tmp_path, env={
+        'API_FAIL': '1', 'REDIRECT_URL': 'https://github.com/ryrobes/calliope/releases'}, check=False)
+    assert result.returncode != 0
+    assert "Unexpected release version" not in result.stderr
+    assert 'set CALLIOPE_VERSION' in result.stderr
+
+
+def test_postgres_backup_is_owner_readable_only(tmp_path):
+    write_stub(tmp_path / 'bin', 'docker', '''#!/bin/bash
+if [[ "$*" == *pg_dumpall* ]]; then
+  printf 'calliope-dump\n'
+  exit 0
+fi
+echo "unexpected docker: $*" >&2
+exit 9
+''')
+    directory = tmp_path / 'release'
+    directory.mkdir()
+    dest = tmp_path / 'backups' / 'pg_dumpall.sql.gz'
+    dest.parent.mkdir()
+    run_installer(
+        f'umask 022; backup_postgres_dump {shlex.quote(str(directory))} {shlex.quote(str(dest))}',
+        tmp_path)
+    assert dest.stat().st_mode & 0o777 == 0o600
+    import gzip
+    assert gzip.open(dest, 'rt').read() == 'calliope-dump\n'
+
+
+def test_unattended_install_generates_and_prints_admin_password(tmp_path):
+    write_stub(tmp_path / 'bin', 'curl', CURL_STUB)
+    settings = tmp_path / 'settings'
+    root = tmp_path / 'install'
+    (root / 'current').mkdir(parents=True)
+    (root / 'current' / 'connections.json').write_text('{"web": "http://localhost:8080"}\n')
+    result = run_installer(f'''
+CALLIOPE_YES=1
+OPENROUTER_API_KEY=sk-or-test
+CALLIOPE_ADMIN_EMAIL=owner@example.invalid
+unset CALLIOPE_ADMIN_PASSWORD
+CALLIOPE_PUBLIC_URL=http://localhost:8080
+collect_settings
+printf 'pass=%s\\n' "$CALLIOPE_ADMIN_PASSWORD"
+printf 'same=%s\\n' "$([ "$GENERATED_PASSWORD" = "$CALLIOPE_ADMIN_PASSWORD" ] && echo yes)"
+mkdir -p {shlex.quote(str(settings))}
+write_settings {shlex.quote(str(settings))}
+ROOT={shlex.quote(str(root))}
+finish installed
+''', tmp_path, env={'KEY_BODY': '{"data":{"limit_remaining":10}}'})
+    password = next(line.removeprefix('pass=') for line in result.stdout.splitlines() if line.startswith('pass='))
+    assert len(password) == 20 and password.isalnum()
+    assert 'same=yes' in result.stdout
+    assert f'CALLIOPE_ADMIN_PASSWORD={password}' in (settings / 'settings.env').read_text()
+    assert password in result.stdout.split('Calliope is installed', 1)[-1]
+
+
+def test_explicit_admin_password_is_not_replaced(tmp_path):
+    write_stub(tmp_path / 'bin', 'curl', CURL_STUB)
+    settings = tmp_path / 'settings'
+    root = tmp_path / 'install'
+    (root / 'current').mkdir(parents=True)
+    (root / 'current' / 'connections.json').write_text('{"web": "http://localhost:8080"}\n')
+    chosen = 'test-only-strong-password'
+    result = run_installer(f'''
+CALLIOPE_YES=1
+OPENROUTER_API_KEY=sk-or-test
+CALLIOPE_ADMIN_EMAIL=owner@example.invalid
+CALLIOPE_ADMIN_PASSWORD={chosen}
+CALLIOPE_PUBLIC_URL=http://localhost:8080
+collect_settings
+printf 'pass=%s\\n' "$CALLIOPE_ADMIN_PASSWORD"
+printf 'generated=%s\\n' "${{GENERATED_PASSWORD-<unset>}}"
+mkdir -p {shlex.quote(str(settings))}
+write_settings {shlex.quote(str(settings))}
+ROOT={shlex.quote(str(root))}
+finish installed
+''', tmp_path, env={'KEY_BODY': '{"data":{"limit_remaining":10}}'})
+    assert f'pass={chosen}' in result.stdout
+    assert 'generated=' in result.stdout
+    assert f'CALLIOPE_ADMIN_PASSWORD={chosen}' in (settings / 'settings.env').read_text()
+    summary = result.stdout.split('Calliope is installed', 1)[-1]
+    assert 'Password' not in summary

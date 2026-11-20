@@ -11,8 +11,9 @@
 # Nothing else: the one-time configuration step runs inside a Calliope image.
 #
 # Unattended installs answer the questions with environment variables:
-#   OPENROUTER_API_KEY, CALLIOPE_ADMIN_EMAIL, CALLIOPE_ADMIN_PASSWORD,
+#   OPENROUTER_API_KEY, CALLIOPE_ADMIN_EMAIL,
 #   CALLIOPE_PUBLIC_URL (https://your.host, or http://localhost:PORT)
+#   CALLIOPE_ADMIN_PASSWORD is optional; when unset, one is generated and printed.
 # plus any other setting from settings.env.example (CALLIOPE_TLS, ...).
 # Other options:
 #   CALLIOPE_DIR        where to install (default: ./calliope)
@@ -168,6 +169,11 @@ latest_version() { # newest tag without a leading v. API first; releases/latest 
         return 1
     fi
     effective=${effective%/}
+    # A repository with no releases redirects to /releases, not /releases/tag/<tag>.
+    case "$effective" in
+        */releases/tag/*) ;;
+        *) return 1 ;;
+    esac
     tag=${effective##*/}
     tag=${tag%%[?#]*}
     tag=${tag#v}
@@ -280,7 +286,7 @@ collect_settings() {
     body=$(mktemp)
     CLEANUP+=("$body")
     status=$(printf 'Authorization: Bearer %s\n' "$OPENROUTER_API_KEY" \
-        | curl -sS -o "$body" -w '%{http_code}' -H @- https://openrouter.ai/api/v1/key || true)
+        | curl -s -o "$body" -w '%{http_code}' -H @- https://openrouter.ai/api/v1/key || true)
     case "$status" in
         200)
             say "${G}✓${N} OpenRouter accepted the key"
@@ -301,19 +307,24 @@ collect_settings() {
     done
     GENERATED_PASSWORD=""
     if [ -z "${CALLIOPE_ADMIN_PASSWORD:-}" ]; then
-        local again=""
-        while :; do
-            ask_secret CALLIOPE_ADMIN_PASSWORD "Choose a password, 12+ characters (Enter to generate one)"
-            if [ -z "$CALLIOPE_ADMIN_PASSWORD" ]; then
-                CALLIOPE_ADMIN_PASSWORD=$(random_password)
-                GENERATED_PASSWORD=$CALLIOPE_ADMIN_PASSWORD
-                break
-            fi
-            if (( ${#CALLIOPE_ADMIN_PASSWORD} < 12 )); then say "That's shorter than 12 characters."; continue; fi
-            ask_secret again "Same password again"
-            [ "$again" = "$CALLIOPE_ADMIN_PASSWORD" ] && break
-            say "Those didn't match."
-        done
+        if ! interactive; then
+            CALLIOPE_ADMIN_PASSWORD=$(random_password)
+            GENERATED_PASSWORD=$CALLIOPE_ADMIN_PASSWORD
+        else
+            local again=""
+            while :; do
+                ask_secret CALLIOPE_ADMIN_PASSWORD "Choose a password, 12+ characters (Enter to generate one)"
+                if [ -z "$CALLIOPE_ADMIN_PASSWORD" ]; then
+                    CALLIOPE_ADMIN_PASSWORD=$(random_password)
+                    GENERATED_PASSWORD=$CALLIOPE_ADMIN_PASSWORD
+                    break
+                fi
+                if (( ${#CALLIOPE_ADMIN_PASSWORD} < 12 )); then say "That's shorter than 12 characters."; continue; fi
+                ask_secret again "Same password again"
+                [ "$again" = "$CALLIOPE_ADMIN_PASSWORD" ] && break
+                say "Those didn't match."
+            done
+        fi
     fi
     (( ${#CALLIOPE_ADMIN_PASSWORD} >= 12 )) || die "CALLIOPE_ADMIN_PASSWORD must be at least 12 characters."
 
@@ -509,6 +520,11 @@ install_fresh() {
     finish "installed"
 }
 
+backup_postgres_dump() { # backup_postgres_dump DIR DEST — pg_dumpall.gz, mode 0600
+    # The redirect has to share this subshell; outside it the file is created 0644.
+    (umask 077; cd "$1" && docker compose exec -T postgres pg_dumpall -U postgres | gzip >"$2")
+}
+
 upgrade() {
     local dir old
     dir=$(cd "$ROOT/current" && pwd -P)
@@ -532,7 +548,7 @@ upgrade() {
         local running
         running=$(cd "$dir" && docker compose ps --status running --services 2>/dev/null || true)
         if grep -qx postgres <<<"$running"; then
-            (cd "$dir" && docker compose exec -T postgres pg_dumpall -U postgres) | gzip >"$backup/pg_dumpall.sql.gz" \
+            backup_postgres_dump "$dir" "$backup/pg_dumpall.sql.gz" \
                 || die "The database backup failed; nothing was changed. (CALLIOPE_SKIP_BACKUP=1 skips it.)"
         else
             warn "PostgreSQL isn't running, so the database wasn't dumped (its volume is kept as is)."
