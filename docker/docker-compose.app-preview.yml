@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Layer onto the Calliope server deployment when the isolated UI worker is enabled.
 # The worker receives only resolved preview data, never warehouse credentials.
 services:

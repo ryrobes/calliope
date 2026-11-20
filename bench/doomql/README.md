@@ -28,7 +28,14 @@ shaded wall slices.
 
 - Python packages already used by the benchmark tree: `duckdb`, `psycopg`, and
   `clickhouse-connect`
-- A PostgreSQL database with `pg_rvbbit`
+- A PostgreSQL database with `pg_rvbbit`. The `--dsn` examples below
+  use `localhost:55433/bench`, which is the development Compose database
+  in `docker/docker-compose.yml` (password `rvbbit` is that stack's
+  local default, not a Calliope install). A Calliope install publishes
+  database `rvbbit` on port 5432 with TLS; see
+  [`deploy/README.md`](../../deploy/README.md). Set `--dsn` or leave
+  the loader's `RVBBIT_DSN` override to point at it. Do not copy a
+  generated Calliope password into a command.
 - Optional GQE runtime for the `gpu_gqe` system
 - Optional vanilla PostgreSQL and ClickHouse services for the cross-database
   targets

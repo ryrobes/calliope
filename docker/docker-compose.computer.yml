@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Run only Callie's persistent desktop inside its dedicated VM. The appliance
 # connects to the VM's private address; its authenticated gateway serves Stage.
 name: calliope-computer

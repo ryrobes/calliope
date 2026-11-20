@@ -1,6 +1,6 @@
 # rvbbit
 
-[![CI](https://github.com/ryrobes/rvbbit-sql/actions/workflows/ci.yml/badge.svg)](https://github.com/ryrobes/rvbbit-sql/actions/workflows/ci.yml)
+[![CI](https://github.com/ryrobes/calliope/actions/workflows/ci.yml/badge.svg)](https://github.com/ryrobes/calliope/actions/workflows/ci.yml)
 
 **The AI primitives Snowflake Cortex and Databricks AI Functions
 didn't ship. In your Postgres.**
@@ -77,30 +77,40 @@ queryable. All in your backup.
 
 ## Quick start
 
-The full stack — Postgres 18 + rvbbit, the [Data Rabbit SQL
-Desktop](https://rvbbit.ai/docs/data-rabbit), and the warren capability
-agent — in one line (the script is short; read it first if that's your
+Rvbbit is the SQL engine inside Calliope. The supported install is the
+Calliope one-liner (the script is short; read it first if that's your
 style):
 
 ```bash
-curl -fsSL https://rvbbit.ai/install.sh | bash
+curl -fsSL https://usecalliope.com/install.sh | bash
 ```
 
-Just the database, no UI:
+That bundle runs Postgres 18 with `pg_rvbbit` as
+`ghcr.io/ryrobes/calliope-postgres:<version>` (the Calliope release in
+[`VERSION`](../VERSION); built from
+[`crates/pg_rvbbit`](../crates/pg_rvbbit)). DataRabbit and Warren come
+with it. Ports, the database name, and credentials are in
+[`deploy/compose.yaml`](../deploy/compose.yaml): database `rvbbit`,
+SQL published on **5432** (`CALLIOPE_SQL_BIND`), TLS required from
+outside the Compose network. The database superuser password is
+`POSTGRES_PASSWORD` in the install's private `.env`. It is generated
+per install and is separate from the Calliope web login. Do not copy
+it into a command you commit.
+
+From the install directory (`./calliope/current`):
 
 ```bash
-docker run -d --name rvbbit \
-    -p 55433:5432 \
-    -e POSTGRES_PASSWORD=rvbbit \
-    -e POSTGRES_DB=demo \
-    ghcr.io/ryrobes/rvbbit-postgres:latest
-
-psql postgresql://postgres:rvbbit@localhost:55433/demo \
+set -a && . ./.env && set +a
+export PGPASSWORD="$POSTGRES_PASSWORD"
+psql "host=${CALLIOPE_SQL_HOST} port=${CALLIOPE_SQL_BIND##*:} dbname=rvbbit user=postgres sslmode=verify-full sslrootcert=state/postgres-tls/ca.crt" \
     -c 'SELECT rvbbit.rvbbit_version();'
 ```
 
-Full walkthrough: [rvbbit.ai/docs/quickstart](https://rvbbit.ai/docs/quickstart).
-Tarball + bare-metal install paths are in [PACKAGING.md](../PACKAGING.md).
+`https://rvbbit.ai/install.sh` only points at the Calliope installer.
+Engine and SQL docs: [rvbbit.ai/docs](https://rvbbit.ai/docs).
+Connection details: [`deploy/README.md`](../deploy/README.md).
+Building the extension yourself is a development path, described in
+[PACKAGING.md](../PACKAGING.md).
 
 ## Rvbbit tables: the storage layer that backs all of this
 
@@ -187,8 +197,8 @@ engineering references are in [`docs/`](../docs/):
   extraction + traversal in SQL
 - **[RVBBIT_ROUTING_V1_RUNBOOK.md](../docs/RVBBIT_ROUTING_V1_RUNBOOK.md)**
   — operating the storage-layer router
-- **[PACKAGING.md](../PACKAGING.md)** — Docker image, release tarball,
-  build-from-source
+- **[PACKAGING.md](../PACKAGING.md)** — Calliope install, and development
+  builds of `crates/pg_rvbbit`
 - **[TUNING.md](../docs/TUNING.md)** — Postgres + DataFusion + Parquet
   knobs the image bumps over vanilla defaults, and what to set when
   running outside Docker

@@ -31,8 +31,14 @@ with SQL, model-version-invalidated automatically.
 
 ## Setup — two steps
 
+This walkthrough uses the development Compose stack (`make gpu-up`,
+host port 55433 in `docker/docker-compose.yml`). It is not a Calliope
+install. For the supported database, use
+`curl -fsSL https://usecalliope.com/install.sh | bash` and
+[`examples/bigfoot/run_all.sh`](../examples/bigfoot/run_all.sh).
+
 ```bash
-# 1. Build + start the main stack + GPU sidecars
+# 1. Build + start the development stack + GPU sidecars
 make gpu-up
 
 # 2. Load the BFRO CSV

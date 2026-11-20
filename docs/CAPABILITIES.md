@@ -25,6 +25,24 @@ template-rendered runtime files under the target directory.
 
 ## CLI
 
+### Connecting
+
+Install, deploy, and test read `RVBBIT_DSN` (or `--dsn`). A Calliope
+install publishes PostgreSQL on port **5432** (`CALLIOPE_SQL_BIND`),
+database `rvbbit`, role `postgres`, with TLS. The password is
+`POSTGRES_PASSWORD` in the install's private `.env`. It is generated
+per install. Export it as `PGPASSWORD`; do not write it into a URL.
+From `./calliope/current` (see [`deploy/README.md`](../deploy/README.md)):
+
+```bash
+set -a && . ./.env && set +a
+export PGPASSWORD="$POSTGRES_PASSWORD"
+export PGSSLROOTCERT="${PGSSLROOTCERT:-state/postgres-tls/ca.crt}"
+export RVBBIT_DSN="host=${CALLIOPE_SQL_HOST} port=${CALLIOPE_SQL_BIND##*:} dbname=rvbbit user=postgres sslmode=verify-full sslrootcert=${PGSSLROOTCERT}"
+```
+
+Examples below assume that variable is set.
+
 List curated packs:
 
 ```bash
@@ -77,9 +95,9 @@ capabilities/tools/rvbbit-capability catalog search extract
 Install locally:
 
 ```bash
-RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench \
 capabilities/tools/rvbbit-capability install \
   capabilities/packs/extract/gliner-medium-v2.1 \
+  --dsn "$RVBBIT_DSN" \
   --gpu
 ```
 
@@ -799,8 +817,8 @@ SELECT rvbbit.complete_model_training(
 The repo ships a first sklearn-based trainer worker:
 
 ```bash
-RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench \
 capabilities/tools/rvbbit-trainer run-once \
+  --dsn "$RVBBIT_DSN" \
   --output-root .rvbbit/trained-models \
   --start-sidecar \
   --docker-network docker_default
@@ -1084,12 +1102,16 @@ capabilities/tools/rvbbit-capability scaffold \
 Install with Docker + SQL:
 
 ```bash
-RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench \
 capabilities/tools/rvbbit-capability install \
   capabilities/packs/embeddings/bge-small-en-v1.5 \
+  --dsn "$RVBBIT_DSN" \
   --out-dir .rvbbit/capabilities/bge_small_en_v1_5 \
   --force
 ```
+
+`docker/docker-compose.uber.yml` and `docker/docker-compose.release.yml`
+are development stacks, not the Calliope install. A Calliope install
+runs DataRabbit from [`deploy/compose.yaml`](../deploy/compose.yaml).
 
 The Lens local install path runs Docker Compose from the Lens server process,
 using `docker compose` when the Compose v2 plugin is available and falling back
@@ -1168,7 +1190,7 @@ After scaffold/install, the output directory contains:
 
 | Variable | Meaning |
 |---|---|
-| `RVBBIT_DSN` | Postgres DSN used by install and generated `psql` examples. |
+| `RVBBIT_DSN` | Postgres connection string for install and generated `psql` examples. On a Calliope install: host `CALLIOPE_SQL_HOST`, port from `CALLIOPE_SQL_BIND` (default 5432), database `rvbbit`, user `postgres`, `sslmode=verify-full`, and `sslrootcert` pointing at `state/postgres-tls/ca.crt`. Password is `PGPASSWORD` / `POSTGRES_PASSWORD` from the install `.env`, not part of the documented default. |
 | `RVBBIT_DOCKER_NETWORK` | Docker network joined by generated sidecars. Defaults to `docker_default`. |
 | `RVBBIT_CAPABILITY_PORT` | Host port used only with `compose.host-ports.yaml` or Warren `--advertise-base-url`. Defaults to Docker-assigned random port in the optional overlay. |
 | `RVBBIT_CAPABILITY_DEVICE` | Runtime device inside sidecar. GPU overlay sets `cuda`. |

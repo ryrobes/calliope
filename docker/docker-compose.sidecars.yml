@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Local development harness for hand-run sidecar containers. The Warren catalog
 # path is the product path for built-in capabilities: queue one catalog item and
 # let the Warren agent materialize its isolated generated compose project.

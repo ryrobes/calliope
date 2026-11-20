@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Cross-database benchmark competitors.
 # Brought up alongside the main stack:
 #   docker compose -f docker/docker-compose.yml \

@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Optional, isolated authoring service. No published ports, warehouse credentials,
 # Docker socket, user home, or production database mounts.
 services:

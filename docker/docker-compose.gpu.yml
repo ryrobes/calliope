@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Optional GPU override for local GPU/GQE experiments.
 #
 # Use only on hosts with the NVIDIA container toolkit installed. The default

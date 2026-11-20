@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Development-only image builder. Not the Calliope install path and not
+# .github/workflows/calliope-images.yml. Supported install:
+#   curl -fsSL https://usecalliope.com/install.sh | bash
+# The engine image people run is ghcr.io/ryrobes/calliope-postgres:<version>
+# (deploy/compose.yaml). This script still builds the older standalone
+# rvbbit-* images for local experiments. Behavior below is unchanged.
+#
 # Build the core Rvbbit Docker release set and optionally push it to GHCR.
 #
 # Local build:
@@ -39,6 +46,9 @@ CORE_CAPABILITY_IDS=("runtimes/python-runtime" "runtimes/mcp-gateway" "smoke/war
 
 usage() {
     cat >&2 <<EOF
+Development-only. Not the Calliope install path (usecalliope.com/install.sh,
+deploy/). This builds the older standalone rvbbit-* images.
+
 Build the core Rvbbit Docker release set and optionally push it to GHCR.
 
 Examples:

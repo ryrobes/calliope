@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 name: clover-selfhosted
 # Generate the configuration with scripts/clover/configure.py.
 services:

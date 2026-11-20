@@ -35,10 +35,37 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPABILITY_TOOL = ROOT / "tools" / "rvbbit-capability"
-DEFAULT_DSN = os.environ.get(
-    "RVBBIT_DSN",
-    "postgresql://postgres:rvbbit@localhost:55433/bench",
-)
+
+
+def _default_dsn() -> str:
+    """Calliope install connection. Password stays in the environment.
+
+    `RVBBIT_DSN` wins. Otherwise this matches deploy/compose.yaml: database
+    ``rvbbit``, role ``postgres``, port from ``CALLIOPE_SQL_BIND`` (default
+    5432), TLS verify-full. ``POSTGRES_PASSWORD`` from the install ``.env``
+    is copied to ``PGPASSWORD`` when libpq does not already have one.
+    """
+    explicit = os.environ.get("RVBBIT_DSN")
+    if explicit:
+        return explicit
+    if os.environ.get("POSTGRES_PASSWORD") and not os.environ.get("PGPASSWORD"):
+        os.environ["PGPASSWORD"] = os.environ["POSTGRES_PASSWORD"]
+    bind = os.environ.get("CALLIOPE_SQL_BIND", "")
+    port = bind.rsplit(":", 1)[-1] if bind else "5432"
+    host = os.environ.get("CALLIOPE_SQL_HOST", "127.0.0.1")
+    database = os.environ.get("POSTGRES_DB", "rvbbit")
+    user = os.environ.get("PGUSER", "postgres")
+    sslmode = os.environ.get("PGSSLMODE", "verify-full")
+    dsn = f"host={host} port={port} dbname={database} user={user} sslmode={sslmode}"
+    rootcert = os.environ.get("PGSSLROOTCERT")
+    if not rootcert and os.path.isfile("state/postgres-tls/ca.crt"):
+        rootcert = "state/postgres-tls/ca.crt"
+    if rootcert:
+        dsn += f" sslrootcert={rootcert}"
+    return dsn
+
+
+DEFAULT_DSN = _default_dsn()
 
 CLASSIFICATION_TASKS = {"classification", "classifier", "tabular_classification"}
 REGRESSION_TASKS = {"regression", "regressor", "tabular_regression"}

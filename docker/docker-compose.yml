@@ -1,3 +1,4 @@
+# Development only. Not the Calliope install path: curl -fsSL https://usecalliope.com/install.sh | bash (see deploy/).
 # Two Postgres 18 instances side by side, plus a bench harness container.
 #
 #   pg-heap     : vanilla postgres:18, the baseline

@@ -36,9 +36,25 @@ FROM rvbbit.warren_jobs ORDER BY created_at DESC LIMIT 3;
 
 Set `BIGFOOT_SKIP_CAPABILITIES=1` to run only the non-capability sections.
 
-Defaults:
+Defaults match a Calliope install ([`deploy/README.md`](../../deploy/README.md),
+[`deploy/compose.yaml`](../../deploy/compose.yaml)). From `./calliope/current`:
 
-- `RVBBIT_DSN=postgresql://postgres:rvbbit@localhost:55433/bench`
+```bash
+set -a && . ./.env && set +a
+examples/bigfoot/run_all.sh
+```
+
+`run_all.sh` then uses host `CALLIOPE_SQL_HOST` (or `127.0.0.1`), the
+port in `CALLIOPE_SQL_BIND` (or `5432`), database `rvbbit`, role
+`postgres`, and `sslmode=verify-full`. The password is `PGPASSWORD`, or
+`POSTGRES_PASSWORD` from that `.env` when `PGPASSWORD` is unset. It is
+generated per install and is not stored in the script. Point
+`PGSSLROOTCERT` at `state/postgres-tls/ca.crt` (the script does this
+when that file is in the working directory). Set `RVBBIT_DSN` to pass
+a full connection string instead.
+
+Other defaults:
+
 - `BIGFOOT_SAMPLE_ROWS=500`
 - `BIGFOOT_CLASSIFY_ROWS=250`
 - `BIGFOOT_EXTRACT_ROWS=12`
@@ -66,8 +82,9 @@ rvbbit-trainer watch --include-unmanaged --serve-local --serve-host <db-reachabl
 BIGFOOT_TRAIN=1 examples/bigfoot/run_all.sh
 ```
 
-In the Docker dev stack the worker lives in the `bench` container and Postgres
-reaches it as host `bench`:
+`docker/docker-compose.yml` is a development stack, not a Calliope
+install. In that stack the trainer worker lives in the `bench` container
+and Postgres reaches it as host `bench`:
 
 ```bash
 docker compose -f docker/docker-compose.yml exec -T bench \
