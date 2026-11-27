@@ -2063,6 +2063,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0510_calliope_demo_login",
         include_str!("../sql/migrations/0510_calliope_demo_login.sql"),
     ),
+    (
+        "0511_flow_runs_receipt_gaps_inbox",
+        include_str!("../sql/migrations/0511_flow_runs_receipt_gaps_inbox.sql"),
+    ),
 ];
 
 const SCHEMA_MIGRATIONS_DDL: &str = "\

@@ -293,6 +293,12 @@ fn mcp_call(server: &str, tool: &str, args: pgrx::JsonB) -> pgrx::JsonB {
     if let (Some(policy), Some(h)) = (&cache, args_hash.as_deref()) {
         if let Some(cached) = cache_get(server, tool, h, policy.ttl_seconds) {
             log_invocation(server, tool, &args.0, &cached, None, 0, true);
+            crate::costs::record_cache_hit(
+                "mcp_call",
+                &direct_receipt_hash(server, tool, &args.0),
+                "mcp",
+                None,
+            );
             return pgrx::JsonB(cached);
         }
     }
@@ -318,14 +324,14 @@ fn mcp_call(server: &str, tool: &str, args: pgrx::JsonB) -> pgrx::JsonB {
                     cache_put(server, tool, h, &args.0, &envelope);
                 }
             }
-            log_invocation(
+            log_direct_invocation(
+                "mcp_call",
                 server,
                 tool,
                 &args.0,
                 &envelope,
                 error_text.as_deref(),
                 latency_ms,
-                false,
             );
             pgrx::JsonB(envelope)
         }
@@ -457,14 +463,14 @@ fn mcp_rows(
     } else {
         None
     };
-    log_invocation(
+    log_direct_invocation(
+        "mcp_rows",
         server,
         tool,
         &args.0,
         &envelope,
         error_text.as_deref(),
         latency_ms,
-        false,
     );
 
     let rows = extract_rows(&envelope);
@@ -564,21 +570,172 @@ pub(crate) fn log_invocation(
     if crate::flow::in_pool_worker() {
         return;
     }
+    insert_invocation_row(server, tool, args, output, error, latency_ms, cache_hit, None);
+    crate::costs::log_mcp_invocation_cost(server, tool, error, cache_hit, output);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn insert_invocation_row(
+    server: &str,
+    tool: &str,
+    args: &Value,
+    output: &Value,
+    error: Option<&str>,
+    latency_ms: i32,
+    cache_hit: bool,
+    receipt_id: Option<&str>,
+) {
     let server_lit = sql_lit(server);
     let tool_lit = sql_lit(tool);
     let args_lit = sql_lit(&serde_json::to_string(args).unwrap_or_else(|_| "null".into()));
     let output_lit = sql_lit(&serde_json::to_string(output).unwrap_or_else(|_| "null".into()));
     let error_lit = error.map(sql_lit).unwrap_or_else(|| "NULL".into());
     let cache_hit_lit = if cache_hit { "true" } else { "false" };
+    let (receipt_col, receipt_val) = match receipt_id {
+        Some(id) => (", receipt_id", format!(", {}::uuid", sql_lit(id))),
+        None => ("", String::new()),
+    };
     let sql = format!(
         "INSERT INTO rvbbit.mcp_invocations \
-         (server, tool, args, output, error, latency_ms, cache_hit, query_id) \
+         (server, tool, args, output, error, latency_ms, cache_hit, query_id{receipt_col}) \
          VALUES ({server_lit}, {tool_lit}, {args_lit}::jsonb, \
                  {output_lit}::jsonb, {error_lit}, {latency_ms}, {cache_hit_lit}, \
-                 rvbbit.current_query_id())"
+                 rvbbit.current_query_id(){receipt_val})"
     );
     let _ = pgrx::Spi::run(&sql);
-    crate::costs::log_mcp_invocation_cost(server, tool, error, cache_hit, output);
+}
+
+/// Receipt cache key for a direct MCP call: blake3 over a fixed prefix, the
+/// server, the tool and the canonical args hash. The "mcp\0" prefix keeps it
+/// disjoint from operator input hashes, so it can never serve as an L2
+/// operator cache entry.
+fn direct_receipt_hash(server: &str, tool: &str, args: &Value) -> Vec<u8> {
+    let mut h = blake3::Hasher::new();
+    h.update(b"mcp\0");
+    h.update(server.as_bytes());
+    h.update(b"\0");
+    h.update(tool.as_bytes());
+    h.update(b"\0");
+    h.update(args_hash_hex(args).as_bytes());
+    h.finalize().as_bytes().to_vec()
+}
+
+fn mcp_receipts_enabled() -> bool {
+    !crate::duck_backend::guc_setting("rvbbit.mcp_receipts")
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "off" | "false" | "0" | "no"
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// Audit for a direct SQL `mcp_call` / `mcp_rows` (not one made inside an
+/// operator pipeline, whose operator receipt already carries it in
+/// sub_calls). Writes a receipt shaped like an operator receipt (one `mcp`
+/// sub-call, model `<server>.<tool>`) so MCP calls show up in the same
+/// receipts / cost_events / run views as model calls; the cost event is
+/// produced from that sub-call and carries the receipt_id; the existing
+/// `mcp_invocations` row is kept and links back via receipt_id.
+///
+/// Falls back to the previous behaviour (invocation row + unlinked cost
+/// event) when receipts are disabled (`rvbbit.mcp_receipts = off`), when
+/// migration 0511 has not been applied yet, or when the receipt write fails.
+#[allow(clippy::too_many_arguments)]
+fn log_direct_invocation(
+    operator: &str,
+    server: &str,
+    tool: &str,
+    args: &Value,
+    output: &Value,
+    error: Option<&str>,
+    latency_ms: i32,
+) {
+    if crate::flow::in_pool_worker() {
+        return;
+    }
+    let receipt_id = if mcp_receipts_enabled() && crate::costs::flow_schema_ready() {
+        write_direct_receipt(operator, server, tool, args, output, error, latency_ms)
+    } else {
+        None
+    };
+    match receipt_id {
+        Some(id) => {
+            insert_invocation_row(server, tool, args, output, error, latency_ms, false, Some(&id));
+        }
+        None => log_invocation(server, tool, args, output, error, latency_ms, false),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_direct_receipt(
+    operator: &str,
+    server: &str,
+    tool: &str,
+    args: &Value,
+    output: &Value,
+    error: Option<&str>,
+    latency_ms: i32,
+) -> Option<String> {
+    let tool_name = format!("{server}.{tool}");
+    let sub = crate::unit_of_work::SubCall {
+        step: "mcp".into(),
+        kind: "mcp".into(),
+        model: Some(tool_name.clone()),
+        backend: Some("mcp".into()),
+        transport: Some("mcp".into()),
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms,
+        error: error.map(str::to_string),
+        ..Default::default()
+    };
+    let (run_id, flow_id) = crate::costs::current_run_context();
+    let mut record = crate::costs::ReceiptRecord {
+        receipt_id: None,
+        operator: operator.to_string(),
+        inputs_hash_hex: hex_encode(&direct_receipt_hash(server, tool, args)),
+        model: tool_name,
+        inputs: serde_json::json!({ "server": server, "tool": tool, "args": args }),
+        output: if error.is_some() {
+            None
+        } else {
+            Some(serde_json::to_string(output).unwrap_or_else(|_| "null".into()))
+        },
+        sub_calls: serde_json::to_value(vec![sub]).unwrap_or(Value::Array(Vec::new())),
+        n_tokens_in: 0,
+        n_tokens_out: 0,
+        latency_ms,
+        error: error.map(str::to_string),
+        cost_usd: None,
+        query_id: None,
+        queue_reason: None,
+        run_id,
+        flow_id,
+    };
+    if !crate::operators::receipt_writes_allowed() {
+        // Read-only transaction: allocate the id now, queue the receipt for a
+        // writable connection, and still link the invocation row to it.
+        record.receipt_id = Spi::get_one::<String>("SELECT gen_random_uuid()::text")
+            .ok()
+            .flatten();
+        let id = record.receipt_id.clone()?;
+        return match crate::costs::enqueue_receipt(&record, "read_only_transaction") {
+            Ok(()) => Some(id),
+            Err(e) => {
+                pgrx::warning!("rvbbit.{operator}: failed to queue MCP receipt: {e}");
+                None
+            }
+        };
+    }
+    match crate::costs::write_receipt_now(&record, crate::costs::MissingQueryId::Generate) {
+        Ok(id) => Some(id),
+        Err(e) => {
+            pgrx::warning!("rvbbit.{operator}: failed to log MCP receipt: {e}");
+            None
+        }
+    }
 }
 
 fn sql_lit(s: &str) -> String {

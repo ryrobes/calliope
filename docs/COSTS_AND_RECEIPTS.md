@@ -11,6 +11,12 @@ Rvbbit keeps semantic calls auditable in two layers:
 For UI implementation details, see
 [COSTS_UI_CONTRACT.md](COSTS_UI_CONTRACT.md).
 
+Receipts, cost events and MCP invocations also carry `run_id` / `flow_id`
+when written inside a flow run (`rvbbit.begin_run`). Direct `mcp_call` /
+`mcp_rows` calls write receipts too, and semantic-cache hits can leave
+zero-cost breadcrumbs in `rvbbit.receipt_hits` (not in receipts, so every
+view below is unchanged). See [FLOW_RUNS_AND_INBOX.md](FLOW_RUNS_AND_INBOX.md).
+
 ## Cost Ledger
 
 Use the latest cost state per call:
@@ -179,6 +185,8 @@ Automatic draining is on by default. Disable it with:
 ```bash
 RVBBIT_RECEIPT_QUEUE_AUTODRAIN=0
 ```
+
+Queued receipts keep the `run_id` / `flow_id` captured when the call ran.
 
 Queued receipts may have `query_id = NULL` if they originated in a context
 where Rvbbit could not safely read or create the session query id. They still
