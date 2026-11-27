@@ -226,7 +226,15 @@ here. The dashboard's "what happened" surface.
 | `latency_ms` | int | wall time of the call (0 for cache hits) |
 | `cache_hit` | bool | served from `mcp_cache` |
 | `query_id` | uuid | correlation with `rvbbit.receipts.query_id` when called in an operator |
+| `receipt_id` | uuid | the receipt written for a direct `mcp_call` / `mcp_rows` (NULL for operator-context calls, cache hits, or `rvbbit.mcp_receipts = off`) |
+| `run_id`, `flow_id` | uuid, text | flow run the call belonged to (`rvbbit.begin_run`) |
 | `invocation_at` | timestamptz | clock_timestamp |
+
+Direct `mcp_call` / `mcp_rows` calls also write a `rvbbit.receipts` row
+(`operator` = `mcp_call` / `mcp_rows`, `model` = `<server>.<tool>`, one
+`kind: "mcp"` sub-call) whose cost event carries the `receipt_id`, so MCP
+calls appear in the same receipt, cost and run views as model calls. See
+[FLOW_RUNS_AND_INBOX.md](FLOW_RUNS_AND_INBOX.md).
 
 Indexes: `(server, invocation_at DESC)` and `(query_id)`.
 

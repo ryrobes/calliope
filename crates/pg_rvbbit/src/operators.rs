@@ -927,13 +927,15 @@ pub(crate) fn invoke_with_cache_seeded(
         if let Some(cached) = crate::cache::get(&hash) {
             crate::probe::record_l1_hit(&op.name, inputs);
             observe_cache_hit("l1");
+            crate::costs::record_cache_hit(&op.name, &hash, "l1", None);
             return Ok(cached);
         }
 
         // L2: cross-backend persistent cache (rvbbit.receipts). ~1-3ms SPI.
-        if let Some(cached) = lookup_cached(&hash) {
+        if let Some((cached, source_receipt)) = lookup_cached(&hash) {
             crate::probe::record_l2_hit(&op.name, inputs);
             observe_cache_hit("l2");
+            crate::costs::record_cache_hit(&op.name, &hash, "l2", source_receipt.as_deref());
             // Backfill L1 so future calls in this backend skip the SPI cost.
             crate::cache::put(&hash, cached.clone());
             return Ok(cached);
@@ -1066,14 +1068,19 @@ fn input_hash(
     h.finalize().as_bytes().to_vec()
 }
 
-fn lookup_cached(hash: &[u8]) -> Option<String> {
+/// L2 lookup: the newest error-free receipt for this hash. Returns its output
+/// and receipt id (the id feeds the cache-hit breadcrumb).
+fn lookup_cached(hash: &[u8]) -> Option<(String, Option<String>)> {
     let hex = bytes_to_hex(hash);
     let sql = format!(
-        "SELECT output FROM rvbbit.receipts \
+        "SELECT output, receipt_id::text FROM rvbbit.receipts \
          WHERE inputs_hash = '\\x{hex}'::bytea AND error IS NULL \
          ORDER BY invocation_at DESC LIMIT 1"
     );
-    Spi::get_one::<String>(&sql).ok().flatten()
+    match Spi::get_two::<String, String>(&sql) {
+        Ok((Some(output), receipt_id)) => Some((output, receipt_id)),
+        _ => None,
+    }
 }
 
 // Receipts are INSERTs, which PG forbids during parallel queries and in the
@@ -1181,6 +1188,15 @@ fn remember_json_parse_error(op_name: &str, inputs: &serde_json::Value, error: &
             }
         }
     });
+}
+
+/// True when this backend may INSERT audit rows right now (not a parallel
+/// worker, not inside a parallel scan's leader, not a read-only transaction).
+pub(crate) fn receipt_writes_allowed() -> bool {
+    let pwn = unsafe { ParallelWorkerNumber };
+    let skip = SKIP_RECEIPTS.with(|c| c.get());
+    let read_only = unsafe { pgrx::pg_sys::XactReadOnly };
+    delayed_receipt_reason(pwn, skip, read_only).is_none()
 }
 
 fn delayed_receipt_reason(

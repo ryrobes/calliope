@@ -271,6 +271,121 @@ pub(crate) struct ReceiptRecord {
     pub cost_usd: Option<f64>,
     pub query_id: Option<String>,
     pub queue_reason: Option<String>,
+    /// Flow run context (settings rvbbit.run_id / rvbbit.flow_id) captured
+    /// when the call ran, so a receipt drained later from the delayed queue
+    /// keeps its own run instead of the draining session's. Older queued
+    /// records omit both.
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub flow_id: Option<String>,
+}
+
+/// The active flow run (`rvbbit.run_id`, validated as a uuid) and flow id
+/// (`rvbbit.flow_id`). Safe in parallel workers (settings are copied from the
+/// leader); never read from a flow-pool thread.
+pub(crate) fn current_run_context() -> (Option<String>, Option<String>) {
+    if crate::flow::in_pool_worker() {
+        return (None, None);
+    }
+    let run_id = crate::duck_backend::guc_setting("rvbbit.run_id")
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| is_uuid_text(s));
+    let flow_id = crate::duck_backend::guc_setting("rvbbit.flow_id")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    (run_id, flow_id)
+}
+
+thread_local! {
+    static FLOW_SCHEMA_READY: std::cell::Cell<Option<(bool, std::time::Instant)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// True once migration 0511 (run_id columns, receipt_hits, the mcp
+/// receipt link) is applied. A new .so running against a database that has
+/// not run `rvbbit.migrate()` yet keeps the old write shapes exactly. A true
+/// answer is cached for the backend's life; false is re-checked every 30s.
+pub(crate) fn flow_schema_ready() -> bool {
+    if crate::flow::in_pool_worker() {
+        return false;
+    }
+    if let Some((ready, at)) = FLOW_SCHEMA_READY.with(|c| c.get()) {
+        if ready || at.elapsed() < std::time::Duration::from_secs(30) {
+            return ready;
+        }
+    }
+    let ready = Spi::get_one::<bool>(
+        "SELECT to_regclass('rvbbit.receipt_hits') IS NOT NULL \
+            AND EXISTS (SELECT 1 FROM pg_attribute \
+                         WHERE attrelid = 'rvbbit.receipts'::regclass \
+                           AND attname = 'run_id' AND NOT attisdropped) \
+            AND EXISTS (SELECT 1 FROM pg_attribute \
+                         WHERE attrelid = 'rvbbit.mcp_invocations'::regclass \
+                           AND attname = 'receipt_id' AND NOT attisdropped)",
+    )
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+    FLOW_SCHEMA_READY.with(|c| c.set(Some((ready, std::time::Instant::now()))));
+    ready
+}
+
+/// `rvbbit.cache_hit_receipts`: 'run' (default) logs hits only inside a flow
+/// run, 'on' logs every hit, 'off' never.
+fn cache_hit_logging_wanted(run_id: Option<&str>) -> bool {
+    let mode = crate::duck_backend::guc_setting("rvbbit.cache_hit_receipts")
+        .map(|s| s.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    match mode.as_str() {
+        "off" | "false" | "0" | "no" | "none" => false,
+        "on" | "true" | "1" | "yes" | "all" => true,
+        _ => run_id.is_some(),
+    }
+}
+
+/// Write a zero-cost breadcrumb for a semantic-cache hit into
+/// `rvbbit.receipt_hits` (never into receipts, so cost and call-count views
+/// are unchanged). Best effort and cheap: one GUC read when logging is off;
+/// skipped where Postgres forbids writes (parallel workers, read-only
+/// transactions, flow-pool threads, the leader of a parallel scan).
+pub(crate) fn record_cache_hit(
+    operator: &str,
+    hash: &[u8],
+    layer: &str,
+    source_receipt_id: Option<&str>,
+) {
+    if crate::flow::in_pool_worker() {
+        return;
+    }
+    let (run_id, flow_id) = current_run_context();
+    if !cache_hit_logging_wanted(run_id.as_deref()) {
+        return;
+    }
+    if !crate::operators::receipt_writes_allowed() || !flow_schema_ready() {
+        return;
+    }
+    let source_sql = source_receipt_id
+        .filter(|s| is_uuid_text(s))
+        .map(|s| format!("{}::uuid", sql_lit(s)))
+        .unwrap_or_else(|| "NULL".into());
+    let sql = format!(
+        "INSERT INTO rvbbit.receipt_hits \
+         (operator, cache_layer, inputs_hash, source_receipt_id, query_id, run_id, flow_id, caller) \
+         VALUES ({op}, {layer}, '\\x{hex}'::bytea, {source_sql}, rvbbit.current_query_id(), \
+                 {run}, {flow}, nullif(current_setting('rvbbit.request_user', true), ''))",
+        op = sql_lit(operator),
+        layer = sql_lit(layer),
+        hex = bytes_to_hex(hash),
+        run = run_id
+            .as_deref()
+            .map(|r| format!("{}::uuid", sql_lit(r)))
+            .unwrap_or_else(|| "NULL".into()),
+        flow = sql_opt_lit(flow_id.as_deref()),
+    );
+    if let Err(e) = Spi::run(&sql) {
+        pgrx::warning!("rvbbit: failed to log cache hit: {e}");
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -499,7 +614,7 @@ pub(crate) fn record_from_work(
         .iter()
         .find_map(|s| s.model.clone())
         .unwrap_or_else(|| op.model.clone());
-    ReceiptRecord {
+    let mut record = ReceiptRecord {
         receipt_id: extraction_receipt_id(op, inputs),
         operator: op.name.clone(),
         inputs_hash_hex: bytes_to_hex(hash),
@@ -518,7 +633,13 @@ pub(crate) fn record_from_work(
         cost_usd,
         query_id: None,
         queue_reason: None,
-    }
+        run_id: None,
+        flow_id: None,
+    };
+    let (run_id, flow_id) = current_run_context();
+    record.run_id = run_id;
+    record.flow_id = flow_id;
+    record
 }
 
 fn extraction_receipt_id(op: &OpDef, inputs: &Value) -> Option<String> {
@@ -569,13 +690,33 @@ pub(crate) fn write_receipt_now(
         .as_deref()
         .map(|id| format!("{}::uuid", sql_lit(id)))
         .unwrap_or_else(|| "gen_random_uuid()".into());
+    // Run context: written explicitly once migration 0511 is in, so a receipt
+    // drained from the delayed queue keeps the run it was produced in (NULL
+    // when it had none) rather than the draining session's column default.
+    let (run_cols, run_vals) = if flow_schema_ready() {
+        (
+            ", run_id, flow_id",
+            format!(
+                ", {}, {}",
+                record
+                    .run_id
+                    .as_deref()
+                    .filter(|r| is_uuid_text(r))
+                    .map(|r| format!("{}::uuid", sql_lit(r)))
+                    .unwrap_or_else(|| "NULL".into()),
+                sql_opt_lit(record.flow_id.as_deref())
+            ),
+        )
+    } else {
+        ("", String::new())
+    };
     let sql = format!(
         "INSERT INTO rvbbit.receipts \
          (receipt_id, operator, inputs_hash, model, inputs, output, parsed, cost_usd, sub_calls, query_id, \
-          n_tokens_in, n_tokens_out, latency_ms, error) \
+          n_tokens_in, n_tokens_out, latency_ms, error{run_cols}) \
          VALUES ({receipt_id_sql}, {op_sql}, '\\x{hex}'::bytea, {model_sql}, {inputs_sql}::jsonb, \
                  {output_sql}, NULL, {cost_sql}, {subcalls_sql}::jsonb, {query_id_sql}, \
-                 {ti}, {to_}, {lat}, {error_sql}) \
+                 {ti}, {to_}, {lat}, {error_sql}{run_vals}) \
          ON CONFLICT (receipt_id) DO UPDATE SET receipt_id = EXCLUDED.receipt_id \
          RETURNING receipt_id::text",
         receipt_id_sql = receipt_id_sql,
@@ -733,6 +874,8 @@ fn backfill_cost_events_from_receipts_impl(limit: usize) -> i64 {
                         cost_usd,
                         query_id,
                         queue_reason: None,
+                        run_id: None,
+                        flow_id: None,
                     },
                 ));
             }
